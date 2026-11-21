@@ -95,4 +95,58 @@ cae00 RA 의 판과 `.env`(`MCP_PUBLIC_BASE` · `MCP_FILES_VIA_BACKEND` 가 없�
 - 고친 것 — 그 체크리스트 세 줄에 근거 커밋을 달아 맞췄다. `PLAN.md` §12 는 그때의 분석 기록이라 고쳐 쓰지 않는다.
 - 배운 것 — 「결정 대기」 줄을 선택지로 올리기 전에 코드를 먼저 본다. 그 뒤로 남은 줄 전부를 코드 · 커밋과 대조하는 조사를 따로 돌렸다(L21-8).
 
-## L21-8 남은 줄의 실제 상태(코드 대조 — 채운다)
+## L21-8 남은 줄의 실제 상태(11-21 코드 · 커밋 대조 — 읽기 전용 조사)
+
+열여덟 묶음의 `- [ ]` 줄을 코드 · 커밋으로 다시 가렸다. 판정은 넷이다 — 지어짐(체크리스트만 낡음) · 일부 · 안 지어짐 · 바깥 조건(운영 박스 · 실데이터 ·
+다른 팀 · 사람 손).
+
+**(가) dev 에서 지금 지을 수 있는데 안 지은 것**
+
+| # | 주제 · 줄 | 지을 것 | 파일 |
+|---|---|---|---|
+| 1 | 과제 인사이트 48 | 웹 일반 심의를 시작할 때 확인된 주제면 같은 칸의 aff · org 카드만 골라 표지 「검증 대상, 독립 근거 아님」 · 출처 · 판 · 상태와 함께 `delib_opts.evidence` 에. 다른 차수 · 차수 모름은 건수만 | 포털 `backend/app/agent/routes.py` · `backend/app/insights/` |
+| 2 | 과제 인사이트 49 남은 절반 | 의장이 risk-review 면 호출자 근거 가운데 `tool` 이 `insight_*` 인 항목을 뺀다(도구 막기는 `5ee6497` 로 이미 섰다) | 에이전트 `deliberation.py`(근거 정규화 자리) · `tests/test_insight_d18.py` |
+| 3 | 과제 인사이트 50 남은 절반 | `deliberate_start` 설명과 워크플로 머리의 evidence 안내(`insight_find` 설명에는 이미 있다) | 에이전트 `mcp_server.py` · 포털 `infra/pipeline/hwax-deliberate.js` |
+| 4 | 과제 인사이트 54 · 55 | 읽을 때 낡음 셈(StepForge 개정 줄 · 리스크 비교의 바뀐 부품) · 같은 결론 묶어 보이기 · 검토 줄 · 옛 SP key 의 키 이력(반박 잇기는 `e53bbf92` 로 있다) | 포털 `backend/app/insights/` |
+| 5 | 이용 통계 15 · 33 | M2 전부 — 접는 표 둘 · 접기와 되채우기 · 게이트웨이 `/usage-rollup` · 에이전트 창구 · nginx 날마다 접기 · MCP · 심의 · RA 칸 · 원천을 가로지른 DAU. M5(선택) 서버별 지연 | 포털 `backend/app/usage_stats.py` · 게이트웨이 · 에이전트 · `infra/llm-status/collector.py` |
+| 6 | 발표자료 184 | 분석 루틴 RA 초안에 「발표자료로」 단추 | 포털 `frontend/src/components/chat/deck.ts` |
+| 7 | 발표자료 44 · 186 | (WDA 리포) 주인 있는 run 은 서비스 자격으로 RA 그림을 받지 않는다 · 지우기 W-17 · MCP 주인 W-18, (포털) 다시 시도 · 지우기 · 미리보기 — WDA 일은 「사용자가 직접 시킬 때」 | WDA `src/wdpipeline/assets.py` · `ingest.py` · `src/wdweb/app.py` |
+| 8 | 그림 68 | `vision.IMG_URL_RE` 끝의 `\b`(조사 앞 그림 주소를 놓친다 — `report_figures.py` 에서는 이미 고쳤다) | 에이전트 `vision.py` |
+| 9 | 그림 99 · 100 | PNG + SVG 짝이 오면 `figure_to_report` 가 PNG 를 고르는지 확인 · dev 실호출(StepForge `9b73703d` 착지) | 게이트웨이 `gateway.py`(그림 보관 · figure_to_report) |
+| 10 | 그림 64 · 66 · 76 | AIDataHub 첨부 그림 싣기(일부러 미룬 것) · 게이트웨이가 보고서마다 RA 쓰기를 줄 세우기 · 일회성 세션 tools/list 401 의 두 번 실행 틈(공용 길 — 따로 검토) | 에이전트 `report_figures.py` · 게이트웨이 |
+| 11 | 스마트트윈 18 | 포털 절차 씨앗 「결과 귀환 확인」(읽기 전용). 이름 주의 — 기존 R2c 는 `report-add-tags.yaml` | 포털 `docs/procedures/fixtures/` |
+| 12 | 스마트트윈 19 | 귀환 매니페스트 `images{}` — KooSlurm · KooRemapper 몫(판 고정 여부 먼저) | 그 리포 세션 |
+| 13 | 10-29 요청 87 | 평가셋 A 를 Drive 로 | 에이전트 `tools/seat_evalset.py` 산출 |
+| 14 | 심의 품질 117 | T4 생각 강도를 요청마다 바꾸는 손잡이와 러너 knob(지금은 서버 env 하나) | 에이전트 `tools/delib_ab.py` · `app.py` |
+| 15 | 설계 리스크 심사 125 · 151 · 152 · 117 | `source_drift` · `capture_partial` 을 제외 사유 enum 에 · `voc_map` 씨앗(A5 ② (가)) · E7 앱 DB 경로의 상태 필터(BE-10) · 500파트 캡처 10초 시험 | HWAXRisk `backend/app/diff.py` · `assets/taxonomy.v1.json` · `brief.py` · `tests/` |
+| 16 | MX 백서 위키 14 앞 절반 | 위임을 끄면 서비스 계정으로 돌아오는지 dev 확인(게이트웨이 재기동은 확인 뒤) | — |
+
+결정이 먼저인 것 — 절차 577(펼치기 두 번 — 사용자가 11-01 에 열어 둠) · 온톨로지 먼저 71(`gate_sources` — 사용자 결정 · cae00 Q20) · 조합 QA 셈
+스크립트(「방법만」 결정).
+
+**다시 연 미룬 것(L21-5 ③)은 조사에서도 코드 흔적이 없다** — 절차 607 · 608 · 612(게이트웨이 도구 등록 · 챗으로 가져가기 · 심의 다리) · 리스크 종합 보고서
+RA 저장(`ra_client.py` 에 보고서 쓰기가 없다) · 심의 T7. 사용자 결정으로 지금 짓는다.
+
+**(나) 체크리스트만 낡은 줄(표시만 고친다)**
+
+- 지어짐 — 발표자료 28 ~ 40(W-1 ~ W-15, WDA `d1f144b` · `dcca8ab`) · 42(`delib-16x9` active, WDA `3b7b5d2` · `3707509`) · 그림 97(StepForge `9b73703d` · `debe675f`) ·
+  10-29 요청 89 · 100(에이전트 `203adf8` · `08a105d`, 병합 `ec83e51`) · 10-30 요청 24(에이전트 `dd8bf19` · `1e8cc42` · `8dd579a`) · 코어 잇기 37(포털 `a308bfc5`) ·
+  문서 변환 52 의 코드(DocForge `9255a96`) · 토큰 절감 25 의 P7(포털 `0afddd9e` · WDA `ingest.py` · 게이트웨이 `kit_get`).
+- 걷음 후보 — 온톨로지 먼저 58(자동 사전 조회 — OF-14 ③ 이 미리보기를 골랐다) · 과제 인사이트 49 의 「`_RISK_PRIOR_TOOLS` 에 넣기」 절반(`5ee6497` 로 대신) ·
+  설계 리스크 심사 144(재설계 M1 ~ M3 으로 대체) · 89 의 (a) · (c)(risk-credentials U-3 · HWAXRisk `0498839`).
+- 11-17 요청의 리스크 앱 RK-01 ~ 07 · 엔진 DL-01 ~ 05 는 main 에 있다(L21-2).
+
+**바깥 조건(dev 에서 못 한다)** — 심의 품질 T2 · T3 · T5 · T6 의 A/B 실행(스위치 · 러너 `tools/delib_ab.py` 는 있다) · 리스크 20만 32 · 33 · 43 · 리스크 재설계
+195 · 196 · 문서 변환 22 · 26 · 28 · 30 · 49 · 55 · 59 · 조합 QA 실행 전부 · 챗 단추(Knox) · 웹 리서치 · ste 전각도 · 클러스터 배선 E2E · 토큰 절감 P2 · P4b · P8(측정 뒤) ·
+P1 과 PC 습관(사용자 PC) · 코어 잇기 58(dev 에 `STEPFORGE_SSO_SECRET` 이 없다).
+
+## L21-9 정기 동기화 — 물을 때 든 사실이 dev 와 달랐다(11-21)
+
+「10-01 부터 성공 0건」 은 cae00 의 기록이다(10-27 검토가 본 로그). dev 의 지금 행은 다르다 — `signalforge-gs` · `materialtwin` 은 오늘도 ok 로 돌고
+(dev `.env` 에 `AIDH_SYNC_ALLOW_INTERNAL` 이 있다) `mxwp` 만 08-19 부터 401 로 실패한다. dev 의 이 정기 동기화가 원천 앱의 새 데이터를 AIDataHub 로 들이는
+입구이고, 그 뒤를 Drive 조각 동기화가 cae00 으로 나른다. dev 에서까지 끄면 새 데이터가 들어올 길이 없어진다.
+
+- 그래서 이행(모든 박스에 적용된다)으로 끄지 않고 **그 박스에서 도는 명령**으로 지었다 — AIDataHub `deploy/apptainer/sync-sources.sh list | disable | enable`
+  (`1fe55d7`, 가지 `wt1121/gate`). 이름을 먼저 다 확인하고 비밀 · 주소는 내지 않는다. 스케줄러와 헬스 낡음 게이지는 이미 `enabled` 를 본다.
+- 사용자 결정(끈다)은 **cae00 에서** 세 원천을 끄는 것으로 적용한다 — cae00 사람이 `list` 로 막힌 것을 확인한 뒤 `disable` 한 줄. dev 는 그대로 둔다.
+- dev 의 `mxwp` 401 은 따로 남는다(MX 백서 내부 키 — AD-01 · AD-14 와 같은 갈래).
