@@ -211,3 +211,27 @@ P1 과 PC 습관(사용자 PC) · 코어 잇기 58(dev 에 `STEPFORGE_SSO_SECRET
 - 대조하다 본 어긋남 다섯은 그 문서 끝에 적었다. 그 가운데 심의 손잡이의 기본값(문서는 「전부 꺼짐」 · 엔진은 둘이 켜짐)은 결과를 읽는 법이 달라져 먼저
   고쳐야 한다.
 - T4(`reasoning_effort`) · T7(`undecided`) 손잡이는 이번에 지었다(에이전트 서버 `d058c5c` · `29f8554`) — 묶음 B 가 올라가야 러너가 받는다.
+
+## L21-14 dev 에 RA 최신판을 띄웠다(11-22 — 사용자 결정 L21-10 ③)
+
+- **백업 먼저** — dev RA DB(127.0.0.1:5433 `report_automation`, 이행 판 `pa3_alert_recipients` · 보고서 74)를 `pg_dump -Fc` 로
+  `/data/backups/ra-dev/report_automation-20261121T221623Z-pre-v0186.dump`(9.3 MB · 0600)에 두었다. 접속 정보는 RA `backend/.env` 에서 읽어 환경으로만 넘겼다.
+- **띄우기** — RA 의 박스 기동 스크립트 `./start.sh`(포털 모드 · :3000) 그대로. 첫 시도는 이행 전에 멈췄다 — RA 가상환경에 SSO 용 패키지 셋(isodate ·
+  python3-saml · xmlsec)이 없었다(dev RA 를 오래 안 띄운 탓 — DB 는 손대기 전이었다). RA `requirements.txt` 대로 그 가상환경에만 설치하고 다시 돌려 이행 19걸음이
+  올라갔다. 화면은 다시 짓지 않았다(옛 `frontend/dist` 그대로 — 화면을 볼 일이면 `--rebuild`, 메모리 8 GB). MCP 서버는 `mcp_server/run_dev.sh`(:3002).
+  RA 리포의 추적 파일은 건드리지 않았다(추적 안 하는 넷 그대로 · `.run/` 은 RA 가 무시한다). 포털 nginx 라우트도 건드리지 않았다(`--portal` 안 줌).
+- **확인한 것** — `/api/health` ok · 위임 창구 `POST /api/auth/sso/verify` 가 404(비밀이 없어 꺼짐 — 계약대로) · 게이트웨이의 `reportarchive` 백엔드가
+  다음 재접속 틱에 붙는다.
+- **손으로 둔 심의 템플릿의 실제 꼴** — dev RA DB 의 `deliberation` v1 은 이름 「심의 보고서」 · 소유 `dev` · 블록 넷 `background`(라벨 「심의 주제」 ·
+  required) · `results`(「심화 논의(2R)」) · `recommendation`(「의사결정문」) · `minutes`(「회의록(참여·라운드)」), 모두 `rich_text` · layout 없음이다. L21-11 에
+  「라벨은 우리가 정했다」 고 적은 것을 고친다 — 형식 정의(`infra/ra/formats/deliberation.json`)를 이 템플릿과 글자까지 같게 맞췄다(포털 `18016612`).
+- **못 한 것** — 사람 자격이 드는 실호출(형식 등록 미리보기 · 보고서 저장 · 그림 칸 · 위임 머리). 이 세션에는 포털 PAT 가 없다(붙어 있던 hwax MCP 토큰은
+  만료). 토큰 값을 찾아 쓰지 않는다 — 사용자가 PAT 를 넣은 셸에서 아래 둘을 돌리면 된다.
+  `$PY infra/scripts/ra-register-format.py --owner-board dev`(미리보기 — 쓰지 않는다) · 챗에서 `/보고서` 한 번.
+
+## L21-15 포털의 계약 시험이 잡은 것(11-22)
+
+보고서 첨부 그림을 넣으며 에이전트 서버 `report_figures.py` 머리에 `import vision` 을 뒀는데, 포털 `tests/test_report_figures.py` 의 「포털이 그대로 받는다」
+시험이 그 파일을 **경로로 따로** 읽어(표준 라이브러리 + httpx 만 있는 환경) ModuleNotFoundError 로 붉어졌다. 에이전트 서버 전체 회귀(4,814 통과)로는 볼 수
+없었다 — 포털 전체 회귀가 잡았다. 첨부 그림이 있을 때만 늦게 들이게 고치고(`190c8f4`) 그 리포에도 「머리에서 이 리포의 모듈을 들이지 않는다」 시험을 뒀다.
+여러 리포에 걸친 변경은 **받는 쪽 리포의 전체 회귀까지** 돌려야 끝난 것이다.
