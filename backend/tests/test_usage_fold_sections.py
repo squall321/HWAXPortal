@@ -1,0 +1,238 @@
+# 이용 통계 M2 — 접어 둔 표에서 읽는 칸: 원천을 가로지른 쓴 사람 · MCP 도구 · MCP 심의 · RA 초안 · 정문 · 날마다 찍은 수 · 접기 상태(docs/ops-dashboard)
+#
+# 한 장면(원장 · 게이트웨이 감사 · 잡 원장 · 정문 로그)을 임시 폴더에 만들고 실제 접기로 접은 뒤 관리자 통계 한 판을 지어 본다. 계정은 example.com 만 쓴다.
+import json
+from datetime import date
+
+import pytest
+from tests.test_usage_fold import (
+    NOW,
+    TOKEN,
+    Remote,
+    _at,
+    _audit_line,
+    _box,
+    _conv,
+    _fold,
+    _folds,
+    _nginx_log,
+    _ngx,
+)
+
+A, B, C = "a@example.com", "b@example.com", "c@example.com"
+D17, D18, D19, D20 = (date(2026, 11, d) for d in (17, 18, 19, 20))
+
+
+def _iso(day: date, h: int, mi: int = 0, s: int = 0) -> str:
+    return f"{day.isoformat()}T{h:02d}:{mi:02d}:{s:02d}+09:00"
+
+
+@pytest.fixture()
+def scene(tmp_path):
+    """11-17 ~ 11-20(오늘 — 금요일 12:00)의 쓰임. A 는 로그인 · 챗 · 타일 · MCP · 정문, B 는 로그인 없이 MCP · 심의 · RA, C 는 심의만."""
+    box = _box(tmp_path)
+    box.user(A, affiliation="CAEG")
+    box.user(B, affiliation="LAB")
+    box.sql("audit", "INSERT INTO access_log (ts, email, event, service, uid, detail) VALUES (?, ?, ?, ?, ?, ?)",
+            [(int(_at(D17, 9)), A, "login", "portal", "uid-aaaa", "sso"), (int(_at(D18, 9)), A, "launch", "heax-hub", None, None)])
+    box.audit((int(_at(D18, 10)), A, "chat_start"), (int(_at(D18, 10, 5)), A, "chat_start"))
+    _conv(box, "c1", A, int(_at(D17, 10)))
+    _conv(box, "c2", A, int(_at(D18, 10)), "deliberation", "mcp")
+    box.sql("tokens", "INSERT INTO pat (jti, sub, email, name, aud, scopes, created, exp, revoked) VALUES ('p1', ?, ?, 'n', '[]', '[]', ?, ?, 0)",
+            [(A, A, int(_at(D17, 11)), int(_at(D17, 11)) + 86400 * 90)])
+    rem = Remote(tmp_path)
+    rem.audit.write_text(
+        _audit_line(_iso(D18, 11, 0, 0), "search_cards", "ai-data-hub", via="pat", caller=A, ms=20, chars=500)
+        + _audit_line(_iso(D18, 11, 0, 1), "search_cards", "ai-data-hub", via="pat", caller=A, ms=40, chars=200000)
+        + _audit_line(_iso(D18, 11, 0, 2), "search_cards", "ai-data-hub", via="pat", caller=A, ms=900)
+        + _audit_line(_iso(D18, 11, 0, 3), "search_cards", "ai-data-hub", via="pat", caller=A, ok=False, error="upstream: boom")
+        + _audit_line(_iso(D18, 11, 0, 4), "search_cards", "ai-data-hub", via="pat", caller=A, ms=0, note="cache-hit")
+        + _audit_line(_iso(D18, 11, 1, 0), "deliberate_status", "hwax-deliberation", via="pat", caller=A)
+        + _audit_line(_iso(D18, 11, 1, 1), "deliberate_status", "hwax-deliberation", via="pat", caller=A)
+        + _audit_line(_iso(D18, 11, 2, 0), "search_cards", "ai-data-hub", via="pat", caller=B, ms=30)
+        + _audit_line(_iso(D18, 11, 3, 0), "delete_report", "reportarchive", via="pat", caller=B, ok=False, error="read-only")
+        + _audit_line(_iso(D19, 9, 0, 0), "create_report_draft", "reportarchive", via="chat", caller=B)
+        + _audit_line(_iso(D19, 9, 0, 1), "create_report_draft", "reportarchive", via="gw-token")
+        + _audit_line(_iso(D19, 9, 0, 2), "create_report_draft", "reportarchive", via="chat", caller=A, ok=False, error="upstream: 500")
+        + _audit_line(_iso(D19, 9, 1, 0), "POST /mcp", None, ok=False, ms=0, error="unauthorized: expired")
+        + _audit_line(_iso(D19, 9, 1, 1), "GET /mcp", None, ok=False, ms=0, error="unauthorized: expired"), encoding="utf-8")
+    rem.jobs += [
+        {"id": "j1", "job": "default", "status": "done", "started_at": _at(D19, 13), "finished_at": _at(D19, 13, 30), "user": B, "owner_aff": "LAB",
+         "seats": [{"key": "x"}, {"key": "y"}, {"key": "z"}], "round": 2, "report_id": 41},
+        {"id": "j2", "job": "sim-plan", "status": "error", "started_at": _at(D19, 14), "finished_at": _at(D19, 14, 10), "user": C,
+         "seats": [{"key": "x"}], "round": 1}]
+    _nginx_log(box, _ngx(_at(D19, 15), "/apps/step_forge/", "uid-aaaa"), _ngx(_at(D19, 15, 1), "/apps/step_forge/api", "uid-aaaa"),
+               _ngx(_at(D19, 15, 2), "/robots.txt"), _ngx(_at(D20, 9), "/agent/chat", "uid-aaaa"))
+    out = _fold(box, handler=rem)
+    assert not [v for v in out.values() if isinstance(v, dict)], out
+    return box, rem
+
+
+def _sec(box, name, days=7, **kw):
+    return box.build(days=days, now=NOW, **kw)["sections"][name]
+
+
+def _by(sec, key):
+    return {r[key]: r for r in sec["rows"]}
+
+
+# ── 접기 전 ────────────────────────────────────────────────────────────────────────────────────────────────
+def test_접어_둔_표가_없으면_그_칸들은_pending_이고_M1_칸은_그대로_낸다(tmp_path):
+    box = _box(tmp_path)
+    box.access((int(_at(D19, 9)), A, "login", "portal", "local"))
+    sec = box.build(days=7, now=NOW)["sections"]
+    for name in ("fold_status", "active_daily", "active_weekly", "active_monthly", "mcp_daily", "mcp_via", "mcp_apps", "mcp_tools", "mcp_auth",
+                 "mcp_personal_weekly", "delib_jobs", "ra_drafts", "front_door", "snapshots", "conversations_kept"):
+        assert sec[name]["pending"] is True and sec[name]["rows"] == [] and "접은 적이 없다" in sec[name]["note"] and not sec[name].get("error"), name
+    assert sec["logins_daily"]["totals"]["logins"] == 1
+
+
+# ── 쓴 사람 ────────────────────────────────────────────────────────────────────────────────────────────────
+def test_쓴_사람은_원천을_가로질러_서로_다른_계정이다(scene):
+    box, _ = scene
+    sec = _sec(box, "active_daily")
+    rows = _by(sec, "day")
+    assert [rows[d.isoformat()]["people"] for d in (date(2026, 11, 16), D17, D18, D19, D20)] == [None, 1, 2, 3, 1], \
+        "접어 둔 첫 날(11-17) 전은 기록 전(null) — B 는 로그인한 적이 없어도 MCP 로 쓴 날에 든다"
+    d18 = rows["2026-11-18"]
+    assert (d18["login"], d18["chat"], d18["tile"], d18["mcp"], d18["delib"], d18["nginx"]) == (0, 1, 1, 2, 0, 0)
+    d19 = rows["2026-11-19"]
+    assert (d19["mcp"], d19["delib"], d19["nginx"]) == (2, 2, 1)
+    assert sec["totals"] == {"people": 3, "login": 1, "chat": 1, "tile": 1, "mcp": 2, "delib": 2, "nginx": 1} and sec["first_day"] == "2026-11-17"
+    assert _sec(box, "logins_daily")["totals"]["accounts"] == 1, "로그인 기준(M1)은 A 하나뿐이다 — 그 차이가 이 칸의 까닭이다"
+    assert "12:00 에 접은 데까지" in sec["note"]
+
+
+def test_주_달마다_쓴_사람은_날을_건너_한_번만_세고_기록_전은_null_이다(scene):
+    box, _ = scene
+    weeks = _sec(box, "active_weekly", days=14)["rows"]
+    assert weeks == [{"week": "2026-11-02", "people": None, "partial": False}, {"week": "2026-11-09", "people": None, "partial": False},
+                     {"week": "2026-11-16", "people": 3, "partial": True}], "A 는 나흘 썼어도 그 주에 한 번 — 아직 안 끝난 주라 partial"
+    assert _sec(box, "active_monthly", days=40)["rows"] == [{"month": "2026-10", "people": None, "partial": False},
+                                                           {"month": "2026-11", "people": 3, "partial": True}]
+
+
+def test_사람_줄의_뺄_계정은_다시_접지_않아도_읽을_때_빠진다(scene):
+    box, _ = scene
+    box.s = box.s.model_copy(update={"usage_exclude_accounts": B})
+    sec = _sec(box, "active_daily")
+    assert sec["totals"]["people"] == 2 and _by(sec, "day")["2026-11-18"]["people"] == 1
+    assert _sec(box, "mcp_daily")["totals"]["people"] == 1 and _sec(box, "ra_drafts")["totals"]["people"] == 0
+    status = _by(_sec(box, "fold_status"), "source")
+    assert status["gateway"]["other_list_days"] == 3 and status["portal"]["other_list_days"] == 4, "어느 목록으로 접었는지 화면이 안다"
+    assert "접을 때의 목록" in box.build(days=7, now=NOW)["excluded"]["note"]
+
+
+def test_응답에는_사람의_이메일이_실리지_않는다(scene):
+    """사람별 줄은 표(usage_actor_daily)에만 둔다 — 화면에 내는 것은 서로 다른 계정의 수다(사람별 표를 둘지는 사용자 결정)."""
+    box, _ = scene
+    blob = json.dumps(box.build(days=30, now=NOW), ensure_ascii=False)
+    for leak in (A, B, C, "uid-aaaa", TOKEN, "gateway.test"):
+        assert leak not in blob, leak
+
+
+# ── MCP 도구 ───────────────────────────────────────────────────────────────────────────────────────────────
+def test_MCP_호출은_날마다_상태_묻기를_따로_세고_기록_전은_null_이다(scene):
+    box, _ = scene
+    sec = _sec(box, "mcp_daily")
+    rows = _by(sec, "day")
+    assert rows["2026-11-17"]["calls"] is None, "감사 원장의 첫 날(11-18) 전"
+    d18 = rows["2026-11-18"]
+    assert (d18["calls"], d18["status_calls"], d18["errors"], d18["people"]) == (7, 2, 2, 2)
+    assert (rows["2026-11-19"]["calls"], rows["2026-11-19"]["errors"], rows["2026-11-20"]["calls"]) == (3, 1, 0)
+    assert sec["totals"] == {"calls": 10, "status_calls": 2, "errors_app": 2, "errors_gate": 1, "cache": 1, "big": 1, "people": 2, "anon_calls": 1}
+    assert sec["first_day"] == "2026-11-18" and "상태 묻기" in sec["note"]
+
+
+def test_MCP_호출을_자격_앱_도구로_가르고_지연은_어림이다(scene):
+    box, _ = scene
+    via = _by(_sec(box, "mcp_via"), "via")
+    assert (via["pat"]["calls"], via["pat"]["status_calls"], via["pat"]["people"], via["pat"]["errors_app"], via["pat"]["errors_gate"]) == (7, 2, 2, 1, 1)
+    assert (via["chat"]["calls"], via["chat"]["people"], via["gw-token"]["anon_calls"], via["gw-token"]["people"]) == (2, 2, 1, 0)
+    assert _sec(box, "mcp_via")["via_since"] == "2026-11-18" and "2026-11-18 부터" in _sec(box, "mcp_via")["note"]
+    apps = _sec(box, "mcp_apps")
+    hub = _by(apps, "app")["ai-data-hub"]
+    assert (hub["calls"], hub["errors_app"], hub["errors_gate"], hub["cache"], hub["big"], hub["tools"], hub["error_rate"]) == (6, 1, 0, 1, 1, 1, 0.167)
+    assert 25 < hub["ms_p50"] <= 50 and 500 < hub["ms_p95"] <= 1000 and apps["approx"] is True, hub
+    assert [r["app"] for r in apps["rows"]][0] == "ai-data-hub", "많이 불린 앱이 먼저"
+    tools = _sec(box, "mcp_tools")
+    first = tools["rows"][0]
+    assert (first["app"], first["tool"], first["calls"], first["status"]) == ("ai-data-hub", "search_cards", 6, False)
+    status = next(r for r in tools["rows"] if r["tool"] == "deliberate_status")
+    assert status["status"] is True and status["calls"] == 2 and tools["total_tools"] == 4
+    assert _sec(box, "mcp_auth")["rows"] == [{"reason": "expired", "n": 2}]
+
+
+def test_개인_Claude_를_쓴_사람은_주마다_센다(scene):
+    box, _ = scene
+    rows = _sec(box, "mcp_personal_weekly", days=14)["rows"]
+    assert rows[-1] == {"week": "2026-11-16", "people": 2, "partial": True} and rows[0]["people"] is None
+
+
+# ── 심의 · RA ──────────────────────────────────────────────────────────────────────────────────────────────
+def test_MCP_심의_잡은_종류마다_세고_웹_심의가_빠진다고_말한다(scene):
+    box, _ = scene
+    sec = _sec(box, "delib_jobs")
+    rows = _by(sec, "kind")
+    assert rows["default"] == {"kind": "default", "n": 1, "done": 1, "states": {"done": 1}, "external": 0, "with_report": 1, "seats_avg": 3.0,
+                               "rounds_avg": 2.0, "minutes_avg": 30.0}
+    assert (rows["sim-plan"]["done"], rows["sim-plan"]["states"], rows["sim-plan"]["minutes_avg"]) == (0, {"error": 1}, 10.0)
+    assert sec["totals"] == {"jobs": 2, "with_report": 1, "people": 2, "anon_jobs": 0}
+    assert sec["daily"][-3:] == [None, 2, 0] and sec["first_day"] == "2026-11-19", "잡 원장의 첫 날(11-19) 전은 기록 전이다"
+    assert "웹 챗에서 연 심의" in sec["note"]
+
+
+def test_RA_초안은_성공한_호출만_세고_이름_없는_초안을_따로_말한다(scene):
+    box, _ = scene
+    box.sql("procedures", "INSERT INTO routine_runs (id, owner_sub, routine_id, version_id, version_no, title, inputs_json, plan_json, executor, state,"
+                          " started_at, deadline, ra_report_id) VALUES (?, ?, 'x', 'v', 1, 't', '{}', '{}', 'chat', 'done', ?, ?, ?)",
+            [("r1", A, int(_at(D19, 9)), int(_at(D19, 10)), "55"), ("r2", A, int(_at(D19, 9)), int(_at(D19, 10)), None)])
+    sec = _sec(box, "ra_drafts")
+    assert {r["day"]: r["n"] for r in sec["rows"] if r["n"]} == {"2026-11-19": 2}, "실패한 호출은 초안이 아니다"
+    assert sec["by_via"] == [{"via": "chat", "n": 1}, {"via": "gw-token", "n": 1}]
+    assert sec["totals"] == {"drafts": 2, "people": 1, "named": 1, "unnamed": 1, "delib_reports": 1}
+    assert _sec(box, "routine_runs")["ra_drafts"] == 1
+
+
+# ── 정문 · 찍어 둔 수 ──────────────────────────────────────────────────────────────────────────────────────
+def test_정문_요청은_서비스마다_세고_허브_앱이_보인다(scene):
+    box, _ = scene
+    sec = _sec(box, "front_door", labels={"service": {"heax-hub": "HEAX 허브"}})
+    rows = _by(sec, "service")
+    app = rows["apps/step_forge"]
+    assert (app["requests"], app["people_max"], app["days"], app["daily"][-2:]) == (2, 1, 1, [2, 0])
+    assert rows["portal"]["daily"][-1] == 1 and sec["totals"] == {"requests": 3, "unattributed": 1, "people": 1}
+    assert sec["first_day"] == "2026-11-19" and app["daily"][0] is None, "정문 로그가 덮지 않는 날은 기록 전이다"
+
+
+def test_날마다_찍은_수는_찍은_날만_있고_닫힌_날의_낸_PAT_은_지워져도_남는다(scene):
+    box, rem = scene
+    rows = _by(_sec(box, "snapshots"), "day")
+    assert rows["2026-11-19"]["pats_live"] is None, "찍지 못한 날 — 지난 날의 상태는 지어내지 않는다"
+    today = rows["2026-11-20"]
+    assert (today["pats_live"], today["pats_personal"], today["accounts_active"], today["connections"]) == (1, 1, 2, 0)
+    assert (rows["2026-11-17"]["pats_issued"], rows["2026-11-18"]["pats_issued"], rows["2026-11-16"]["pats_issued"]) == (1, 0, None)
+    box.sql("tokens", "DELETE FROM pat WHERE jti = ?", [("p1",)])            # 만료 PAT 은 원장에서 지워진다
+    box.sql("conv", "DELETE FROM conversations WHERE id = ?", [("c1",)])     # 주인이 대화를 지웠다
+    _fold(box, _at(date(2026, 11, 21)), rem)
+    assert _by(_sec(box, "snapshots"), "day")["2026-11-17"]["pats_issued"] == 1, "11-17 은 11-20 에 닫혔다"
+    kept = {(r["kind"], r["source"]): r["n"] for r in _sec(box, "conversations_kept")["rows"]}
+    assert kept == {("chat", "web"): 1, ("deliberation", "mcp"): 1}
+    assert _sec(box, "conversations")["totals"] == [{"kind": "deliberation", "source": "mcp", "n": 1, "owners": 1}], "지금 남은 대화(M1)에는 없다"
+
+
+# ── 접기 상태 ──────────────────────────────────────────────────────────────────────────────────────────────
+def test_접기_상태는_원천마다_범위와_실패_까닭을_낸다(scene):
+    box, rem = scene
+    rows = _by(_sec(box, "fold_status"), "source")
+    assert list(rows) == ["portal", "snapshot", "nginx", "gateway", "agent"]
+    assert (rows["portal"]["first_day"], rows["portal"]["last_day"], rows["portal"]["closed_through"], rows["portal"]["error"]) == \
+        ("2026-11-17", "2026-11-20", "2026-11-17", None)
+    assert (rows["nginx"]["first_day"], rows["gateway"]["first_day"], rows["agent"]["first_day"]) == ("2026-11-19", "2026-11-18", "2026-11-19")
+    assert rows["gateway"]["attempt_at"] == int(NOW) and rows["gateway"]["other_list_days"] == 0
+    rem.status["gateway.test"] = 404
+    _fold(box, NOW + 3600, rem)
+    gw = _by(_sec(box, "fold_status"), "source")["gateway"]
+    assert "판이 낡았다" in gw["error"] and gw["last_day"] == "2026-11-20", "앞서 접은 데까지는 그대로 보인다"
+    assert "마지막 접기가 실패했다" in _sec(box, "mcp_daily")["note"] and _sec(box, "mcp_daily")["totals"]["calls"] == 10
+    assert "판이 낡았다" in _folds(box, "gateway")["*"][2]

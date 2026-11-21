@@ -61,6 +61,24 @@ def test_알림_원장은_격리된_대화_저장소_파일_안의_표다():
             assert root not in got.parents, f"알림 원장이 실 저장소를 열었다 — {got}"
 
 
+def test_이용_통계의_접는_표는_격리된_감사_원장_파일_안이고_시험_기동은_접기를_띄우지_않는다():
+    """날마다 접는 표(docs/ops-dashboard M2)는 새 경로 설정 없이 감사 원장 파일에 표를 더한다(app/usage_fold.py 머리) — 접는 쪽의 제 연결이 연 파일이
+    감사 원장과 같고 이 박스의 실 저장소가 아님을 본다. 접기 작업은 conftest 가 끈다(USAGE_FOLD_S=0) — 켜진 채 포털을 띄우면 시험마다 이 박스에 떠 있는
+    게이트웨이 · 에이전트 서버를 backend/.env 의 공유 비밀로 부르고 정문 로그를 읽는다."""
+    from contextlib import closing
+
+    from app import usage_fold
+    from app.config import get_settings
+    with TestClient(app):
+        st = app.state
+        assert st.usage_fold is None, "시험 기동이 이용 통계 접기를 띄웠다 — conftest 의 USAGE_FOLD_S=0 이 빠졌다"
+        with closing(usage_fold.connect(get_settings())) as conn:
+            got = _db_file(conn)
+        assert got == _db_file(st.agent_audit._conn), got
+        for root in REAL_ROOTS:
+            assert root not in got.parents, f"접는 표가 실 저장소를 열었다 — {got}"
+
+
 # ── LLM/GPU 현황 수집기(docs/ops-dashboard) — 포털 밖의 호스트 서비스지만 시험이 그 모듈을 부른다 ───────────────────────────────────
 def test_수집기가_여는_저장소와_읽는_설정은_이_박스의_실_자리가_아니다():
     """인자 없이(= 시험이 기본값을 탈 때) 수집기가 여는 sqlite 와 읽는 infra/.env — conftest 가 둘 다 임시 자리로 돌린다. 없으면 수집기 시험

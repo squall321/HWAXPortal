@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 
 from app import changelog as changelog_routes
 from app import setup_requests as setup_routes
+from app import usage_fold     # 이용 통계의 날마다 접기(docs/ops-dashboard M2 — 손잡이 USAGE_FOLD_S, 0 이면 띄우지 않는다)
 from app import routes_health
 from app.access import routes as access_routes
 from app.access.policy import AccessPolicy, sso_default_problems
@@ -203,10 +204,18 @@ async def lifespan(app: FastAPI):
         _log.info("sqlite %d개를 0600 으로 맞췄다", len(_tight))
     # 심의 묶음 끝남 알림 — DELIB_BATCH_NOTICE_S 초마다 에이전트 서버의 끝난 묶음 창구를 묻는 백그라운드 작업(0 이면 띄우지 않는다). 요청을 막지 않는다.
     app.state.notice_poller = notice_poller.start(app, settings)
+    # 이용 통계의 날마다 접기 — 기동 30초 뒤 한 번, 그 뒤 USAGE_FOLD_S 초마다 도는 백그라운드 작업(0 이면 띄우지 않는다). 제 연결로 쓰고 요청을 막지 않는다.
+    # 띄우지 못해도 포털은 뜬다(관리자 이용 통계의 접는 칸만 채워지지 않는다).
+    app.state.usage_fold = None
+    try:
+        app.state.usage_fold = usage_fold.start(app, settings)
+    except Exception:  # noqa: BLE001
+        _log.error("이용 통계 접기를 띄우지 못했다 — 포털은 계속 뜬다", exc_info=True)
 
     yield
     # Shutdown: close the pooled client + the audit sqlite connection.
     await notice_poller.stop(app.state.notice_poller)     # 원장을 닫기 전에 — 도는 틱이 닫힌 연결에 쓰지 않게
+    await usage_fold.stop(app.state.usage_fold)           # 도는 접기를 접는다(제 연결이라 원장 닫기와 얽히지 않는다)
     await agent_panel.close_all()          # 열린 패널의 게이트웨이 MCP 세션 — 게이트웨이는 세션 유휴 만료가 없다
     await app.state.agent_client.aclose()
     await app.state.card_review_client.aclose()
