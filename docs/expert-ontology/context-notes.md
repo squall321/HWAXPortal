@@ -91,7 +91,7 @@ mech 83/4,509 — 2 ~ 3%). 도메인을 가르지 못한다. dev 에서 실제�
 신호 셈 0.2초 · 프로필 2.1초. 올린 뒤 dev 본 DB 에서도 박스 명령으로 지었다 — 재기동이 이행 0033 을 올렸고 `onto.sh build` 가 같은 254,668줄을 11.8초에, 두 번째는 건너뜀. 질문 사전의 캐시는 잇기마다 새로 뽑는 `bind_id` 로 낡음을 본다 — 수정 시각은 초 단위라 같은 초의 두 번을 가르지 못했다(시험이 잡았다).
 
 **EO-14 지은 것 · 올린 것(11-21).** AIDataHub `8c9506c`(이행 0033 · `onto_svc` · `onto.sh` · `recommend_agents` 의 `onto` — 시험 13 · 전체 787 통과, 실패 35 는 main 과 같은 목록) ·
-에이전트 서버 `f5b5dd8`(`SEAT_ONTO` — 시험 8 · 전체 4,786 통과) · 포털 `6a7b367c`(`card-entity-bind.py` · `persona-domains-build.py` — 시험 16). AIDataHub 의 본 venv 에는
+에이전트 서버 `f5b5dd8` · `cf22658`(`SEAT_ONTO` — 시험 9 · 전체 4,787 통과. 뒤 커밋은 켰는데 도구가 인자를 몰라 넘기지 못한 때를 로그 `[seat-onto]` 와 `/health seat_onto` 에 드러낸다 — 조용히 꺼진 채 도는 일을 막는다) · 포털 `6a7b367c`(`card-entity-bind.py` · `persona-domains-build.py` — 시험 16 · 전체 4,678 통과, 실패 셋은 이 가지와 무관 — `test_HA29_StepForge_…` 는 main 에서도 붉고(StepForge 새 도구가 운영자 목록에 아직 없다), ste doctor · tlscert 둘은 작업 트리에서만 붉은 알려진 것). AIDataHub 의 본 venv 에는
 `aiosqlite` 가 없어 SQLite 시험이 건너뛰어진다 — 임시 폴더에 깔아 `PYTHONPATH` 로 붙여 돌렸다(그 리포 docs/embedder-bge-m3.md 의 길). 재지 못한 것 — 살아 있는 스택에서
 게이트웨이를 거친 `recommend_agents(onto=…)` 한 번(dev 에는 허브가 없어 신호가 늘 0 이고, 이 세션의 게이트웨이 토큰이 만료돼 있었다) · 진짜 SP 의 `objects_list` ·
 `objects_resolve_many` 답(탐침과 같은 가짜 — SP 스키마를 흉내 낸 것)으로 지은 사전.

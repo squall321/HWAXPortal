@@ -35,11 +35,11 @@
 - [x] AIDataHub — `recommend_agents` 의 `onto` 인자(off 면 응답이 그대로) · MCP 창구
 - [x] AIDataHub — 시험 13(뽑기 · 잇기 · 프로필 · 신호 · 추천 셋 · 명령) · 전체 787 통과(실패 35 는 main 과 같은 목록)
 - [x] dev PostgreSQL 실데이터 — 임시 스키마에서 짓기 · 잇기 · 신호 · 프로필(EO-13)
-- [x] 에이전트 서버 — `SEAT_ONTO`(기본 끔) · 도구가 인자를 알 때만 · 리스크 심사 제외 · 그림자 줄 · 시험 8 · 전체 4,786 통과 — `f5b5dd8`
+- [x] 에이전트 서버 — `SEAT_ONTO`(기본 끔) · 도구가 인자를 알 때만 · 리스크 심사 제외 · 그림자 줄 · 못 넘긴 까닭을 로그 · `/health seat_onto` 에 · 시험 9 · 전체 4,787 통과 — `f5b5dd8` · `cf22658`
 - [x] 포털 — `card-entity-bind.py`(허브 읽기 둘 · exact 만 · 사전 파일 0600 · `onto.sh bind`) · 시험 11(가짜 허브 · 가짜 AIDataHub 명령) — `6a7b367c`
 - [x] 포털 — `persona-domains-build.py`(박스 덧씌우기에만) · 시험 5. 추적 어휘표에는 줄을 더하지 않았다(EO-10)
 - [x] cae00 절차 [server-setup.md](server-setup.md) · 박스 훅 보기 · 받은 편지함 `../cae00-inbox/2026-11-21.md` · 업데이트 이력
-- [x] 올림(가지 병합 `--no-ff`) — AIDataHub main `85c3f2f` · 에이전트 서버 · 포털
+- [x] 올림(가지 병합 `--no-ff`) — AIDataHub main `85c3f2f` · 에이전트 서버 main `804f6a9` · 포털
 - [x] dev — AIDataHub 재기동(이행 0033) · `onto.sh build` 254,668줄 11.8초 · 두 번째 건너뜀 · `persona-domains-build.py` 셈(줄 둘 — 적지 않았다)
 - [ ] dev 에이전트 서버 재기동은 하지 않았다 — 스위치가 기본 끔이라 다음 재기동 때 그대로 들어온다
 - [ ] cae00(사람) — 받기 · build · `--dry-run` · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`(server-setup 1 ~ 6절)
