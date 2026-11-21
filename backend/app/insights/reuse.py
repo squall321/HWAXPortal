@@ -66,15 +66,20 @@ def layable_scope(tokens: list, viewer: C.Viewer, audience: str) -> bool:
     return bool(toks) and all(t in allowed for t in toks)
 
 
-def pick(rows: list[dict], *, viewer: C.Viewer, round_code: str | None, audience: str, room: int = LAY_MAX) -> tuple[list[dict], dict]:
+def pick(rows: list[dict], *, viewer: C.Viewer, round_code: str | None, audience: str, room: int = LAY_MAX,
+         skip_source: str | None = None) -> tuple[list[dict], dict]:
     """(깔 카드들 — 최근 것부터, 수). rows 는 그 과제(옛 key 포함)의 원장 행이다. 읽는 사람이 관리자가 아니라고 보고 거른 뒤에 센다 — 보이지 않는
     카드는 수에도 없다. 수 — laid · other_round(다른 차수) · unknown_round(차수 모름 칸) · no_round(이 심의에 차수가 없어 깔지 않은 것) ·
-    out_of_scope(같은 칸이지만 초안 · 주인만 · 플랫폼 범위 · 산출물 독자 밖) · over(같은 칸이고 깔 수 있지만 상한 밖)."""
+    out_of_scope(같은 칸이지만 초안 · 주인만 · 플랫폼 범위 · 산출물 독자 밖) · over(같은 칸이고 깔 수 있지만 상한 밖). skip_source 는 이 심의의
+    대화 id 다 — 같은 대화의 앞 회차가 낳은 웹 카드는 깔지도 세지도 않는다(이어하기가 앞 결정문을 요약으로 이미 넘긴다 — 제 결론을 앞선
+    인사이트로 되읽지 않게)."""
     v = dataclasses.replace(viewer, admin=False)
     n = dict.fromkeys(("laid", "other_round", "unknown_round", "no_round", "out_of_scope", "over"), 0)
     out: list[dict] = []
     for r in sorted(rows, key=lambda x: (-int(x.get("created_at") or 0), str(x.get("id")))):
         if r.get("status") == "waiting" or not C.visible(r, v)[0]:
+            continue
+        if skip_source and r.get("path") == "web" and r.get("source_id") == skip_source:
             continue
         rnd = r.get("round") if r.get("round") in C.STAGES else None
         if round_code is None:
@@ -166,7 +171,8 @@ def subject_key(viewer: C.Viewer | None, pat: str | None, opts: dict) -> str:
     return key
 
 
-async def lay(*, store, settings, principal, viewer: C.Viewer, pat: str, opts: dict, tasks: set, ra_workspace) -> Laid | None:
+async def lay(*, store, settings, principal, viewer: C.Viewer, pat: str, opts: dict, tasks: set, ra_workspace,
+              conversation_id: str | None = None) -> Laid | None:
     """웹 심의 시작의 깔기 — 깔 것 · 알릴 것이 없으면 None(요청은 종전 그대로다). opts 는 delib_opts 를 옮긴 사전(None 인 칸은 빠진 것), tasks 는
     그 사람에게 보이는 카드가 있는 과제 key 들(cards.visible_tasks — 비면 부르지 않는다), ra_workspace 는 그 사람의 RA 작업 공간 slug 를 읽는
     함수다(확인된 주제에 볼 수 있는 카드가 있을 때만 부른다). subject_key 가 참인 요청에만 부른다."""
@@ -187,7 +193,7 @@ async def lay(*, store, settings, principal, viewer: C.Viewer, pat: str, opts: d
     audience = output_audience(save_report=opts.get("save_report"), append_to_report_id=opts.get("append_to_report_id"),
                                ra_sso=bool(getattr(settings, "ra_sso_secret", "")), ra_workspace=await asyncio.to_thread(ra_workspace))
     room = min(LAY_MAX, EVID_ITEMS - len(opts.get("evidence") or []))
-    picked, n = pick(rows, viewer=viewer, round_code=round_code, audience=audience, room=room)
+    picked, n = pick(rows, viewer=viewer, round_code=round_code, audience=audience, room=room, skip_source=conversation_id)
     if not any(n.values()):
         return None
     stale: dict = {}

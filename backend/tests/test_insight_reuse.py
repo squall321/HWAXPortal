@@ -63,6 +63,14 @@ def test_같은_칸의_공유_카드만_깔고_나머지는_센다():
     assert got == [] and n["out_of_scope"] == 1, "범위 토큰이 어떻든 확인 · 반박 상태가 아닌 카드는 깔지 않는다"
 
 
+def test_이_대화의_앞_회차가_낳은_카드는_깔지도_세지도_않는다():
+    """이어하기는 앞 회차의 결정문을 요약으로 이미 넘긴다 — 같은 대화의 카드를 '앞선 인사이트' 로 또 깔면 제 결론을 독립 근거처럼 되읽는다."""
+    rows = [_row(1), _row(2, source_id="conv-now"), _row(3, source_id="conv-now", path="mcp-job")]
+    got, n = X.pick(rows, viewer=_v(), round_code="dv1", audience="aff", skip_source="conv-now")
+    assert [r["id"] for r in got] == ["ins:web:c1:r:default", "ins:web:c3:r:default"] and n["laid"] == 2 and sum(n.values()) == 2, \
+        "웹 길의 같은 대화 카드만 뺀다(다른 길의 source_id 는 잡 · 워크플로 대화의 id 다)"
+
+
 def test_RA_작업_공간의_범위를_모르면_조직에_연_카드만_깐다():
     rows = [_row(1), _row(2, scope=("org",))]
     got, n = X.pick(rows, viewer=_v(), round_code="dv1", audience="org")
@@ -256,6 +264,18 @@ def test_같은_과제_차수의_확인된_카드를_근거로_깔고_그_사람
     with closing(sqlite3.connect(web.s.agent_audit_log_path)) as db:
         meta = json.loads(db.execute("SELECT meta FROM agent_audit WHERE event='insight_laid'").fetchall()[-1][0])
     assert meta["ids"] == [a] and meta["laid"] == 1 and meta["sp_task"] == KEY
+
+
+def test_이어하는_심의에는_그_대화의_앞_카드를_깔지_않는다(web):
+    web.login("me@example.com")
+    conv = web.c.post("/agent/conversations", json={"title": "t", "kind": "deliberation"}, headers=web.login("me@example.com")).json()["id"]
+    mine = web.confirmed("me@example.com", conv)            # 이 대화의 앞 회차가 낳은 카드(웹 길의 source_id 는 대화 id 다)
+    other = web.confirmed("peer@example.com", "a")
+    _personal()
+    got, text = web.go("me@example.com", {**_body(), "conversation_id": conv})
+    assert [json.loads(e["args"])["id"] for e in _ev(got)] == [other] and mine not in got.decode() and "1건을 근거로 실었다" in text
+    got, _t = web.go("me@example.com", _body())             # 다른(새) 대화에서는 그 카드도 앞선 인사이트다
+    assert sorted(json.loads(e["args"])["id"] for e in _ev(got)) == sorted([mine, other])
 
 
 def test_RA_작업_공간의_범위를_모르면_조직에_연_카드만_깔린다(web):

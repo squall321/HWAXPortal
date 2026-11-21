@@ -1075,7 +1075,8 @@ async def _relay_stream(
             try:
                 _laid = await asyncio.wait_for(_insight_reuse.lay(
                     store=insights["store"], settings=settings, principal=principal, viewer=insights["viewer"], pat=user_pat,
-                    opts=payload["delib_opts"], tasks=_tasks, ra_workspace=insights["ra_workspace"]), _insight_reuse.LAY_TIMEOUT_S)
+                    opts=payload["delib_opts"], tasks=_tasks, ra_workspace=insights["ra_workspace"],
+                    conversation_id=body.conversation_id), _insight_reuse.LAY_TIMEOUT_S)
             except Exception as exc:  # noqa: BLE001 — 기한 넘김(TimeoutError) 포함
                 logger.warning("과제 인사이트 — 앞선 인사이트를 깔지 못했다(%s) — 깔지 않고 심의를 연다 sub=%s", type(exc).__name__,
                                principal.subject, exc_info=not isinstance(exc, TimeoutError))
