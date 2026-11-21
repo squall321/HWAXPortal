@@ -574,9 +574,10 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 동시 상한은 **실행기의 기존 것**을 쓴다(두 곳에서 세면 어긋난다) · 기본 계획 모드
 - [x] 비교표에 **왜** 를 싣는다 — 첫 실패 단계·도구·오류 + 경고 코드(W-59)
 - [x] `predict_sed_batch` 는 쓰지 않는다 — 전부-아니면-전무 검증이라 건너뛰기가 안 되고 응답 모양이 다르다 (확인 10-17 — predict_sed_batch 를 쓰는 씨앗·실행기 0건 — 일괄 재생은 fan-out 새 실행 N개(W-57))
-- [ ] 펼치기(fan-out)를 두 번 보내면 같은 배치 id 로 실행이 두 벌 생긴다 — 기본은 계획 모드라 바깥 호출은 없지만 live 로 펼치면
+- [x] 펼치기(fan-out)를 두 번 보내면 같은 배치 id 로 실행이 두 벌 생긴다 — 기본은 계획 모드라 바깥 호출은 없지만 live 로 펼치면
       대상마다 두 번 돈다(W-110 '본 것' ③). 승인 · 재개 · 고르기 · 즉석 단계는 실행을 잡는 쓰기로 닫았다(W-110 · W-112) — 펼치기는
-      새 실행을 만드는 창구라 같은 잡기가 그대로 맞지 않는다. 사용자 11-01 — 이번에 고르지 않았다(열어 둔다)
+      새 실행을 만드는 창구라 같은 잡기가 그대로 맞지 않는다. 사용자 11-01 — 이번에 고르지 않았다(열어 둔다) — 11-22 닫음(사용자 결정
+      L21-10 ④): 원장이 (배치, 모드, 대상)을 유일 색인으로 잡는다 — 둘째는 409 이고 아무것도 만들거나 띄우지 않는다(W-113)
 
 ## S6 · 과제 키 레지스트리 (S5 뒤)
 
@@ -604,24 +605,32 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] 합격 기준 확인 — `predict_sed` 병렬 5회가 **각각 다른 인자에 짝지어지는지** 실제로 본다
 - [x] 초안 확정 화면 — 사람이 정할 자리마다 체크상자·이름 칸, 고른 것만 변수로(W-59)
 - [x] 결손 → 장부 **초안**(`POST /gaps/draft`) + 화면 버튼. ⚠ 파일은 포털이 안 쓴다(W-64)
-- [ ] 절차를 게이트웨이에 **실제 도구로 등록**(계약은 섰다 — 등록 경로는 사람 결정) — 사용자 결정 10-31 A14: (A) cae00 stats 로 §6-1 쓸모를 본 뒤 정한다(FU-D3 그대로) (10-31 정리)
-- [ ] 실행의 '챗으로 가져가기' — `conv_store.create_with_messages(kind='procedures')` — 사용자 결정 10-31 A15: (A) §6-1 쓸모 판정 뒤로 (10-31 정리)
+- [x] 절차를 게이트웨이에 **실제 도구로 등록**(계약은 섰다 — 등록 경로는 사람 결정) — 사용자 결정 10-31 A14: (A) cae00 stats 로 §6-1 쓸모를 본 뒤 정한다(FU-D3 그대로) (10-31 정리)
+      — 11-22 지음(사용자 결정 L21-5 ③ · L21-10 ① — 범용 도구 넷, 분석 루틴과 같은 꼴): 게이트웨이 `procedure_list` · `procedure_get` ·
+      `procedure_run_start`(기본 계획 모드) · `procedure_run_status`. 승인 도구는 없다 — 포털의 승인 · 고르기 · 재개는 세션만 받는다(W-116)
+- [x] 실행의 '챗으로 가져가기' — `conv_store.create_with_messages(kind='procedures')` — 사용자 결정 10-31 A15: (A) §6-1 쓸모 판정 뒤로 (10-31 정리)
+      — 11-22 지음(L21-5 ③): `POST /procedures-api/runs/{id}/chat`(주인만 · 세션) + 실행 상세 단추. 대화 종류는 `chat` 이다 — `procedures` 로
+      만들면 어느 탭에도 안 보인다(LO-D2 · A15 (B) 의 글 그대로, W-115)
 
 ## S8 · 리스크 패턴화 (가장 뒤)
 
 - [ ] **실행 → 심의 다리** — 실행 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
       `POST /agent/conversations` → `POST /agent/chat`(`'/심의 ' + 화두`, `delib_opts.evidence`,
       `chair_template: "risk-review"`). 새 엔드포인트 아님. 상한 40건·결과 150,000자·**인자 1,200자** — 사용자 결정 10-31 A16: (A) §6-1 쓸모 판정 뒤로 (10-31 정리)
+      — 11-22 지음(L21-5 ③ · L21-10 ②): **일반 심의로** 넘긴다 — 유형은 사람이 고르고 리스크 심사 계열은 서버가 422 로 거절한다. 화면은
+      실행 id 만 싣고(`delib_opts.procedure_run`) 근거는 챗 중계가 그 사람의 원장에서 짓는다(가림 유지 · 실패와 실행 여부 모름 표지, W-114)
 - [x] **심의 좌석 도구는 읽기 전용 판독 도구만** — `report_summary`·`report_worst_cases`·
       `report_directional`·`report_part_risk`·`report_findings`·`report_query`·`report_case`·
       `report_angle_stats`·`report_scatter`·`report_energy_flow`·`report_part_series`·
       `compare_reports`. `smarttwin_submit`·`slurm_submit_job`·`run_job`·`submit_lsdyna_job` 은 **뺀다** — 풀림 HWAXAgentServer deliberation.py:3511-3555 · :948-957(제출 계열 없음 · 판독 도구 앱 조건) — report_query · report_angle_stats 는 지정 도구 길(tests/test_delib_sealed.py:210) (10-31 정리)
 - [ ] `compare_reports`(리비전 비교)·`report_corpus`(반복 findings = 설계 규칙 후보)가 패턴화 재료 — 사용자 결정 10-31 A16: (A) 609줄(실행 → 심의 다리)을 따른다 — §6-1 쓸모 판정 뒤로 (10-31 정리)
+      — 11-22: 다리는 일반 심의로 섰다(W-114). 이 줄은 지을 것이 정해지지 않아 그대로 연다(패턴화를 어느 심의 유형 · 어느 원장으로 할지 — 사용자 결정)
 - [x] 선행 결손 — `delibTaxonomy.ts:5-12` `JobId` 에 `risk-review` — 걷음: 사용자 결정 10-31 A17 (A) — 8번째 카드 '리스크 심사' 를 두지 않는다, 입구는 `/risk` · 리스크 앱 하나(LO-D3 — 같은 일을 하는 길이 둘이면 원장에 안 쌓이는 단발 심사가 생긴다) (10-31 정리)
 - [x] 선행 결손 — `conversations.api.ts:6` `ConvKind` 에 `'risk-review'`(없으면 `ChatContext.tsx:457` 필터에서
       조용히 걸러진다) — 걷음: 대화 종류는 바꾸지 않는다(LO-D2 — 바꾸면 심의 탭에서 사라진다) · 포털 백엔드는 risk-review 를 받는다(backend/app/agent/routes.py:382-385) (10-31 정리)
 - [ ] 결과 → `risk_add_finding`(must-gate). `cites` 0건이면 `{"error":"cites_required"}`(isError=false — §5-6 ④).
       `claim` ≤2000자 — 사용자 결정 10-31 A16: (A) 609줄(실행 → 심의 다리)을 따른다 — §6-1 쓸모 판정 뒤로 (10-31 정리)
+      — 11-22: 그대로 연다 — 다리가 리스크 심사로 가지 않게 됐으므로(L21-10 ②) 일반 심의의 결과를 리스크 앱 등록부에 적을지는 따로 정한다(사용자 결정)
 - [x] `risk_taxonomy` 어휘를 **코드가 대조**한다 — `mechanism`·`domain` 은 서버 검증이 없어 오타가 그대로
       저장된다(422 는 `severity`·`judgement`·`direction` 뿐) — 사용자 결정 10-31 A18: (A) HWAXRisk 가 검사한다 — 422 + 허용값, unclassified 허용, dev 작업 진행 중(10-31) (10-31 정리) — 10-31 끝: 리스크 앱 `756e84d`(사람 finding 의 mechanism · domain 을 risk_taxonomy 로 대조 — 밖이면 422 + 허용값, unclassified 허용, MCP 도 같은 422) · 반대 검토 `560d386`(A18 전 코드 꼴 행을 별칭으로 잇는 일회 스크립트 `rekey_human_codes.py` — dry-run 기본) — 병합 `616ddcf`(7b1042d 판 올림 · Drive dist-20261031-091813Z · dev 교체), 리스크 앱 전체 3,548 통과, cae00 에서 그 스크립트 한 번(dry-run → `--apply`)은 사람 몫으로 리스크 앱 checklist 가 잇는다
 
