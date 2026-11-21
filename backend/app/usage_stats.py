@@ -11,7 +11,13 @@
   · 싣지 않는 것 — IP · UA · 연결 ID · 질의 · 메시지 글 · 감사 meta 의 글(상류 사유 · 예외) · 부서 · 부서 코드. 챗 오류는 정해진 까닭 코드만 센다.
   · 칸마다 {rows, note}. note 는 그 수를 읽는 법(기록 틈 · 로그인 기준 · PAT 삭제)을 말한다. 원장 하나를 못 읽어도 다른 칸은 낸다(error).
   · 원장의 첫 줄보다 앞선 날은 null 이다(기록 전 — 0 이 아니다).
+
+M2 — 날마다 접어 둔 표(usage_daily · usage_actor_daily — app/usage_fold.py 가 감사 원장 파일 안에 쓴다)에서 읽는 칸이 더해졌다. 원천을 가로지른
+쓴 사람(DAU · WAU · MAU) · MCP 도구 호출 · MCP 심의 잡 · RA 초안 · 정문 요청 · 날마다 찍은 PAT 수 · 접기 상태다. 접은 표가 아직 없으면 그 칸은
+pending 이고, 원천의 첫 날보다 앞선 날은 여기서도 null 이다. 사람 줄(usage_actor_daily)의 뺄 계정은 읽을 때 빼고, 합계 줄은 접을 때의 목록이다.
 """
+import hashlib
+import json
 import re
 import sqlite3
 import statistics
@@ -40,6 +46,16 @@ _PROC_OPEN = ("queued", "running", "gated")         # 절차 실행 — 아직 �
 _ROUTINE_OPEN = ("queued", "running", "waiting")    # 루틴 실행 — interrupted 는 원장이 끝난 시각을 적는 쪽이라 끝난 것으로 센다
 # 접속 원장의 기간 · 예열 거르기(audit.query_access 의 include_auto=False 와 같은 조건)
 _ACCESS = "ts >= ? AND ts < ? AND (detail IS NULL OR detail != 'primer')"
+# ── 접어 둔 표(M2) — 접는 쪽(app/usage_fold.py)과 함께 쓰는 값 ──
+FOLD_SOURCES = (("portal", "포털 원장(사람 줄 · 새 대화 · 낸 PAT)"), ("snapshot", "지금 상태(오늘의 PAT · 연결 · 계정 · 허가)"), ("nginx", "정문 접근 로그"),
+                ("gateway", "게이트웨이(MCP 도구 호출)"), ("agent", "에이전트 서버(MCP 심의 잡)"))
+FOLD_NOCOVER = "nocover"                    # 정문 로그가 그날을 덮지 않는다 — 접은 기록만 있고 값은 없다(기록 전과 같다)
+RA_DRAFT_TOOL = "create_report_draft"       # Report Archive 초안을 만드는 도구의 원래 이름 — 성공 호출이 RA 초안 하나다
+# 지연 칸의 위 끝(ms) — 게이트웨이 usage_rollup.LAT_LE_MS 와 같다(접는 쪽이 창구의 rules.lat_le_ms 와 견주고 시험이 형제 리포와 견준다)
+LAT_LE_MS = (5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 120000, 300000, 600000)
+TOP_TOOLS = 30
+_ACTOR_GROUPS = ("login", "chat", "tile", "mcp", "delib", "nginx")
+_FOLD_PENDING = ("아직 접은 적이 없다 — 포털이 뜬 뒤 첫 접기가 돌면 채워진다(기동 30초 뒤 · 그 뒤 USAGE_FOLD_S 초마다 — 0 이면 접지 않는다).")
 
 
 def _day(col: str) -> str:
@@ -105,11 +121,17 @@ class _Ctx:
     ex: list[str]
     labels: dict = field(default_factory=dict)
     refresh_h: int = 8
+    memo: dict = field(default_factory=dict)        # 접어 둔 표에서 읽은 줄 — 칸 여럿이 같은 줄을 쓴다(한 번만 읽는다)
 
 
 def excluded_accounts(settings: Settings) -> list[str]:
     raw = getattr(settings, "usage_exclude_accounts", "") or ""
     return sorted({a.strip().lower() for a in raw.split(",") if a.strip()})
+
+
+def fingerprint(ex: list[str]) -> str:
+    """뺄 계정 목록의 지문 — 접은 날이 어느 목록으로 셌는지(목록이 없으면 빈 글자)."""
+    return hashlib.sha1(",".join(sorted(ex)).encode("utf-8")).hexdigest()[:12] if ex else ""
 
 
 def _not_in(ex: list[str], *cols: str) -> tuple[str, list[str]]:
@@ -273,7 +295,7 @@ def _chat_daily(c: sqlite3.Connection, x: _Ctx) -> dict:
             for d in x.w.axis()]
     t = c.execute(f"SELECT {cols} {where}", args).fetchone()
     return {"rows": rows, "first_day": first, "totals": dict(zip(keys, (v or 0 for v in t), strict=True)),
-            "note": "포털 챗 턴이다(웹 · PAT — 시작 줄). 챗 · 심의 · 띵킹 · 루틴을 가르지 않는다(턴 종류를 적지 않는다 — M3). done 은 끝까지 "
+            "note": "포털 챗 턴이다(웹 · PAT — 시작 줄). 챗 · 심의 · 띵킹 · 루틴을 함께 센다(종류는 아래 '턴 종류' 칸). done 은 끝까지 "
                     "간 턴, errors 는 오류로 끝난 턴이다(동시 상한 거절은 시작 줄 없이 오류만 남는다). chatters 는 그날 턴을 시작한 서로 다른 "
                     "계정이다. " + (f"원장의 첫 줄({first}) 전 날은 null 이다." if first else "원장에 줄이 없다.")}
 
@@ -296,6 +318,39 @@ def _chat_errors(c: sqlite3.Connection, x: _Ctx) -> dict:
     return {"rows": out,
             "note": "챗 오류의 까닭 코드만 센다(상류 응답 본문 · 예외 글은 싣지 않는다). agent_<번호> 는 에이전트 서버가 그 HTTP 상태로 답한 턴, "
                     "unknown 은 까닭 칸이 없는 줄이다."}
+
+
+_TURN_KINDS = ("chat", "think", "delib", "routine")
+_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}")      # 중계가 싣는 모델 이름의 꼴(app/agent/routes.py _TURN_MODEL_OK)
+
+
+def _chat_kinds(c: sqlite3.Connection, x: _Ctx) -> dict:
+    q, a = _not_in(x.ex, "principal")
+    kinds: dict[str, int] = defaultdict(int)
+    models: dict[str, int] = defaultdict(int)
+    unknown, since = 0, None
+    for ts, meta in c.execute(f"SELECT ts, meta FROM agent_audit WHERE ts >= ? AND ts < ? AND event = 'chat_done'{q}",
+                              (x.w.since, x.w.until, *a)):
+        try:
+            m = json.loads(meta) if meta else None
+        except ValueError:
+            m = None
+        kind = m.get("kind") if isinstance(m, dict) else None
+        if kind not in _TURN_KINDS:
+            unknown += 1
+            continue
+        kinds[kind] += 1
+        since = ts if since is None or ts < since else since
+        seen = m.get("models")
+        for name in {n for n in (seen if isinstance(seen, list) else []) if isinstance(n, str) and _MODEL.fullmatch(n)}:
+            models[name] += 1
+    return {"rows": sorted(({"kind": k, "turns": n} for k, n in kinds.items()), key=lambda r: (-r["turns"], r["kind"])),
+            "models": sorted(({"model": k, "turns": n} for k, n in models.items()), key=lambda r: (-r["turns"], r["model"])),
+            "unknown": unknown, "since": kst_day(since) if since is not None else None,
+            "note": "끝까지 간 턴(chat_done)의 종류다 — chat 은 일반 챗, think 는 띵킹(전문가들이 각자 답함), delib 는 웹에서 연 심의, routine 은 "
+                    "분석 루틴이다. 보낸 요청이 아니라 그 턴에 실제로 흐른 사건으로 가른다. models 는 그 턴에 쓰인 모델마다의 턴 수다(한 턴이 "
+                    "모델 여럿을 쓰면 여럿에 든다). unknown 은 종류를 적기 전의 턴이다 — 이 판의 포털이 뜬 뒤 끝난 턴부터 적힌다"
+                    + (f"(기간 안의 첫 줄 {kst_day(since)})." if since is not None else ".") + " 오류로 끝난 턴은 들지 않는다."}
 
 
 def family_of(event: str) -> str:
@@ -364,9 +419,12 @@ def _routine_runs(c: sqlite3.Connection, x: _Ctx) -> dict:
     rows = c.execute(f"SELECT executor, state, COUNT(*) FROM routine_runs WHERE started_at >= ? AND started_at < ?{q} GROUP BY 1, 2",
                      (x.w.since, x.w.until, *a)).fetchall()
     out, overall = _pivot(rows, "executor", _ROUTINE_OPEN)
-    return {"rows": out, "completion": overall,
+    ra = c.execute(f"SELECT COUNT(*) FROM routine_runs WHERE started_at >= ? AND started_at < ? AND COALESCE(ra_report_id, '') != ''{q}",
+                   (x.w.since, x.w.until, *a)).fetchone()[0]
+    return {"rows": out, "completion": overall, "ra_drafts": ra,
             "note": "기간 안에 시작한 분석 루틴 실행이다(실행기 mcp · chat · web × 상태). completion 은 끝난 실행 가운데 done 의 몫이다 — "
-                    "도는 중 · 사람을 기다리는 실행은 빼고, interrupted(실행자가 사라짐)는 끝난 쪽으로 센다."}
+                    "도는 중 · 사람을 기다리는 실행은 빼고, interrupted(실행자가 사라짐)는 끝난 쪽으로 센다. ra_drafts 는 그 가운데 "
+                    "Report Archive 초안까지 간 실행이다."}
 
 
 # ── PAT(token_store) ──────────────────────────────────────────────────────────────────────────────────────
@@ -427,6 +485,477 @@ def _connections(c: sqlite3.Connection, x: _Ctx) -> dict:
                     "적힌다). 지운 연결은 빠진다."}
 
 
+# ── 접어 둔 표에서 읽는 칸(M2 — usage_daily · usage_actor_daily · usage_fold, 감사 원장 파일 안) ──────────────────────────────────────
+def _has_fold(c: sqlite3.Connection) -> bool:
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'usage_fold'").fetchone() is not None
+
+
+def _pending() -> dict:
+    return {"rows": [], "pending": True, "note": _FOLD_PENDING}
+
+
+def _fold_meta(c: sqlite3.Connection, x: _Ctx, source: str) -> dict:
+    """그 원천의 접은 범위 — first(값이 있는 첫 날) · last · 오늘을 접은 때 · 마지막 시도의 실패 까닭."""
+    key = ("meta", source)
+    if key not in x.memo:
+        first, last = c.execute("SELECT MIN(day), MAX(day) FROM usage_fold WHERE source = ? AND day != '*' AND note != ?",
+                                (source, FOLD_NOCOVER)).fetchone()
+        today = c.execute("SELECT folded_at FROM usage_fold WHERE source = ? AND day = ?", (source, x.w.last.isoformat())).fetchone()
+        star = c.execute("SELECT folded_at, note FROM usage_fold WHERE source = ? AND day = '*'", (source,)).fetchone()
+        x.memo[key] = {"first": first, "last": last, "today_at": today[0] if today else None,
+                       "attempt_at": star[0] if star else None, "error": (star[1] or None) if star else None}
+    return x.memo[key]
+
+
+def _fold_rows(c: sqlite3.Connection, x: _Ctx, source: str) -> list[tuple[str, str, dict, float]]:
+    """기간 안의 접은 줄 (날, 지표, 칸, 값) — 칸(JSON)은 같은 글자를 한 번만 푼다."""
+    key = ("rows", source)
+    if key not in x.memo:
+        seen: dict[str, dict] = {"": {}}
+        out = []
+        for day, metric, dims, value in c.execute("SELECT day, metric, dims, value FROM usage_daily WHERE source = ? AND day >= ? AND day <= ?",
+                                                  (source, x.w.first.isoformat(), x.w.last.isoformat())):
+            if dims not in seen:
+                try:
+                    d = json.loads(dims)
+                except ValueError:
+                    d = None
+                seen[dims] = d if isinstance(d, dict) else {}
+            out.append((day, metric, seen[dims], value))
+        x.memo[key] = out
+    return x.memo[key]
+
+
+def _actor_rows(c: sqlite3.Connection, x: _Ctx) -> list[tuple[str, str, str, int]]:
+    """기간 안의 사람 줄 (날, 이메일, 갈래, 수) — 뺄 계정은 여기서 뺀다."""
+    if "actors" not in x.memo:
+        q, a = _not_in(x.ex, "email")
+        x.memo["actors"] = c.execute(f"SELECT day, email, source, n FROM usage_actor_daily WHERE day >= ? AND day <= ?{q}",
+                                     (x.w.first.isoformat(), x.w.last.isoformat(), *a)).fetchall()
+    return x.memo["actors"]
+
+
+def _group_of(source: str) -> str:
+    return "mcp" if source == "ra" or source.startswith("mcp") else source
+
+
+def _series(axis: list[str], first: str | None, got: dict) -> list:
+    """날마다 값 — 원천의 첫 날보다 앞선 날은 None(기록 전), 그 뒤의 빈 날은 0."""
+    return [None if first is None or d < first else got.get(d, 0) for d in axis]
+
+
+def _today_note(meta: dict) -> str:
+    at = meta.get("today_at")
+    if not at:
+        return " 오늘은 아직 접지 않았다(값이 0 으로 보인다)."
+    return f" 오늘은 {datetime.fromtimestamp(at, KST):%H:%M} 에 접은 데까지다(아직 안 끝난 날)."
+
+
+def _stale(meta: dict) -> str:
+    return f" 마지막 접기가 실패했다 — {meta['error']}" if meta.get("error") else ""
+
+
+def _week_key(day: str) -> str:
+    d = date.fromisoformat(day)
+    return (d - timedelta(days=d.weekday())).isoformat()
+
+
+def quantile(counts: list, q: float) -> float | None:
+    """칸마다의 수 → 분위수(ms) 어림 — 칸 안 선형 보간(게이트웨이 usage_rollup.quantile 과 같은 셈). 표본이 없으면 None."""
+    total = sum(counts)
+    if total <= 0:
+        return None
+    target, seen = q * total, 0
+    for i, n in enumerate(counts):
+        if n <= 0:
+            continue
+        if seen + n >= target:
+            if i >= len(LAT_LE_MS):
+                return LAT_LE_MS[-1]
+            lo = LAT_LE_MS[i - 1] if i else 0
+            return round(lo + (LAT_LE_MS[i] - lo) * max(0.0, target - seen) / n, 1)
+        seen += n
+    return LAT_LE_MS[-1]
+
+
+def _fold_status(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    fp = fingerprint(x.ex)
+    rows = []
+    for source, label in FOLD_SOURCES:
+        m = _fold_meta(c, x, source)
+        days, other, closed = c.execute("SELECT COUNT(*), SUM(ex != ?), MAX(CASE WHEN final = 1 THEN day END) FROM usage_fold"
+                                        " WHERE source = ? AND day != '*' AND note != ?", (fp, source, FOLD_NOCOVER)).fetchone()
+        rows.append({"source": source, "label": label, "first_day": m["first"], "last_day": m["last"], "closed_through": closed,
+                     "days": days or 0, "other_list_days": other or 0, "attempt_at": m["attempt_at"], "error": m["error"]})
+    return {"rows": rows,
+            "note": "날마다 접어 둔 표의 상태다. 오늘은 돌 때마다 다시 접고, 끝난 날은 사흘 동안 날마다 한 번 다시 접은 뒤 닫는다(closed_through — 닫힌 "
+                    "날은 다시 세지 않아 그 뒤에 지워진 대화 · PAT · 정문 로그로 줄지 않는다). error 는 그 원천의 마지막 접기가 실패한 까닭이다 — "
+                    "그동안 그 칸은 앞서 접은 데까지만 보인다. other_list_days 는 지금과 다른 뺄 계정 목록으로 접은 날 수다(게이트웨이 · 에이전트 "
+                    "서버는 다음 접기에 다시 접고, 포털 · 정문 쪽 닫힌 날은 그대로 둔다)."}
+
+
+def _active(c: sqlite3.Connection, x: _Ctx) -> dict:
+    """원천을 가로지른 쓴 사람 — 날 · 주 · 달마다 서로 다른 이메일(한 번만 셈해 세 칸이 나눠 쓴다)."""
+    if "active" in x.memo:
+        return x.memo["active"]
+    first = c.execute("SELECT MIN(day) FROM usage_actor_daily").fetchone()[0]
+    day_all: dict[str, set] = defaultdict(set)
+    day_grp: dict[tuple[str, str], set] = defaultdict(set)
+    week: dict[str, set] = defaultdict(set)
+    month: dict[str, set] = defaultdict(set)
+    everyone: set = set()
+    grp_all: dict[str, set] = defaultdict(set)
+    for day, email, source, _n in _actor_rows(c, x):
+        g = _group_of(source)
+        day_all[day].add(email)
+        day_grp[(day, g)].add(email)
+        week[_week_key(day)].add(email)
+        month[day[:7]].add(email)
+        everyone.add(email)
+        grp_all[g].add(email)
+    x.memo["active"] = {"first": first, "day_all": day_all, "day_grp": day_grp, "week": week, "month": month,
+                        "everyone": everyone, "grp_all": grp_all}
+    return x.memo["active"]
+
+
+_ACTIVE_NOTE = ("원천을 가로지른 쓴 사람이다 — 그날 로그인했거나 · 챗 턴을 시작했거나 · 타일로 들어갔거나 · MCP 도구를 불렀거나(개인 Claude · 포털 챗 · "
+                "절차) · MCP 심의를 맡겼거나 · 정문을 지난 요청이 그 사람의 로그인 연결 ID 로 이어진 서로 다른 계정. 로그인 기준(위)과 달리 며칠씩 "
+                "다시 로그인하지 않는 사람도 든다. 정문 요청은 귀속이지 증명이 아니고(쿠키), 접기 전에 회전으로 사라진 로그의 날에는 빠진다. ")
+
+
+def _active_daily(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    a = _active(c, x)
+    rows = []
+    for d in x.w.axis():
+        if a["first"] is None or d < a["first"]:
+            rows.append({"day": d, "people": None, **dict.fromkeys(_ACTOR_GROUPS)})
+        else:
+            rows.append({"day": d, "people": len(a["day_all"].get(d, ())), **{g: len(a["day_grp"].get((d, g), ())) for g in _ACTOR_GROUPS}})
+    return {"rows": rows, "first_day": a["first"],
+            "totals": {"people": len(a["everyone"]), **{g: len(a["grp_all"].get(g, ())) for g in _ACTOR_GROUPS}},
+            "note": _ACTIVE_NOTE + "people 는 그날의 서로 다른 계정(DAU), 나머지 칸은 갈래마다의 계정이다(한 사람이 여러 갈래에 든다). "
+                    + (f"접어 둔 첫 날({a['first']}) 전은 null 이다." if a["first"] else "접어 둔 사람 줄이 아직 없다.")
+                    + _today_note(_fold_meta(c, x, "portal")) + " 사람 줄은 400일 뒤 지운다."}
+
+
+def _active_span(c: sqlite3.Connection, x: _Ctx, unit: str) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    a = _active(c, x)
+    got = {k: len(v) for k, v in a["week" if unit == "week" else "month"].items()}
+    rows = [{unit: b["key"], "people": b["value"], "partial": b["partial"]}
+            for b in _buckets(x.w.weeks() if unit == "week" else x.w.months(), x.w, a["first"], got)]
+    return {"rows": rows,
+            "note": f"같은 {'주(월요일에 시작)' if unit == 'week' else '달'}에 쓴 서로 다른 계정이다({'WAU' if unit == 'week' else 'MAU'} — 원천을 가로질러). "
+                    "기간 앞뒤에 걸치거나 아직 끝나지 않았거나 접어 둔 줄이 그 중간에 시작한 칸은 partial 이고, 그 전 칸은 null 이다."}
+
+
+def _mcp(c: sqlite3.Connection, x: _Ctx) -> dict:
+    """게이트웨이 줄을 한 번 모은다 — 날 · via · 앱 · 도구마다."""
+    if "mcp" in x.memo:
+        return x.memo["mcp"]
+    zero = lambda: {"calls": 0, "status_calls": 0, "err_app": 0, "err_gate": 0, "cache": 0, "big": 0, "chars": 0}  # noqa: E731
+    day: dict[str, dict] = defaultdict(zero)
+    via: dict[str, dict] = defaultdict(zero)
+    app: dict[str, dict] = defaultdict(zero)
+    tool: dict[tuple[str, str], dict] = defaultdict(zero)
+    lat_app: dict[str, list] = defaultdict(lambda: [0] * (len(LAT_LE_MS) + 1))
+    lat_tool: dict[tuple[str, str], list] = defaultdict(lambda: [0] * (len(LAT_LE_MS) + 1))
+    status_tools: set = set()
+    auth: dict[str, int] = defaultdict(int)
+    anon: dict[str, int] = defaultdict(int)
+    ra_day: dict[str, int] = defaultdict(int)
+    ra_via: dict[str, int] = defaultdict(int)
+    for d, metric, dims, v in _fold_rows(c, x, "gateway"):
+        n = int(v)
+        if metric == "auth_fail":
+            auth[str(dims.get("reason") or "other")] += n
+            continue
+        if metric == "anon_calls":
+            anon[str(dims.get("via") or "")] += n
+            continue
+        a, t, vi = str(dims.get("app") or ""), str(dims.get("tool") or ""), str(dims.get("via") or "")
+        if metric == "lat":
+            le = dims.get("le")
+            if isinstance(le, int) and 0 <= le <= len(LAT_LE_MS):
+                lat_app[a][le] += n
+                lat_tool[(a, t)][le] += n
+            continue
+        if metric not in ("calls", "err_app", "err_gate", "cache", "big", "chars"):
+            continue
+        k = metric
+        if metric == "calls" and dims.get("st"):
+            k = "status_calls"
+            status_tools.add((a, t))
+        for bucket in (day[d], via[vi], app[a], tool[(a, t)]):
+            bucket[k] += n
+        if t == RA_DRAFT_TOOL and metric in ("calls", "err_app", "err_gate"):
+            sign = 1 if metric == "calls" else -1           # 성공 호출 = 호출 − 실패
+            ra_day[d] += sign * n
+            ra_via[vi] += sign * n
+    people_day: dict[str, set] = defaultdict(set)
+    people_via: dict[str, set] = defaultdict(set)
+    people_ra: set = set()
+    ra_named = 0
+    everyone: set = set()
+    for d, email, source, n in _actor_rows(c, x):
+        if source == "ra":
+            people_ra.add(email)
+            ra_named += n
+        elif source.startswith("mcp"):
+            people_day[d].add(email)
+            people_via[source[4:]].add(email)
+            everyone.add(email)
+    x.memo["mcp"] = {"day": day, "via": via, "app": app, "tool": tool, "lat_app": lat_app, "lat_tool": lat_tool, "status_tools": status_tools,
+                     "auth": auth, "anon": anon, "ra_day": ra_day, "ra_via": ra_via, "people_day": people_day, "people_via": people_via,
+                     "people_ra": people_ra, "ra_named": ra_named, "everyone": everyone}
+    return x.memo["mcp"]
+
+
+def _field_first(c: sqlite3.Connection) -> dict[str, str]:
+    """게이트웨이 감사의 칸(caller · via · ip · chars)이 처음 나온 날 — 접는 쪽이 그 날의 줄로 적어 둔다(창보다 오래됐으면 없다)."""
+    out: dict[str, str] = {}
+    for day, dims in c.execute("SELECT day, dims FROM usage_daily WHERE source = 'gateway' AND metric = 'field_first'"):
+        try:
+            k = json.loads(dims).get("field")
+        except (ValueError, AttributeError):
+            continue
+        if isinstance(k, str) and (k not in out or day < out[k]):
+            out[k] = day
+    return out
+
+
+def _errs(b: dict) -> dict:
+    total = b["calls"] + b["status_calls"]
+    bad = b["err_app"] + b["err_gate"]
+    return {"errors_app": b["err_app"], "errors_gate": b["err_gate"], "error_rate": round(bad / total, 3) if total else None}
+
+
+def _mcp_daily(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    m, meta = _mcp(c, x), _fold_meta(c, x, "gateway")
+    rows = []
+    for d in x.w.axis():
+        if meta["first"] is None or d < meta["first"]:
+            rows.append({"day": d, "calls": None, "status_calls": None, "errors": None, "people": None})
+        else:
+            b = m["day"].get(d)
+            rows.append({"day": d, "calls": b["calls"] if b else 0, "status_calls": b["status_calls"] if b else 0,
+                         "errors": (b["err_app"] + b["err_gate"]) if b else 0, "people": len(m["people_day"].get(d, ()))})
+    tot = {k: sum(b[k] for b in m["day"].values()) for k in ("calls", "status_calls", "err_app", "err_gate", "cache", "big")}
+    return {"rows": rows, "first_day": meta["first"],
+            "totals": {"calls": tot["calls"], "status_calls": tot["status_calls"], "errors_app": tot["err_app"], "errors_gate": tot["err_gate"],
+                       "cache": tot["cache"], "big": tot["big"], "people": len(m["everyone"]), "anon_calls": sum(m["anon"].values())},
+            "note": "게이트웨이를 지난 MCP 도구 호출이다(게이트웨이 감사 원장을 날마다 접은 것). calls 는 상태 묻기 도구(deliberate_status 등)를 뺀 "
+                    "호출, status_calls 는 상태 묻기다(되풀이라 호출 수를 부풀린다). errors 는 실패한 호출(앱 쪽 + 관문 쪽), people 은 그날 도구를 "
+                    "부른 서로 다른 계정이다 — 호출자가 적힌 줄만 사람으로 세고, 심의 엔진의 호출은 대부분 이름이 없다(anon_calls). 캐시 적중도 "
+                    "호출 한 번이다. " + (f"감사 원장의 첫 날({meta['first']}) 전은 null 이다." if meta["first"] else "접어 둔 날이 아직 없다.")
+                    + _today_note(meta) + _stale(meta)}
+
+
+def _mcp_via(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    m = _mcp(c, x)
+    rows = [{"via": v, "calls": b["calls"], "status_calls": b["status_calls"], **_errs(b), "people": len(m["people_via"].get(v, ())),
+             "anon_calls": m["anon"].get(v, 0)} for v, b in m["via"].items()]
+    rows.sort(key=lambda r: (-(r["calls"] + r["status_calls"]), r["via"]))
+    since = _field_first(c).get("via")
+    return {"rows": rows, "via_since": since,
+            "note": "어느 자격으로 들어온 호출인가 — pat 은 개인 Claude(와 사람 PAT 로 도는 서버 앱), chat 은 포털 챗, procedure 는 절차 실행기, "
+                    "mcp-app 은 앱 패널, gw-token 은 에이전트 서버(심의 엔진 · 좌석 조회), service 는 박스 작업, ticket 은 그림 · 키트 받기다. "
+                    "people 은 그 자격으로 부른 서로 다른 계정, anon_calls 는 호출자가 적히지 않은 줄이다. "
+                    + (f"via 칸은 {since} 부터 적혔다 — 그 전 호출은 빈 칸으로 든다." if since else "빈 칸은 via 를 적기 전의 호출이다.")}
+
+
+def _mcp_apps(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    m = _mcp(c, x)
+    tools: dict[str, int] = defaultdict(int)
+    for a, _t in m["tool"]:
+        tools[a] += 1
+    rows = [{"app": a, "calls": b["calls"], "status_calls": b["status_calls"], **_errs(b), "cache": b["cache"], "big": b["big"],
+             "tools": tools[a], "ms_p50": quantile(m["lat_app"][a], 0.5), "ms_p95": quantile(m["lat_app"][a], 0.95)}
+            for a, b in m["app"].items()]
+    rows.sort(key=lambda r: (-(r["calls"] + r["status_calls"]), r["app"]))
+    return {"rows": rows, "approx": True,
+            "note": "앱(게이트웨이 백엔드 키)마다의 호출이다. 실패는 앱 쪽(앱이 오류로 답했거나 기한을 넘김)과 관문 쪽(게이트웨이가 권한 · 울타리 · "
+                    "모르는 도구 · 사람 자격으로 막음)으로 가른다. cache 는 캐시 적중, big 은 큰 응답(10만 자 이상), tools 는 불린 도구 수다. "
+                    "p50 · p95 는 백엔드에 다녀온 성공 호출의 걸린 시간(ms)이고 칸 안 보간 어림이다(≈). 빈 앱 칸은 게이트웨이가 모르는 도구 "
+                    "호출이다."}
+
+
+def _mcp_tools(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    m = _mcp(c, x)
+    rows = [{"app": a, "tool": t, "status": (a, t) in m["status_tools"], "calls": b["calls"] + b["status_calls"], **_errs(b),
+             "cache": b["cache"], "big": b["big"], "ms_p50": quantile(m["lat_tool"][(a, t)], 0.5),
+             "ms_p95": quantile(m["lat_tool"][(a, t)], 0.95)} for (a, t), b in m["tool"].items()]
+    rows.sort(key=lambda r: (-r["calls"], r["app"], r["tool"]))
+    return {"rows": rows[:TOP_TOOLS], "total_tools": len(rows), "approx": True,
+            "note": f"많이 불린 도구 {TOP_TOOLS}개다(원래 이름 — 겹침 접두 · 호출 별칭은 접었다). status 는 상태 묻기 도구다. 주소가 든 이름"
+                    "(rest_call · resources/read)은 주소를 뗐고, 게이트웨이가 모르는 도구는 (unknown) 한 칸이다."}
+
+
+def _mcp_auth(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    m = _mcp(c, x)
+    rows = sorted(({"reason": r, "n": n} for r, n in m["auth"].items()), key=lambda r: (-r["n"], r["reason"]))
+    return {"rows": rows,
+            "note": "/mcp 인증 실패다(도구 호출에 들지 않는다). expired 는 서명은 맞고 수명이 끝난 토큰, unverified-token 은 틀렸거나 검증하지 못한 "
+                    "토큰, no-bearer 는 토큰 없이 온 요청이다. 검증되지 않은 토큰이라 누구인지는 모른다."}
+
+
+def _mcp_personal_weekly(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    week: dict[str, set] = defaultdict(set)
+    for d, email, source, _n in _actor_rows(c, x):
+        if source == "mcp-pat":
+            week[_week_key(d)].add(email)
+    first = _field_first(c).get("via") or _fold_meta(c, x, "gateway")["first"]
+    rows = [{"week": b["key"], "people": b["value"], "partial": b["partial"]}
+            for b in _buckets(x.w.weeks(), x.w, first, {k: len(v) for k, v in week.items()})]
+    return {"rows": rows,
+            "note": "주마다 개인 PAT 로 MCP 도구를 부른 서로 다른 계정이다(개인 Claude — via=pat). 사람 PAT 로 도는 서버 앱의 호출도 여기에 섞인다. "
+                    "via 칸을 적기 전의 주는 null 이다."}
+
+
+def _delib_jobs(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    meta = _fold_meta(c, x, "agent")
+    kinds: dict[str, dict] = {}
+    daily: dict[str, int] = defaultdict(int)
+    anon = 0
+    for d, metric, dims, v in _fold_rows(c, x, "agent"):
+        if metric == "anon_jobs":
+            anon += int(v)
+            continue
+        k = kinds.setdefault(str(dims.get("kind") or ""), {"n": 0, "states": defaultdict(int), "external": 0, "with_report": 0, "seats": 0,
+                                                           "seated": 0, "rounds": 0, "dur_s": 0.0, "dur_n": 0})
+        if metric == "jobs":
+            k["n"] += int(v)
+            k["states"][str(dims.get("status") or "")] += int(v)
+            k["external"] += int(v) if dims.get("llm") == "external" else 0
+            daily[d] += int(v)
+        elif metric == "jobs_report":
+            k["with_report"] += int(v)
+        elif metric in ("seats", "seated", "rounds", "dur_n"):
+            k[metric] += int(v)
+        elif metric == "dur_s":
+            k["dur_s"] += v
+    rows = [{"kind": name, "n": k["n"], "done": k["states"].get("done", 0), "states": dict(k["states"]), "external": k["external"],
+             "with_report": k["with_report"], "seats_avg": round(k["seats"] / k["seated"], 1) if k["seated"] else None,
+             "rounds_avg": round(k["rounds"] / k["seated"], 1) if k["seated"] else None,
+             "minutes_avg": round(k["dur_s"] / k["dur_n"] / 60, 1) if k["dur_n"] else None} for name, k in kinds.items() if k["n"]]
+    rows.sort(key=lambda r: (-r["n"], r["kind"]))
+    people = {email for _d, email, source, _n in _actor_rows(c, x) if source == "delib"}
+    return {"rows": rows, "daily": _series(x.w.axis(), meta["first"], daily), "first_day": meta["first"],
+            "totals": {"jobs": sum(r["n"] for r in rows), "with_report": sum(r["with_report"] for r in rows), "people": len(people),
+                       "anon_jobs": anon},
+            "note": "MCP 로 맡긴 심의 잡이다(에이전트 서버의 잡 원장 — 개인 Claude 의 deliberate_start · 심의 묶음). 웹 챗에서 연 심의는 이 원장에 남지 "
+                    "않아 빠진다(위 챗 턴에 든다). 잡은 줄을 서거나 돌기 시작한 날에 든다. with_report 는 Report Archive 보고서가 붙은 잡, "
+                    "external 은 판단 LLM 이 외부 응답자(Claude)였던 잡, seats_avg · rounds_avg 는 좌석이 앉은 잡의 평균, minutes_avg 는 끝난 잡이 "
+                    "돈 시간의 평균(분)이다. anon_jobs 는 주인이 적히지 않은 잡이다. "
+                    + (f"잡 원장의 첫 날({meta['first']}) 전은 null 이다." if meta["first"] else "접어 둔 날이 아직 없다.")
+                    + _today_note(meta) + _stale(meta)}
+
+
+def _ra_drafts(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    m, meta = _mcp(c, x), _fold_meta(c, x, "gateway")
+    total = sum(m["ra_day"].values())
+    reports = sum(int(v) for _d, metric, _dims, v in _fold_rows(c, x, "agent") if metric == "jobs_report")
+    return {"rows": [{"day": d, "n": n} for d, n in zip(x.w.axis(), _series(x.w.axis(), meta["first"], m["ra_day"]), strict=True)],
+            "by_via": sorted(({"via": v, "n": n} for v, n in m["ra_via"].items() if n), key=lambda r: (-r["n"], r["via"])),
+            "totals": {"drafts": total, "people": len(m["people_ra"]), "named": m["ra_named"], "unnamed": max(0, total - m["ra_named"]),
+                       "delib_reports": reports},
+            "note": f"Report Archive 초안이다 — 게이트웨이를 지난 {RA_DRAFT_TOOL} 의 성공 호출(챗의 /보고서 · 심의 보고서 · 루틴 · 개인 Claude 모두 이 "
+                    "도구로 만든다). people 은 호출자가 적힌 초안을 만든 서로 다른 계정이고, unnamed 는 호출자가 적히지 않은 초안이다(심의 엔진이 "
+                    "서비스 자격으로 만든 것 등). delib_reports 는 MCP 심의 잡 가운데 보고서가 붙은 수다(에이전트 서버의 잡 원장). 포털이 "
+                    "게이트웨이를 거치지 않고 넣는 보고서(문서 정밀 변환 등)는 들지 않는다." + _stale(meta)}
+
+
+def _front_door(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    meta = _fold_meta(c, x, "nginx")
+    axis = x.w.axis()
+    labels = x.labels.get("service") or {}
+    req: dict[str, dict[str, int]] = defaultdict(dict)
+    ppl: dict[str, dict[str, int]] = defaultdict(dict)
+    loose = 0
+    for d, metric, dims, v in _fold_rows(c, x, "nginx"):
+        if metric == "unattributed":
+            loose += int(v)
+        elif metric in ("requests", "people"):
+            (req if metric == "requests" else ppl)[str(dims.get("service") or "")][d] = int(v)
+    rows = [{"service": s, "label": labels.get(s, s), "requests": sum(by.values()), "days": len(by),
+             "people_max": max(ppl[s].values(), default=0), "daily": _series(axis, meta["first"], by)} for s, by in req.items()]
+    rows.sort(key=lambda r: (-r["requests"], r["service"]))
+    people = {email for _d, email, source, _n in _actor_rows(c, x) if source == "nginx"}
+    return {"rows": rows, "first_day": meta["first"],
+            "totals": {"requests": sum(r["requests"] for r in rows), "unattributed": loose, "people": len(people)},
+            "note": "정문(nginx)을 지난 요청을 서비스마다 센 것이다 — apps/<앱> 은 허브에 올린 앱 하나하나다(타일 진입 원장에 없는 '허브 앱 열기' 가 "
+                    "여기서 보인다). 로그인 연결 ID(쿠키)가 접속 원장의 로그인 줄과 이어진 요청만 세고(귀속이지 증명이 아니다), 이어지지 않은 요청"
+                    "(로그인 전 · 스캐너 · PAT)은 unattributed 다. people_max 는 하루에 가장 많이 든 사람 수, days 는 요청이 있던 날 수다. 정문 로그는 "
+                    "14일 뒤 사라져 접어 둔 날부터만 남는다. "
+                    + (f"접어 둔 첫 날({meta['first']}) 전은 null 이다." if meta["first"] else "접어 둔 날이 아직 없다.")
+                    + _today_note(meta) + _stale(meta)}
+
+
+def _snapshots(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    snap: dict[str, dict] = {}
+    for d, metric, dims, v in _fold_rows(c, x, "snapshot"):
+        r = snap.setdefault(d, {"pats_live": 0, "pats_personal": 0, "pats_exchanged": 0, "connections": 0, "accounts_active": 0, "grants": 0})
+        if metric == "pats_live":
+            r["pats_live"] += int(v)
+            r["pats_personal" if dims.get("kind") == "personal" else "pats_exchanged"] += int(v)
+        elif metric == "connections":
+            r["connections"] += int(v)
+        elif metric == "accounts" and dims.get("status") == "active":
+            r["accounts_active"] += int(v)
+        elif metric == "grants":
+            r["grants"] += int(v)
+    issued: dict[str, int] = defaultdict(int)
+    for d, metric, _dims, v in _fold_rows(c, x, "portal"):
+        if metric == "pat_issued":
+            issued[d] += int(v)
+    first = _fold_meta(c, x, "portal")["first"]
+    blank = dict.fromkeys(("pats_live", "pats_personal", "pats_exchanged", "connections", "accounts_active", "grants"))
+    rows = [{"day": d, **(snap.get(d) or blank), "pats_issued": None if first is None or d < first else issued.get(d, 0)} for d in x.w.axis()]
+    return {"rows": rows, "days": len(snap),
+            "note": "날마다 찍어 둔 '지금 상태' 다 — 살아 있는 PAT(폐기 · 만료 빼고) · 외부 연결 · 쓰는 계정 · 개별 허가(소속 밖으로 한 사람에게 연 "
+                    "기능 · 플랫폼 키의 수 — 쓰는 계정의 것). 그날 포털이 마지막으로 접은 때의 값이고, "
+                    "찍지 못한 날(접기 전 · 포털이 내려가 있던 날)은 null 이다 — 지난 날의 상태는 다시 셀 수 없다. pats_issued 는 그날 낸 PAT 이다 — "
+                    "닫힌 날의 수는 그 뒤에 만료로 지워져도 남는다."}
+
+
+def _conversations_kept(c: sqlite3.Connection, x: _Ctx) -> dict:
+    if not _has_fold(c):
+        return _pending()
+    got: dict[tuple[str, str], int] = defaultdict(int)
+    for _d, metric, dims, v in _fold_rows(c, x, "portal"):
+        if metric == "conversations":
+            got[(str(dims.get("kind") or ""), str(dims.get("source") or ""))] += int(v)
+    rows = sorted(({"kind": k, "source": s, "n": n} for (k, s), n in got.items()), key=lambda r: (-r["n"], r["kind"], r["source"]))
+    return {"rows": rows,
+            "note": "접어 둔 새 대화 수다(만든 날 기준 · 종류 × 출처). 닫힌 날(사흘 지난 날)의 수는 그 뒤에 주인이 대화를 지워도 남는다 — 위의 "
+                    "대화 칸(지금 남은 대화)과 차이가 지운 대화다. 접기 전에 이미 지워진 대화는 여기에도 없다."}
+
+
 # 칸 이름 · 원장 · 셈 — 이 차례로 낸다(화면도 이 차례다)
 _SECTIONS: tuple[tuple[str, str, Callable[[sqlite3.Connection, _Ctx], dict]], ...] = (
     ("logins_daily", "audit", _logins_daily),
@@ -438,6 +967,7 @@ _SECTIONS: tuple[tuple[str, str, Callable[[sqlite3.Connection, _Ctx], dict]], ..
     ("accounts_new", "users", _accounts_new),
     ("tiles", "audit", _tiles),
     ("chat_daily", "audit", _chat_daily),
+    ("chat_kinds", "audit", _chat_kinds),
     ("chat_errors", "audit", _chat_errors),
     ("events", "audit", _events),
     ("conversations", "conv", _conversations),
@@ -447,6 +977,22 @@ _SECTIONS: tuple[tuple[str, str, Callable[[sqlite3.Connection, _Ctx], dict]], ..
     ("pats_weekly", "tokens", _pats_weekly),
     ("access_requests", "users", _access_requests),
     ("connections", "users", _connections),
+    # ── 접어 둔 표(M2) ──
+    ("fold_status", "audit", _fold_status),
+    ("active_daily", "audit", _active_daily),
+    ("active_weekly", "audit", lambda c, x: _active_span(c, x, "week")),
+    ("active_monthly", "audit", lambda c, x: _active_span(c, x, "month")),
+    ("mcp_daily", "audit", _mcp_daily),
+    ("mcp_via", "audit", _mcp_via),
+    ("mcp_apps", "audit", _mcp_apps),
+    ("mcp_tools", "audit", _mcp_tools),
+    ("mcp_auth", "audit", _mcp_auth),
+    ("mcp_personal_weekly", "audit", _mcp_personal_weekly),
+    ("delib_jobs", "audit", _delib_jobs),
+    ("ra_drafts", "audit", _ra_drafts),
+    ("front_door", "audit", _front_door),
+    ("snapshots", "audit", _snapshots),
+    ("conversations_kept", "audit", _conversations_kept),
 )
 
 
@@ -498,7 +1044,9 @@ def build(settings: Settings, *, days: int = DEFAULT_DAYS, now: float | None = N
                   "tz": "Asia/Seoul", "axis": w.axis()},
         "excluded": {"accounts": ex, "setting": SETTING, "primer": True,
                      "note": ("자동 SSO 예열 줄(primer)은 늘 뺀다. "
-                              + (f"설정 {SETTING} 의 계정 {len(ex)}개(시험 · 서비스 계정)를 모든 칸에서 뺐다 — 이메일과 주체로 견준다."
+                              + (f"설정 {SETTING} 의 계정 {len(ex)}개(시험 · 서비스 계정)를 모든 칸에서 뺐다 — 이메일과 주체로 견준다. 날마다 "
+                                 "접어 둔 합계(MCP · 심의 · 정문 · 새 대화 · PAT)는 접을 때의 목록으로 셌다 — 목록을 바꾸면 게이트웨이 · 에이전트 서버 "
+                                 "쪽은 다음 접기에 지난 날까지 다시 세고, 포털 · 정문 쪽은 아직 닫히지 않은 날부터 반영된다(접기 상태 칸)."
                                  if ex else f"뺀 계정은 없다 — 시험 · 서비스 계정을 빼려면 backend/.env 의 {SETTING} 에 쉼표로 적고 포털을 다시 "
                                             "띄운다."))},
         "sections": sections,

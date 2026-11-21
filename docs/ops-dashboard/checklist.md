@@ -12,9 +12,25 @@
 - [x] M1 — 포털 안 원장으로 S 지표 · 관리자 API `GET /auth/admin/usage` · `/admin/usage` 화면 · `agent_audit` ts 색인 · 예열 줄 · 시험 · 서비스 계정 빼기(`USAGE_EXCLUDE_ACCOUNTS`) · 시험(격리 — 새 저장소 · 경로 없음, 한 줄 변이) — 가지 `wt1102/usage-stats`(11-02, OD-5 ~ OD-11)
 - [ ] M1 이력(`backend/config/changelog.yaml`) — 병합 때 사용자 세션이 쓴다
 - [ ] M1 cae00 확인 — 반영 뒤 관리자 화면의 숫자를 받은 편지함 Q1(원장마다 행 수 · 기간 · 사람 수)과 맞대고, 시험 · 서비스 계정이 있으면 `backend/.env` 의 `USAGE_EXCLUDE_ACCOUNTS` 에 적는다(dev 숫자는 cae00 숫자가 아니다)
-- [ ] M2 — `usage_daily` · `usage_actor_daily`(agent_audit.sqlite 안) · lifespan 접기 · 되채우기 · 게이트웨이 `/usage-rollup` · 에이전트 서버 창구 · nginx 날마다 접기 · MCP · 심의 · RA 칸 · DAU/WAU/MAU
-- [ ] M3 — 2단계 (가) 턴 종류 · 모델 (나) 날마다 PAT · 연결 수 (다) 에이전트 토큰(결정 뒤) (라) 게이트웨이 PAT 종류 · 엔진 호출 주인 · 리스크 토큰 · (정하면) 합계 공개 · 내 이용
-- [ ] cae00 절차서 · 반대 검토
+- [x] M2 — 날마다 접는 표와 접기 · 창구 둘 · 접어 둔 표에서 읽는 칸 · 화면 — dev 11-21, 가지 `wt1121/usage`(세 리포 · OD-41 ~ OD-48)
+  - [x] 표 — `usage_daily` · `usage_actor_daily`(400일) · 접은 기록 `usage_fold`(agent_audit.sqlite 안 — 새 경로 설정 없음, OD-41)
+  - [x] 접기 `backend/app/usage_fold.py` — 기동 30초 뒤 · `USAGE_FOLD_S`(기본 3600 · 0 끔)마다 · 오늘은 돌 때마다 · 끝난 날은 사흘 뒤 닫음 · 400일 되채우기 · 멱등(OD-42)
+  - [x] 원천 다섯 — portal(사람 줄 · 새 대화 · 낸 PAT) · snapshot(오늘의 PAT · 연결 · 계정 · 허가) · nginx · gateway · agent(OD-43 · OD-47)
+  - [x] 게이트웨이 `/usage-rollup`(HWAXMcpGateway `f0090dd` · `9dc69f2` — 읽은 자리 뒤만 접는 `usage-rollup.sqlite` · 20초 기한 · complete 인 답만, OD-45)
+  - [x] 에이전트 서버 `/usage-rollup`(HWAXAgentServer `63c0c95` — MCP 심의 잡 · 목록 색인으로만, OD-46)
+  - [x] 읽는 칸 — 접기 상태 · 쓴 사람(DAU · WAU · MAU) · MCP(날마다 · 자격 · 앱 · 도구 · 인증 실패 · 개인 Claude 주마다) · MCP 심의 · RA 초안 · 정문 요청 · 날마다 찍은 수 · 접어 둔 새 대화
+  - [x] 화면 `/admin/usage` — 카드 여섯 + PAT · 대화 · 권한 카드의 접어 둔 수(OD-48 — 사람의 이메일은 내지 않는다)
+  - [x] 뺄 계정 — 사람 줄은 읽을 때 · 합계는 접을 때 · 게이트웨이 · 에이전트는 목록이 바뀌면 다시 접음(OD-44)
+  - [x] 시험 — 게이트웨이 25 · 에이전트 서버 12 · 포털 62(접기 29 · 읽는 칸 13 · 화면 카드 4 · 화면 브라우저 4 · 턴 종류 11 · 격리 1), 한 줄 변이 40개가 붉다(하나는 처음에 초록이어서 시험을 더했다 — 탐침의 프레임 상한), dev 원장 사본 · 실제 감사 원장(읽기만)으로 연기 시험
+- [ ] M2 이력(`backend/config/changelog.yaml`) — 병합 때 사용자 세션이 쓴다
+- [ ] M2 cae00 확인 — 사람([server-setup.md](server-setup.md) 10절): 세 서비스가 새 판으로 뜬 뒤 '접기 상태' 카드에 실패 까닭이 없는지 · 게이트웨이 첫 접기에 걸린 때 · 숫자를 받은 편지함 2026-11-02 Q1 · Q2 와 맞대기 · 시험 · 서비스 계정을 `USAGE_EXCLUDE_ACCOUNTS` 에
+- [ ] M3 — 2단계
+  - [x] (가) 턴 종류 · 답한 모델 — 중계가 `chat_done` 에 `{kind, models}` · 통계 칸 `chat_kinds`(OD-49 — 포털이 다시 뜬 뒤 끝난 턴부터)
+  - [x] (나) 날마다 PAT · 외부 연결 · 계정 · 개별 허가 수 — M2 의 snapshot 원천(OD-50)
+  - [ ] (다) 에이전트 서버의 사람별 LLM 토큰 — 사용자 결정 대기(PLAN §4 의 3)
+  - [ ] (라) 게이트웨이 PAT 종류(교환으로 받은 PAT 은 토큰의 `par` 로 가를 수 있다 — 인증 미들웨어의 내부 머리 · 접는 표의 열쇠가 는다 — 따로 검토해 짓는다) · 엔진 호출의 주인(권한 동작이 바뀐다 — 결정 필요), OD-51
+  - [ ] 리스크 토큰(리스크 앱에 창구가 없다 — 그 리포 세션) · (정하면) 합계 공개 · 내 이용 · 사람별 표(OD-48 — 사용자 결정)
+- [ ] 반대 검토(M2 · M3 가 나)
 
 ## LLM/GPU 현황
 - [x] M1 — 수집기(HTTP · 해석기 · sqlite · 가짜 vLLM 시험 · 라우터 해석기와 같은 결과) — dev 11-02, 가지 `wt1102/llm-status`(OD-13 ~ OD-22 · OD-24)
