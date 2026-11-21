@@ -106,6 +106,18 @@ def test_깨진_프레임과_끝없는_한_줄도_답을_막지_않는다(monkey
     assert out == b"".join(frames) and _done(recs)["meta"] == {"kind": "delib", "models": ["glm-5"]}
 
 
+def test_끝_표지_없는_긴_프레임은_쌓아_두지_않고_그_뒤의_프레임은_다시_읽는다(monkeypatch):
+    """중계는 본문을 쥐지 않는다 — 좌석의 긴 발언 한 프레임이 수 MB 여도 탐침이 그만큼 메모리를 쓰지 않는다."""
+    monkeypatch.setattr(routes._TurnProbe, "MAX_BUF", 64)
+    p = routes._TurnProbe()
+    for _ in range(200):
+        p.feed(b"x" * 50)
+        assert len(p.buf) <= 64 + 50
+    p.feed(b"tail\n")                                  # 끝 표지(빈 줄)가 두 청크에 걸친다
+    p.feed(b"\n" + _sse("delib", {"kind": "stage"}))
+    assert p.meta(False) == {"kind": "delib"}, "건너뛴 긴 프레임 뒤의 프레임은 읽는다"
+
+
 # ── 이용 통계 ──────────────────────────────────────────────────────────────────────────────────────────────
 def test_이용_통계는_턴_종류와_모델을_세고_적기_전의_턴은_따로_말한다(tmp_path):
     box = Box(tmp_path)
