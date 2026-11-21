@@ -292,6 +292,8 @@ def test_옛_key_로_남은_카드를_지금_과제의_보기와_찾기에_모�
 def test_볼_수_있는_카드가_그_과제뿐이면_이력을_부르지_않는다(api):
     new = api.confirmed("me@example.com", "n")
     _relay(api.st, owner="peer@example.com", cid="hidden", subject={**CONFIRMED, "sp_task": OLD_KEY})   # 남의 초안 — 나에게는 없는 key 다
+    # 소속 없는 사람이 확인한 카드(범위가 그 사람뿐) — 상태는 공유지만 나에게는 보이지 않는다. 그 key 로도 이력을 부르지 않는다
+    api.confirmed("out@example.com", "theirs", subject={**CONFIRMED, "sp_task": OLD_KEY})
     api.login("me@example.com")
     api.calls.clear()
     body = api.c.get("/insights-api/project", params={"sp_task": KEY}).json()
@@ -305,6 +307,7 @@ def test_같은_결론은_볼_수_있는_같은_칸의_카드끼리만_묶어_�
     api.confirmed("peer@example.com", "c", cards=({**CARD, "claim": "다른 결론"},))
     d = api.confirmed("peer@example.com", "d", subject={**CONFIRMED, "round": "pv1"})           # 같은 글이지만 다른 차수
     _relay(api.st, owner="peer@example.com", cid="draft")                                        # 같은 글 — 남의 초안
+    api.confirmed("out@example.com", "o")                                                        # 같은 글 — 확인했지만 범위가 그 사람뿐(소속 없음)
     api.login("me@example.com")
     got = _cards(api.c.get("/insights-api/project", params={"sp_task": KEY}).json())
     assert got[a]["same"] == {"n": 2, "ids": [b]} and got[b]["same"] == {"n": 2, "ids": [a]}, "남의 초안 · 다른 차수는 세지 않는다"
