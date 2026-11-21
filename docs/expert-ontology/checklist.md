@@ -45,4 +45,4 @@
 - [x] dev 에이전트 서버 재기동(11-22 04:35 KST = 박스 시각 11-21 19:35 UTC, 사용자 지시) — `./start.sh -d`, 도는 심의 0 · 켜진 커밋은 `f5b5dd8` · `cf22658` 뿐,
       `/health seat_onto` = `mode off · sent 0 · skipped 0`, 환경 이름 151개 그대로. 병합이 끝난 가지 `wt1120/card-onto` 셋도 지웠다
 - [ ] cae00(사람) — 받기 · build · `--dry-run` · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`(server-setup 1 ~ 6절)
-- [ ] 미룬 것 — 앉은 전문가의 카드 먼저 보기 · '맡은 사람 없음' · '코어 데이터 질문'(EO-12) · LLM 뽑기(연결 수를 본 뒤 다시 묻는다)
+- [ ] 미룬 것 — 앉은 전문가의 카드 먼저 보기(안 지음) · '맡은 사람 없음' · '코어 데이터 질문'(EO-12 — **11-22 판정 후보로 지음 · 올림**: AIDataHub `recommend_agents` 의 `onto.verdict` `9d2ced1` · `d2fa5c5` · 에이전트 서버 그림자 기록 `ca02ada`, 알리기만 하고 순위 · 좌석은 그대로 — `no_owner` 는 카드에 이어진 객체에서만 나와 드물다, `docs/leftovers-1121` L21-16) · LLM 뽑기(연결 수를 본 뒤 다시 묻는다)

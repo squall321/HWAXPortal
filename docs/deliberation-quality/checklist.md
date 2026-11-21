@@ -115,8 +115,8 @@
 - [ ] T1 `DELIB_EVIDENCE_PREPASS` A/B — 절차는 `docs/followups-1017/server-setup.md` 7절(10-18, 러너 고침 에이전트 서버 `3ca9894`). cae00 실행 · 판정 대기
 - [ ] T2 `DELIB_REBUT_QUOTE` A/B
 - [ ] T3 `DELIB_PROSE_FIRST` A/B (T4 thinking 진단 후)
-- [ ] T4 reasoning effort A/B
+- [ ] T4 reasoning effort A/B — **11-22 손잡이 지음 · 올림**(심의마다 `advanced.reasoning_effort` low · medium · high · xhigh, 주지 않으면 서버 값 — 에이전트 서버 `d058c5c` · 포털 `18016612`, 러너 `tools/delib_ab --knob reasoning_effort`). 남은 것 — cae00 A/B
 - [ ] T5 의장 2-pass — `DELIB_CHAIR_BESTOF`·`DELIB_CHAIR_CITE`·합성 검증기·F2 등급 태깅
 - [ ] T6 라운드 가변·레드팀 (후순위) — `DELIB_CROSS_EXAM`·`DELIB_ANCHOR`·전담 챌린저
 - [x] 조건당 3문항 × 3회, cae00 배치 (러너북 §5 연계) — 걷음: 따로 할 일이 아니라 T1 ~ T6 의 재는 법이다 — 3문항 × 3회가 followups-1017 server-setup.md 7-2 에 박혔고 실행은 114행 (10-31 정리)
-- [ ] T7 판정 불가 과반이면 결정문 결론부를 측정 계획으로(양쪽 — 수렴 · 의장 프롬프트를 함께 바꾼다, 92 · 93행) — **11-22 엔진 쪽 지음**(사용자 결정 11-21 로 다시 엶 — 스위치 `DELIB_UNDECIDED` 기본 0 · 손잡이 `undecided` · 러너 `tools/delib_ab --knob undecided`, 에이전트 서버 `29f8554` · 포털 `3dfebc6e`, `docs/leftovers-1121/context-notes.md` L21-12). 남은 것 — 워크플로(`hwax-deliberate.js`) 의장 쪽 · cae00 A/B — 근거를 비운 심의에서 판정 불가가 실제로 뽑히는지 같은 A/B 로 잰다 · 사용자 결정 10-31 A9 (가): 남겨 두고 지금은 짓지 않는다 (10-31 정리)
+- [ ] T7 판정 불가 과반이면 결정문 결론부를 측정 계획으로(양쪽 — 수렴 · 의장 프롬프트를 함께 바꾼다, 92 · 93행) — **11-22 엔진 쪽 지음**(사용자 결정 11-21 로 다시 엶 — 스위치 `DELIB_UNDECIDED` 기본 0 · 손잡이 `undecided` · 러너 `tools/delib_ab --knob undecided`, 에이전트 서버 `29f8554` · 포털 `3dfebc6e`, `docs/leftovers-1121/context-notes.md` L21-12 · **올림 11-22** — 반대 검토 반영 `ee8d5db`: 판정 불가 좌석은 집계에서 미표명 · 다단 심의 1단 제외 · 회의록에 다음 측정 · 의장 실패에는 표지 없음, L21-16). 남은 것 — 워크플로(`hwax-deliberate.js`) 의장 쪽 · cae00 A/B — 근거를 비운 심의에서 판정 불가가 실제로 뽑히는지 같은 A/B 로 잰다 · 사용자 결정 10-31 A9 (가): 남겨 두고 지금은 짓지 않는다 (10-31 정리)

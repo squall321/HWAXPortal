@@ -2,8 +2,12 @@
 
 > 2026-11-22(KST). 계획은 [PLAN.md](PLAN.md), 결정은 [context-notes.md](context-notes.md) L21-4 ~ L21-10 이다.
 > 받을 판(묶음 A) — 게이트웨이 `9b5ab25` · `9224bd1`(master `210a50c`) · 에이전트 서버 `b33a728`(main `cde6eb0`) · 포털 `72f828cd` · `34766ff1` ·
-> `31d08cb4`(main `aeec26d1`) · AIDataHub `1fe55d7`(병합 뒤 이 줄을 고친다). 모두 main 에 `--no-ff` 로 합쳤다.
-> 대조 시점 — dev 11-22. dev 에는 Report Archive 가 떠 있지 않아 RA 에 닿는 것은 전부 가짜 RA 시험이다. 아래 3 · 4절이 진짜 RA 로 보는 첫 확인이다.
+> `31d08cb4`(main `aeec26d1`) · AIDataHub `1fe55d7`(main `09ecc04`). 모두 main 에 `--no-ff` 로 합쳤다.
+> 받을 판(묶음 B · 11-22) — 게이트웨이 `bd37738` · `26183c3` · `d2878f9`(master `0e113bd`) · 에이전트 서버 `29f8554` · `5aa25c4` · `db4b75e` ·
+> `a291297` · `fd6a4fc` · `d058c5c` · `190c8f4` · `ca02ada` · `ee8d5db` · `26c78f2`(main `ee26311`) · 포털 `3dfebc6e` · `1bb54c55` · `18016612` ·
+> `e4cb252e` · `951fe9c6`(main `67fccb15`) · AIDataHub `9d2ced1` · `d2fa5c5`(main `b2f1b72`). 6절이 받는 것만으로 달라지는 것이다.
+> 대조 시점 — dev 11-22. 묶음 A 를 지을 때 dev 에는 Report Archive 가 떠 있지 않아 RA 에 닿는 것은 전부 가짜 RA 시험이었다. 그 뒤 dev 에 RA 최신판을
+> 띄웠지만(context-notes L21-14) 사람 자격이 드는 실호출은 아직 못 했다 — 아래 3 · 4절이 진짜 RA 로 보는 첫 확인이다.
 
 리포 자리는 박스마다 다르다 — 아래는 포털 리포 루트에서 형제 리포를 `../AIDataHub` 처럼 부른다. `$PY` 는 게이트웨이와 같은 파이썬(venv)이다.
 
@@ -72,17 +76,19 @@ curl -s http://127.0.0.1:9009/health | python3 -c 'import sys,json; print(json.l
 
 ## 6. 묶음 B — 받는 것만으로 달라지는 것과 스위치
 
-(묶음 B 가 올라가면 맨 위 「받을 판」 줄에 해시를 더한다.)
+새 설정은 없다. 게이트웨이 · 에이전트 서버 · 포털은 재기동해야 먹고(update-all 이 한다) AIDataHub 는 API 재기동이다. **에이전트 서버와 포털은 함께
+받는다** — 포털의 심의 손잡이 계약(`undecided` · `reasoning_effort`)이 엔진과 짝이다.
 
 | 무엇 | 기본 | 달라지는 것 · 켜는 법 |
 |---|---|---|
-| 사람별 위임 호출의 왕복 | 받으면 달라진다 | 게이트웨이가 일회성 세션으로 `tools/call` 만 보낸다(호출 뒤의 `tools/list` 가 없어진다). 성공한 쓰기 도구가 목록 묻기의 401 때문에 다시 돌던 틈이 닫히고 호출마다 왕복이 하나 준다. 감사 줄에서 그 앱의 `as-user-pat` 호출이 전과 같이 `ok` 인지만 본다 |
-| 챗이 읽는 그림 주소 | 받으면 달라진다 | 조사가 바로 붙은 주소(「…png에」)도 그림으로 읽는다 |
-| 보고서의 AIDataHub 첨부 그림 | 켜짐 | `/보고서` · 심의 보고서의 글에 지식카드 첨부 그림 주소가 있으면 그림 칸으로 싣는다(8 MB 까지 · 래스터만). 끄려면 에이전트 서버 `.env` 에 `REPORT_FIG_ATTACHMENTS=0` — 그때는 주소가 글에 그대로 남는다 |
-| 그림 표지의 짝 안내 | 받으면 달라진다 | 도구 결과에 PNG 와 SVG 가 함께 오면 표지 글이 「보고서 · 문서에는 래스터 ref 를 넣는다」 고 말한다 |
-| 심의 T7(판정 불가 과반 → 측정 계획) | **끔** | 에이전트 서버 `.env` 의 `DELIB_UNDECIDED=1` 또는 심의마다 `advanced.undecided=1`. 재는 법은 `cd ../HWAXAgentServer && $PY -m tools.delib_ab --knob undecided --questions <질문 파일> --repeat 3 --out ab_undecided/`(근거를 비운 질문으로 — 판정 불가가 실제로 뽑히는지). 리스크 심사 · 계획서 틀에는 붙지 않는다 |
+| 게이트웨이가 백엔드 도구를 부르는 길 | 받으면 달라진다 | 일회성 세션(사람별 위임)도 상주 세션(서비스 계정)도 `tools/call` **하나만** 보낸다. 종전엔 MCP 클라이언트가 호출 성공 뒤에 출력 스키마를 대조했고(일회성 세션은 호출마다 `tools/list` 를 다시 물었다) 그 대조가 실패하면 토큰 재발급 · 재연결 재시도가 **이미 돈 쓰기 도구를 다시** 돌렸다. 이제 답을 그대로 돌려준다 — 게이트웨이는 백엔드 답의 출력 스키마를 대조하지 않는다(끝 클라이언트 몫). 사람별 위임은 호출마다 왕복이 하나 준다. 게이트웨이 로그에 「MCP 세션에 send_request 가 없다」 경고가 뜨면 이 박스의 MCP SDK 꼴이 달라 옛 길로 떨어진 것이다 — 받은 편지함 Q5 로 알린다 |
+| 챗 · 보고서가 읽는 그림 주소 | 받으면 달라진다 | 조사가 바로 붙은 주소(「…png에」)도 그림으로 읽는다. 확장자가 겹친 이름(「shot.jpg.png」)을 끝까지 읽는다(종전엔 앞 확장자에서 끊었다) |
+| 보고서의 AIDataHub 첨부 그림 | 켜짐 | `/보고서` · 심의 보고서의 글에 지식카드 첨부 그림 주소(`/ai-data-hub/attachments/…`)가 있으면 그림 칸으로 싣는다(8 MB 까지 · 래스터만). 앞에 호스트가 붙은 첨부 주소는 건드리지 않는다(다른 박스의 그림일 수 있다). AIDataHub 가 답하지 않아 받기가 잇달아 둘 늦게 실패하면 남은 첨부는 받지 않고 그 자리에 까닭을 남긴다. 끄려면 에이전트 서버 `.env` 에 `REPORT_FIG_ATTACHMENTS=0` — 그때는 주소가 글에 그대로 남는다 |
+| 그림 표지의 짝 안내 | 받으면 달라진다 | 도구 결과에 PNG 와 SVG 가 함께 오면 표지 글이 「보고서 · 문서에는 png 등 래스터 ref 만 들어간다 — 같은 그림의 짝이면 래스터 쪽을 넣는다」 고 말한다 |
+| 심의 T7(판정 불가 과반 → 측정 계획) | **끔** | 에이전트 서버 `.env` 의 `DELIB_UNDECIDED=1` 또는 심의마다 `advanced.undecided=1`. 재는 법은 `cd ../HWAXAgentServer && $PY -m tools.delib_ab --knob undecided --questions <질문 파일> --repeat 3 --out ab_undecided/`(근거를 비운 질문으로 — 판정 불가가 실제로 뽑히는지). 리스크 심사 · 계획서 틀에는 붙지 않는다 켠 심의에서 판정 불가를 밝힌 좌석은 표 집계에서 「미표명」 으로 세고, 좌석이 적은 「다음에 잴 것」 은 회의록에도 실린다. 의장이 결정문을 못 냈으면 표지를 찍지 않는다. 리스크 심사 · 계획서 심의(그 1단 포함)에는 붙지 않는다 |
+| 심의 생각 강도(T4) | 서버 값 그대로 | 심의마다 `advanced.reasoning_effort`(low · medium · high · xhigh)를 줄 수 있다. 주지 않으면 종전과 같다. 재는 법은 `$PY -m tools.delib_ab --knob reasoning_effort …`([measurements.md](measurements.md)) |
 | 절차 씨앗 「낙하 — 결과 귀환 확인」 | 씨앗 | `docs/procedures/fixtures/drop-return-check.yaml` 을 절차 화면에서 가져다 쓴다. 전부 읽기다. DynaForge 11-15 판 이상이어야 한다 |
-| 추천의 판정 후보 | 끔(`SEAT_ONTO` 를 켠 박스만) | AIDataHub `recommend_agents` 의 `onto` 통계에 `verdict`(`core_question` · `no_owner`)가 실린다. 알리기만 하고 순위 · 좌석은 그대로다 |
+| 추천의 판정 후보 | 끔(`SEAT_ONTO` 를 켠 박스만) | AIDataHub `recommend_agents` 의 `onto` 통계에 `verdict`(`core_question` · `no_owner`)가 실린다. 알리기만 하고 순위 · 좌석은 그대로다. `no_owner` 는 이번 추천의 후보 안에서 세고, 카드가 한 장도 없는 객체는 잡지 못한다(카드에 이어진 객체만 질문에서 풀린다) — 드물게만 나오는 것이 정상이다 |
 
 ## 되돌리기
 
