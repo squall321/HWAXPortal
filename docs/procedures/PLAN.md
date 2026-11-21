@@ -152,7 +152,14 @@ POST /procedures-api/runs/{id}/resume           실패·unknown 단계부터 재
 POST /procedures-api/runs/{id}/cancel           단계 경계에서 반영(소유자·portal-admin)
 POST /procedures-api/runs/{id}/save-as-procedure   어느 인자가 변수인지
 GET  /procedures-api/health(무인증) · GET /procedures-api/stats(portal-admin, §6-1)
+GET  /procedures-api/catalog                    절차 목록을 도구 계약의 머리로(게이트웨이 procedure_list — 2026-11-22, W-116)
+GET  /procedures-api/runs/{id}/handoff          심의로 넘기면 무엇이 실리나(수 · 단계 상태 — 결과 본문 없음, W-114)
+POST /procedures-api/runs/{id}/chat             실행을 내 챗 대화로(주인만, W-115)
 ```
+
+**PAT 로 열리는 길은 다섯뿐이다**(2026-11-22, W-116) — `/catalog` · `/procedures/{id}/tool` · `POST /runs` · `GET /runs/{id}` ·
+`/runs/{id}/steps/{ix}/result`. 게이트웨이의 절차 도구 넷이 호출자 PAT 를 그대로 넘긴다. 승인(ack) · 고르기 · 재개 · 펼치기 · 중단 ·
+단계 붙이기 · 저장 · 넘기기는 세션(+ CSRF)만 받는다 — 사람 확인을 도구로 넘기는 길을 만들지 않는다.
 
 ---
 
@@ -278,7 +285,7 @@ ImportError 로 같이 죽는다. 게이트웨이 호출은 `mcp` 패키지 없�
 | 파일 변수·파일 보관소 | 파일을 나르는 단계는 절차 밖이다. 포털 스테이징은 6시간 뒤 지워지고 호스트 경로 전제라 절차가 들고 다닐 수 없다 |
 | 능력 기반 재바인딩(`accepts`/`produces`) | 계약은 있는데 **데이터가 비었다** — `describe_data_capability("CAD")` 의 `capability_tools` 가 0건 |
 | 앱 간 잡 규격 정규화(8종) | 목표 사례가 닿는 건 1~2개다 |
-| 절차 MCP 표면·`evidence.json` 류 외부 표면 | 있으면 좋지만 v1 가치에 필수가 아니다 |
+| 절차 MCP 표면·`evidence.json` 류 외부 표면 | 있으면 좋지만 v1 가치에 필수가 아니다 — **2026-11-22 엶**(사용자 결정): 게이트웨이 범용 도구 넷(목록 · 계약 · 실행 시작 · 상태, context-notes W-116). 승인 도구는 없다 |
 | 스케줄 실행(cron) | 쌓인 절차가 있어야 의미가 있다 |
 | 알림 채널(헤더 배지·메일) | 포털에 사용자 대상 알림 표면이 없다. 게이트 대기 실행의 표면은 **실행 목록**이다 |
 | 사용자별 실행 상한·관리자 실행 목록 화면 | 스택 전부 전역 상한이고 HWAXRisk 잡 조작도 소유자 전용이다 |
@@ -572,6 +579,11 @@ sort_keys=True))[:16]`(게이트웨이 내부 `_tools_fp` 와 같은 식)을 박
 없고(`delibTaxonomy.ts` `JobId` 에 `risk-review` 만 빠짐), `ConvKind` 에도 없어 앱이 만든
 대화가 웹 목록에서 조용히 걸러진다. 둘 다 절차 기능과 별개의 기존 결손이고 이 다리가 만든
 대화를 웹에서 보기 위한 선행이다.
+
+> **2026-11-22 — 이 다리는 일반 심의로 섰다**(사용자 결정, context-notes W-114). 위 문단의 `chair_template: "risk-review"` 는 뒤집혔다 —
+> 유형은 사람이 고르고 리스크 심사 계열은 서버가 거절한다(리스크 심사의 입구는 리스크 앱 하나 — 10-31 A17 · D-18). '챗·심의 파일 0줄'
+> 도 바뀌었다 — 화면은 실행 id 만 싣고(`delib_opts.procedure_run`) 근거는 챗 중계가 원장에서 짓는다(서버가 거절하려면 그 요청이 이
+> 다리의 것임을 서버가 알아야 한다). 상한 40건 · 150,000자 · 1,200자는 그대로다. 선행 결손 둘은 걷혔다(체크리스트 S8).
 
 ### 6-1. 쓸모를 어떻게 아나
 

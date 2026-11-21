@@ -255,6 +255,30 @@ export function fanOut(runId: string, ix: number, mode: 'plan' | 'live' = 'plan'
   );
 }
 
+/** 심의로 넘기면 무엇이 실리나 — 근거 수 · 단계마다의 상태 · 부르지 않은 단계. 근거 본문은 오지 않는다(심의를 열 때 서버가 싣는다). */
+export type RunHandoff = {
+  run_id: string;
+  title: string | null;
+  state: string;
+  mode: string;
+  evidence_count: number;
+  called: number;
+  /** 상한(40건)을 넘겨 싣지 않는 단계 수 */
+  dropped: number;
+  items: { ix: number; tool: string; state: string; chars: number }[];
+  not_called: { ix: number; tool: string; state: string; stage: string | null }[];
+  limits: { items: number; result_chars: number; args_chars: number };
+};
+
+export function runHandoff(runId: string) {
+  return get<RunHandoff>(`/runs/${runId}/handoff`, '넘길 근거를 확인하지 못했습니다.');
+}
+
+/** 실행을 챗 대화로 가져간다(주인만) — 단계 요약과 그 조회 근거가 든 내 챗 대화가 생긴다. */
+export function runToChat(runId: string) {
+  return post<{ conversation_id: string; title: string }>(`/runs/${runId}/chat`, {}, '챗으로 가져가지 못했습니다.');
+}
+
 /** 비교표 — 한 배치의 실행들을 나란히. `inputs` 를 그대로 열로 편다. */
 export function getBatch(batchId: string) {
   return get<BatchTable>(`/batches/${encodeURIComponent(batchId)}`, '비교표를 불러오지 못했습니다.');

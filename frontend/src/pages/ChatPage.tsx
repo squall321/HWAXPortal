@@ -1,5 +1,6 @@
 // 챗 메인 페이지 — 헤더 아래 전체화면 2단 레이아웃(이력 사이드바 + 활성 대화), 빈 상태는 클로드식 랜딩
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
 import { useChat } from '../state/ChatContext';
@@ -79,7 +80,19 @@ const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 export default function ChatPage() {
   const { user } = useAuth();
   const can = useCan();
-  const { messages, activeId, setInput, newConversation } = useChat();
+  const { messages, activeId, setInput, newConversation, openServerConversation } = useChat();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // 다른 화면이 만든 서버 대화를 연다(절차 실행을 챗으로 가져가기 — docs/procedures W-115). 주소 상태로 받고 곧 비운다 — 새로고침 ·
+  // 뒤로 가기가 같은 대화를 다시 열지 않게. 메시지는 챗 컨텍스트가 열 때 서버에서 읽는다.
+  useEffect(() => {
+    const o = (location.state as { openConversation?: { id?: unknown; title?: unknown } } | null)?.openConversation;
+    if (!o || typeof o.id !== 'string' || !o.id) return;
+    openServerConversation(o.id, typeof o.title === 'string' ? o.title : '');
+    navigate('.', { replace: true, state: null });
+    // 들어올 때 한 번만 본다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const composerRef = useRef<ComposerHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
