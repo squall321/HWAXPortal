@@ -1,13 +1,38 @@
 {
- "_doc": "HWAX 가 Report Archive 에 올리는 심의 보고서 형식 — infra/scripts/ra-register-format.py 가 RA 의 형식 등록(register_report_format, v0.176.0)에 넘긴다. 블록 id 넷은 심의 엔진(HWAXAgentServer deliberation.py)과 게이트웨이의 분석 루틴 보고서가 채우는 칸 그대로다 — 문자열 배열을 받는 긴 글(rich_text)이고 항목 하나는 2,000자를 넘지 않게 엔진이 나눈다. 칸을 바꾸면 그 두 곳과 같이 바꾼다(backend/tests/test_infra_ra_register_format.py 가 맞댄다). 내용을 바꿔 다시 등록하면 RA 가 새 판을 만들고 기존 보고서는 옛 판으로 그대로 보인다.",
+ "_doc": "HWAX 가 Report Archive 에 올리는 심의 보고서 형식 — infra/scripts/ra-register-format.py 가 RA 의 형식 등록(register_report_format, v0.176.0)에 넘긴다. 블록 id 넷은 심의 엔진(HWAXAgentServer deliberation.py)과 게이트웨이의 분석 루틴 보고서가 채우는 칸 그대로다 — 문자열 배열을 받는 긴 글(rich_text)이고 항목 하나는 2,000자를 넘지 않게 엔진이 나눈다. 이름 · 라벨 · props 는 RA 에 손으로 둔 `deliberation` v1 템플릿과 글자까지 같다(dev RA DB 에서 읽어 맞췄다, 2026-11-22) — 이 형식으로 바꿔도 보고서가 같은 모습으로 보인다. 칸을 바꾸면 엔진 · 게이트웨이와 같이 바꾼다(backend/tests/test_infra_ra_register_format.py 가 맞댄다). 내용을 바꿔 다시 등록하면 RA 가 새 판을 만들고 기존 보고서는 옛 판으로 그대로 보인다.",
  "system": "hwax",
  "kind": "deliberation",
- "name": "HWAX 심의 보고서",
+ "name": "심의 보고서",
  "description": "HWAX 포털의 전문가 심의 · 대화 정리 · 분석 루틴이 올리는 보고서. 사람 작성 목록에는 뜨지 않는다.",
  "blocks": [
-  {"id": "background", "type": "rich_text", "props": {"label": "배경 · 근거", "expand_with_content": true}},
-  {"id": "results", "type": "rich_text", "props": {"label": "결과", "expand_with_content": true}},
-  {"id": "recommendation", "type": "rich_text", "props": {"label": "결정 · 권고", "expand_with_content": true}},
-  {"id": "minutes", "type": "rich_text", "props": {"label": "회의록", "expand_with_content": true}}
+  {
+   "id": "background",
+   "type": "rich_text",
+   "props": {
+    "label": "심의 주제",
+    "required": true
+   }
+  },
+  {
+   "id": "results",
+   "type": "rich_text",
+   "props": {
+    "label": "심화 논의(2R)"
+   }
+  },
+  {
+   "id": "recommendation",
+   "type": "rich_text",
+   "props": {
+    "label": "의사결정문"
+   }
+  },
+  {
+   "id": "minutes",
+   "type": "rich_text",
+   "props": {
+    "label": "회의록(참여·라운드)"
+   }
+  }
  ]
 }
