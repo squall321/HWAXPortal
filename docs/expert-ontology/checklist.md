@@ -23,9 +23,10 @@
 - [ ] O0a · O0b 숫자로 G-EO1 · G-EO2 판정 — 못 넘으면 여기서 멈추고 숫자 · 까닭을 남긴다
 
 ## O1 ~ O3(관문 뒤)
-- [ ] AIDataHub 요청서 — `record_entities` · 짓는 일 · 병합 보호 · 읽기 창구 · `agent_search` 객체 거름
-- [ ] 에이전트 서버 그림자 — 좌석 · 추천 · 띵킹의 객체 신호 로그
-- [ ] 켜기 — 좌석 신호 · 카드 먼저 · '맡은 사람 없음' · '코어 데이터 질문'(박스 스위치 기본 끔)
+- [x] AIDataHub 요청서 — `record_entities` · 짓는 일 · 병합 보호 · 읽기 창구 · `agent_search` 객체 거름 — 요청서 대신 11-21 에 바로 지었다(아래
+      「미리 짓기」 — 표 · 짓는 일 · 박스마다 짓기 · `recommend_agents` 의 `onto`). `agent_search` 객체 거름만 안 지었다(EO-12 — 맨 아래 줄)
+- [x] 에이전트 서버 그림자 — 좌석 · 추천 · 띵킹의 객체 신호 로그 — `SEAT_ONTO=shadow`(11-21, 기본 끔 — 켜기는 cae00 의 G-EO 뒤)
+- [ ] 켜기 — 좌석 신호(지음 — `SEAT_ONTO=rank`, G-EO 뒤 cae00 에서) · 카드 먼저 · '맡은 사람 없음' · '코어 데이터 질문'(셋은 안 지음 — EO-12)
 
 ## 미리 짓기(11-21 — 사용자 결정 EO-6, 계획 6절)
 - [x] 결정 기록 EO-6 ~ EO-14 · 계획 6절 · CLAUDE.md 문서 표
@@ -41,6 +42,7 @@
 - [x] cae00 절차 [server-setup.md](server-setup.md) · 박스 훅 보기 · 받은 편지함 `../cae00-inbox/2026-11-21.md` · 업데이트 이력
 - [x] 올림(가지 병합 `--no-ff`) — AIDataHub main `85c3f2f` · 에이전트 서버 main `804f6a9` · 포털
 - [x] dev — AIDataHub 재기동(이행 0033) · `onto.sh build` 254,668줄 11.8초 · 두 번째 건너뜀 · `persona-domains-build.py` 셈(줄 둘 — 적지 않았다)
-- [ ] dev 에이전트 서버 재기동은 하지 않았다 — 스위치가 기본 끔이라 다음 재기동 때 그대로 들어온다
+- [x] dev 에이전트 서버 재기동(11-22 04:35 KST = 박스 시각 11-21 19:35 UTC, 사용자 지시) — `./start.sh -d`, 도는 심의 0 · 켜진 커밋은 `f5b5dd8` · `cf22658` 뿐,
+      `/health seat_onto` = `mode off · sent 0 · skipped 0`, 환경 이름 151개 그대로. 병합이 끝난 가지 `wt1120/card-onto` 셋도 지웠다
 - [ ] cae00(사람) — 받기 · build · `--dry-run` · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`(server-setup 1 ~ 6절)
 - [ ] 미룬 것 — 앉은 전문가의 카드 먼저 보기 · '맡은 사람 없음' · '코어 데이터 질문'(EO-12) · LLM 뽑기(연결 수를 본 뒤 다시 묻는다)
