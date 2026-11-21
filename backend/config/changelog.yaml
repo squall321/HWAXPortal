@@ -21,6 +21,15 @@
 #     실제로 파싱해 보므로, 깨뜨리면 테스트가 잡는다.
 
 entries:
+  - date: 2026-11-21
+    title: 전문가 고르기 · 지식카드를 온톨로지에 잇는 준비(기본 끔)
+    tag: 기술
+    items:
+      - "지식카드를 정본 허브의 객체에 잇는 코드를 미리 넣었습니다. **기본값에서는 전문가 추천 · 좌석 · 조회가 그대로**이고, 운영 박스가 허브에 이은 뒤 스위치를 켜야 달라집니다."
+      - "AIDataHub 에 새 표 넷(이행 0033 — `record_mentions` · `record_entities` · `onto_terms` · `onto_state`)과 박스 명령 `deploy/apptainer/onto.sh`(build · bind · status · profile)가 생겼습니다. 카드 낱말은 카드가 가진 칸(열쇠말 · 물성 줄 · 카드 종류)에서 뽑고, 연결은 허브가 exact 로 확인한 이름만 씁니다. LLM 은 부르지 않습니다."
+      - "AIDataHub `recommend_agents` 에 고르는 인자 `onto`(`off` 기본 · `shadow` · `rank`)가 생겼습니다. `rank` 는 질문에 나온 객체에 카드가 이어진 전문가에게 덧점을 주고, 다루는 전문가가 많은 객체일수록 덧점이 작습니다(`AIDH_ONTO_SEAT_WEIGHT`)."
+      - "에이전트 서버에 박스 스위치 `SEAT_ONTO`(기본 끔)가 생겼습니다. 켜면 심의 첫 좌석 · 띵킹 첫 소집 · 심의 전문가 미리보기가 위 인자를 넘깁니다. 리스크 심사에는 넘기지 않습니다. 켰는데 넘기지 못하면 로그와 `/health` 의 `seat_onto` 에 까닭이 뜹니다."
+      - "포털에 `infra/scripts/card-entity-bind.py`(정본 허브 읽기 둘로 사전을 지어 AIDataHub 에 넘김)와 `infra/scripts/persona-domains-build.py`(전문가 도메인 ↔ 코어 타입 줄을 박스 덧씌우기에 적음)가 생겼습니다. 운영 절차는 `docs/expert-ontology/server-setup.md` 입니다."
   - date: 2026-11-18
     title: "MCP 로 StepForge 파일을 해석 웹(ste)에 바로 넣고, 층 재료의 가스 물성 · 신뢰성 시험 조건을 한 번에 받습니다"
     tag: 연결
