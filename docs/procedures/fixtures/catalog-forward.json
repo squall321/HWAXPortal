@@ -1,0 +1,12 @@
+{
+ "_why": "MUST_GATE 는 인구조사(catalog-census.json — 살아 있는 게이트웨이에서 뽑는다)에 있는 이름만 받는다. 그런데 뽑는 박스에 그 백엔드가 떠 있지 않으면(dev 에는 Report Archive 가 없다) 새로 생긴 위험한 도구를 인구조사가 실릴 때까지 막을 수 없다. 여기에는 **백엔드 소스에서 직접 확인한** 이름만 근거와 함께 적는다. 인구조사가 그 이름을 싣게 되면 시험이 이 줄을 지우라고 말한다.",
+ "tools": [
+  {
+   "name": "create_report_from_format",
+   "backend": "reportarchive",
+   "added": "2026-11-21",
+   "source": "ReportArchive v0.186.3(b552f09) mcp_server/server.py · backend/app/modules/imports/routes.py _mount_to_destination",
+   "why": "양식에 수신 게시판이 묶여 있으면 같은 호출에서 바로 게시한다(확인 토큰 없음)"
+  }
+ ]
+}

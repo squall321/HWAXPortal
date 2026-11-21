@@ -27,6 +27,14 @@ from app.procedures.models import (
 
 ROOT = Path(__file__).resolve().parents[2]
 CENSUS = ROOT / "docs" / "procedures" / "fixtures" / "catalog-census.json"
+# 살아 있는 게이트웨이에서 못 뽑는 이름(뽑는 박스에 그 백엔드가 없다)을 백엔드 소스 근거로 적어 두는 곳 — 그 파일의 `_why`.
+FORWARD = CENSUS.with_name("catalog-forward.json")
+
+
+def _forward() -> list[dict]:
+    if not FORWARD.is_file():
+        return []
+    return json.loads(FORWARD.read_text(encoding="utf-8"))["tools"]
 
 
 @pytest.fixture(scope="module")
@@ -54,8 +62,24 @@ def test_DRY_RUN_TOOLS_가_카탈로그와_정확히_같다(census):
 def test_게이트_필수_도구가_아직_카탈로그에_있다(census):
     """사라진 도구가 목록에 남아 있으면 그 줄은 **아무 일도 안 한다** — 지키는 척만 한다."""
     have = {t["name"] for t in census["tools"]}
-    assert MUST_GATE <= have, f"사라진 것: {sorted(MUST_GATE - have)}"
+    # 소스에서 확인해 앞서 적은 이름(catalog-forward.json)은 인구조사에 없어도 받는다 — MUST_GATE 에만. WARN_EXACT 는 그대로다.
+    assert MUST_GATE <= have | {t["name"] for t in _forward()}, f"사라진 것: {sorted(MUST_GATE - have)}"
     assert WARN_EXACT <= have, f"사라진 것: {sorted(WARN_EXACT - have)}"
+
+
+def test_앞서_적은_이름은_근거가_있고_인구조사에_아직_없다(census):
+    """catalog-forward.json 은 **인구조사가 실을 때까지만** 쓰는 자리다. 인구조사에 그 이름이 들어오면 여기서 지운다 — 안 지우면
+    그 줄이 사라진 도구를 영영 가려 준다(인구조사 가드가 지키던 것). 근거 없는 줄은 받지 않는다 — 짐작으로 적는 자리가 아니다."""
+    have = {t["name"] for t in census["tools"]}
+    seen = set()
+    for t in _forward():
+        for k in ("name", "backend", "added", "source", "why"):
+            assert isinstance(t.get(k), str) and t[k].strip(), f"{t.get('name')!r} — `{k}` 칸이 비었다"
+        assert t["name"] not in seen, f"{t['name']} 가 두 번 적혔다"
+        seen.add(t["name"])
+        assert t["name"] not in have, (
+            f"{t['name']} 가 이제 인구조사에 있다 — catalog-forward.json 에서 그 줄을 지운다")
+        assert t["name"] in MUST_GATE, f"{t['name']} — MUST_GATE 에 없는 이름은 여기 적을 까닭이 없다"
 
 
 def test_되돌리기_어려운_도구가_새로_생기지_않았나(census):

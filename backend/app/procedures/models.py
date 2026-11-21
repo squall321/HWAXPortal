@@ -27,6 +27,10 @@ MUST_GATE = frozenset({
     # 2026-09-15 추가 — 인구조사 대조 가드가 잡았다(첫 실행에서). AI Data Hub 에 **등재**하는
     # 도구라 바깥으로 나가고 되돌리려면 남의 손이 필요하다. 465종에서 뽑을 땐 없었다.
     "publish_report_to_datahub",
+    # 2026-11-21 추가 — Report Archive v0.180.0 의 양식 수신. 양식에 수신 게시판이 묶여 있으면 **같은 호출에서 바로 게시**하고
+    # 확인 토큰 단계가 없다(RA `imports/routes.py` `_mount_to_destination`). 게시 취소는 남의 승인이 필요하다. dev 에 RA 가 떠 있지
+    # 않아 인구조사에는 없고 `catalog-forward.json` 에 소스 근거로 적는다(docs/leftovers-1121 L21-4 B1).
+    "create_report_from_format",
 })
 
 # 게시 2단 확인(ReportArchive) — `publish_report` 는 `preview_publish` 가 준 확인 토큰을 요구한다. 토큰은 **실행기가**
