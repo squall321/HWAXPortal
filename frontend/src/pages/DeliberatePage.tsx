@@ -1,5 +1,6 @@
 // 심의 전용 페이지 — 화두를 던지면 전문가 다중 라운드 심의(불량 화두면 SignalForge 환기 선행), 이력은 챗과 분리
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useChat } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
@@ -69,8 +70,46 @@ const RA_SAVE_PROMPT = '/보고서';
 // 버튼을 따로 둔다(하나로 합치면 어느 쪽이 저장됐는지 사람이 알 수 없다).
 const RA_TIDY_PROMPT = '/보고서 정리';
 
+/** 절차 실행 상세의 '심의로 넘기기' 가 넘긴 것(docs/procedures W-114) — 실행 id 와 보이기용 수뿐이다. 단계 기록은 심의를 여는 요청에
+ *  실행 id(delib_opts.procedure_run)만 실으면 포털이 그 사람의 실행 원장에서 근거로 싣는다. */
+type ProcedureRunRef = {
+  run_id: string; title: string; count: number; dropped: number; failed: number; unknown: number; not_called: number;
+};
+
+function procedureRunOf(state: unknown): ProcedureRunRef | null {
+  const r = (state as { procedureRun?: Partial<ProcedureRunRef> } | null)?.procedureRun;
+  return r && typeof r.run_id === 'string' && /^[0-9a-f]{32}$/.test(r.run_id) ? { title: '', count: 0, dropped: 0, failed: 0, unknown: 0,
+                                                                              not_called: 0, ...r, run_id: r.run_id } : null;
+}
+
+function ProcedureRunChip({ run, onDrop }: { run: ProcedureRunRef; onDrop: () => void }) {
+  const marks = [
+    run.failed ? `실패 ${run.failed}` : '', run.unknown ? `실행 여부 모름 ${run.unknown}` : '',
+    run.dropped ? `상한을 넘겨 뺀 단계 ${run.dropped}` : '', run.not_called ? `부르지 않은 단계 ${run.not_called}(근거 아님)` : '',
+  ].filter(Boolean);
+  return (
+    <p className="cx-hero-hint" data-testid="procedure-run-chip">
+      절차 실행 «{run.title}» 의 단계 기록 {run.count}건을 근거로 싣습니다{marks.length ? ` — ${marks.join(' · ')}` : ''}. 화두를 적고 심의
+      유형을 고르세요.{' '}
+      <button type="button" className="cx-chip" onClick={onDrop}>떼기</button>
+    </p>
+  );
+}
+
 export default function DeliberatePage() {
   const { messages, activeId, activeConversation, setInput, newConversation, sendMessage, streaming, delibOpts } = useChat();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // 넘겨받은 절차 실행 — 다음 심의 시작에 한 번 실리고 떼어진다. 새 심의로 연다(열려 있던 대화의 뒤 발화는 심의를 열지 않는다).
+  const [procRun, setProcRun] = useState<ProcedureRunRef | null>(() => procedureRunOf(location.state));
+  useEffect(() => {
+    if (!procedureRunOf(location.state)) return;
+    newConversation();
+    // 주소의 상태를 비운다 — 새로고침 · 뒤로 가기가 같은 실행을 다시 붙이지 않게
+    navigate('.', { replace: true, state: null });
+    // 들어올 때 한 번만 본다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const composerRef = useRef<ComposerHandle>(null);
   const threadRef = useRef<HTMLDivElement>(null); // 내보내기(HTML)가 캡처할 렌더 루트
   // 데스크톱은 저장된 선호를 따르고, 좁은 화면은 오버레이라 기본 닫힘.
@@ -109,7 +148,11 @@ export default function DeliberatePage() {
     const route = JOB_ROUTING[job];
     const subjectOpt = subjectWire(subject);
     setSubject(EMPTY_SUBJECT);
+    const fromRun = procRun;
+    setProcRun(null);
     sendMessage(route.trigger + topic, {
+      // 절차 실행의 단계 기록 — 실행 id 만 싣는다. 근거는 포털이 원장에서 짓는다(리스크 심사 계열 유형이면 서버가 거절한다).
+      ...(fromRun ? { procedure_run: fromRun.run_id } : {}),
       personas: personas.map((p) => ({ key: p.key, role: p.role })),
       // 심의 주제 — 서버가 같은 풀이로 다시 확인한다(브라우저 값은 근거가 아니다). 고르지 않았으면 싣지 않는다.
       ...(subjectOpt ? { subject: subjectOpt } : {}),
@@ -123,7 +166,7 @@ export default function DeliberatePage() {
       ...(extra?.human_note ? { human_note: extra.human_note } : {}),
       ...(extra?.voc ? { voc: extra.voc } : {}),
     });
-  }, [picking, sendMessage, job, mods, subject]);
+  }, [picking, sendMessage, job, mods, subject, procRun]);
 
   const cancelPicking = useCallback(() => {
     const topic = picking?.topic ?? '';
@@ -190,6 +233,7 @@ export default function DeliberatePage() {
           <div className={`cx-hero${picking ? ' cx-hero--picking' : ''}`} key={activeId ?? 'new'}>
             {picking ? (
               <div className="cx-hero-inner">
+                {procRun && <ProcedureRunChip run={procRun} onDrop={() => setProcRun(null)} />}
                 <SubjectPicker candidates={subjectCands} value={subject} onChange={setSubject} />
                 <ExpertPicker
                   // 되묻기로 화두가 바뀌면 다시 마운트 — 새 추천으로 좌석을 다시 시딩한다.
@@ -260,6 +304,7 @@ export default function DeliberatePage() {
                     <span className="cx-brief-job-when">{j.when} · {j.note}</span>
                   </button>
                 ))}
+                {procRun && <ProcedureRunChip run={procRun} onDrop={() => setProcRun(null)} />}
                 <Composer
                   ref={composerRef}
                   dropAnywhere

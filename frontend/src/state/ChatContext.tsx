@@ -197,6 +197,9 @@ interface ChatContextValue {
   streamLive: () => StreamLive | null;
   newConversation: () => void;
   selectConversation: (id: string) => void;
+  /** 서버에 이미 있는 대화(다른 화면이 만든 것 — 절차 실행을 챗으로 가져가기)를 목록에 넣고 연다. 메시지는 열 때 서버에서 읽는다
+   *  ('열 때 최신 로드'). 이 제공자의 종류(serverKind)로 만든 대화여야 다음 새로고침의 목록 거름에도 남는다. */
+  openServerConversation: (serverId: string, title: string) => void;
   deleteConversation: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
   // 보조 페이지(/apps, /launch)의 플로팅 독 상태
@@ -1509,6 +1512,17 @@ export function ChatProvider({
     setActiveId(id);
   }, []);
 
+  const openServerConversation = useCallback((serverId: string, title: string) => {
+    const now = Date.now();
+    serverMetaRef.current.set(serverId, now);
+    setConversations((prev) =>
+      prev.some((c) => (c.serverId ?? c.id) === serverId)
+        ? prev
+        : [{ id: serverId, serverId, title: title || '새 대화', messages: [], createdAt: now, updatedAt: now }, ...prev],
+    );
+    setActiveId(serverId);
+  }, []);
+
   const deleteConversation = useCallback(
     (id: string) => {
       if (streamConvRef.current === id) {
@@ -1598,6 +1612,7 @@ export function ChatProvider({
         streamLive,
         newConversation,
         selectConversation,
+        openServerConversation,
         deleteConversation,
         renameConversation,
         open,

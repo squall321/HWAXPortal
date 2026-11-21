@@ -26,6 +26,8 @@ import {
   listRuns,
   replayProcedure,
   resumeRun,
+  runHandoff,
+  runToChat,
   type ProcedureRow,
   type BatchTable,
   type ProcedureTool,
@@ -946,6 +948,7 @@ function RunDetailView() {
   const [err, setErr] = useState<string | null>(null);
   // 누르는 동안 단추를 막는다(확인 · 고르기 카드와 같은 꼴) — 두 번 누르면 재개가 실행기를 둘 띄웠다(W-110, 서버도 둘째를 409 로 막는다)
   const [busy, setBusy] = useState(false);
+  const can = useCan();
 
   useEffect(() => watch(id), [id, watch]);
 
@@ -1009,6 +1012,35 @@ function RunDetailView() {
             <button type="button" className="btn-secondary pr-btn" disabled={busy}
                     onClick={() => act(() => cancelRun(watched.id))}>
               중단
+            </button>
+          )}
+          {!running && watched.mode === 'live' && can('feat:deliberation') && (
+            // 실행 → 심의(W-114). 여기서는 실행 id 만 넘긴다 — 단계 기록은 심의를 열 때 서버가 근거로 싣는다(가려진 값은 가려진 채,
+            // 실패 · 실행 여부 모름은 표지와 함께). 화두와 심의 유형은 심의 화면에서 사람이 고른다. 리스크 심사로는 넘기지 않는다(서버가 거절한다).
+            <button type="button" className="btn-secondary pr-btn" disabled={busy}
+                    title="이 실행의 단계 기록(도구 · 인자 · 결과)을 근거로 심의를 엽니다 — 화두와 유형은 심의 화면에서 고릅니다"
+                    onClick={() => act(async () => {
+                      const h = await runHandoff(watched.id);
+                      nav('/deliberate', { state: { procedureRun: {
+                        run_id: h.run_id, title: h.title ?? watched.id.slice(0, 8), count: h.evidence_count, dropped: h.dropped,
+                        failed: h.items.filter((i) => i.state === 'failed').length,
+                        unknown: h.items.filter((i) => i.state === 'unknown').length,
+                        not_called: h.not_called.length,
+                      } } });
+                    })}>
+              심의로 넘기기
+            </button>
+          )}
+          {!running && watched.mode === 'live' && (
+            // 실행 → 챗(W-115). 단계 요약과 그 조회 근거가 든 내 챗 대화를 만들고 챗 화면으로 간다 — 그 대화는 챗 화면이 주소 상태로 받아
+            // 연다(절차 화면은 챗 컨텍스트를 쓰지 않는다 — PLAN §3 의 페이지 스코프).
+            <button type="button" className="btn-secondary pr-btn" disabled={busy}
+                    title="이 실행의 단계 요약을 챗 대화로 만듭니다 — 이어서 물으면 단계 결과로 답합니다"
+                    onClick={() => act(async () => {
+                      const r = await runToChat(watched.id);
+                      nav('/', { state: { openConversation: { id: r.conversation_id, title: r.title } } });
+                    })}>
+              챗으로 가져가기
             </button>
           )}
         </div>
