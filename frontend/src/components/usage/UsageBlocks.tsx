@@ -31,9 +31,18 @@ export function Block({
   );
 }
 
-export function Card({ title, children }: { title: string; children: ReactNode }) {
+export function Card({
+  title,
+  wide = false,
+  children,
+}: {
+  title: string;
+  /** 칸이 많은 표를 담는 카드 — 격자의 한 줄을 다 쓴다 */
+  wide?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <section className="uc-card" aria-label={title}>
+    <section className={wide ? 'uc-card is-wide' : 'uc-card'} aria-label={title}>
       <h2>{title}</h2>
       {children}
     </section>

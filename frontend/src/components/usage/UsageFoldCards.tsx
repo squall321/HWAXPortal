@@ -191,7 +191,7 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
         </Block>
       </Card>
 
-      <Card title="MCP 도구 — 앱 · 도구">
+      <Card wide title="MCP 도구 — 앱 · 도구">
         <Block sec={s.mcp_apps} title="앱마다">
           <Table
             head={[
@@ -352,7 +352,7 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
 /** 접기 상태 — 원천마다 접어 둔 범위 · 닫힌 날 · 마지막 접기 · 실패 까닭 */
 export function FoldStatusCard({ s }: { s: Sections }) {
   return (
-    <Card title="접기 상태">
+    <Card wide title="접기 상태">
       <Block sec={s.fold_status}>
         <Table
           head={[

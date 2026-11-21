@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from tests.test_usage_fold import NOW, _at, _box, _fold
-from tests.test_usage_fold_sections import A, B, C, D19, scene  # noqa: F401 — 장면 고정물
+from tests.test_usage_fold_sections import D19, A, B, C, scene  # noqa: F401 — 장면 고정물
 
 ROOT = Path(__file__).resolve().parents[2]
 FE = ROOT / "frontend"
