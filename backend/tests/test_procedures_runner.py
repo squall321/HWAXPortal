@@ -682,6 +682,33 @@ def test_한_단계씩_돌린_미리보기도_확인_토큰을_원장에_남기�
     asyncio.run(go(*kit))
 
 
+def test_초안_만들기가_돌려준_확인_토큰도_원장에_남기지_않는다(kit):
+    """Report Archive v0.180.0 부터 `create_report_draft(boards=…)` 의 답에도 미리보기와 같은 확인 토큰이 온다(RA
+    `reports/routes.py` — board_targets · confirm_token). 가림이 도구 이름(preview_publish)에 묶여 있으면 이 토큰이 실행 원장에 남는다 —
+    칸 이름으로 가린다. 그 칸이 없는 결과는 그대로다."""
+    async def go(store, build):
+        g = Gate()
+        tok = "cf.9f8e7d6c5b4a.sig-of-the-draft"
+        g.replies["reportarchive_create_report_draft"] = lambda a: _ra({
+            "report_id": 77, "url": "/w/dept-a/reports/77", "warnings": [],
+            "board_targets": [{"slug": "dept-a", "audience": 12}], "confirm_token": tok})
+        g.replies["reportarchive_get_report_outline"] = lambda a: _ra({"report_id": 77, "page_count": 1})
+        r = build(g)
+        rid = store.create_run(owner_sub="u1", mode="live", inputs={})
+        got = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(
+            backend="reportarchive", tool="create_report_draft", args={"title": "t", "boards": ["dept-a"]}))
+        plain = await r.step_once(run_id=rid, principal=PRINCIPAL, step=Step(
+            backend="reportarchive", tool="get_report_outline", args={"report_id": 77}))
+        await r.aclose()
+        assert got["ok"] is True and plain["ok"] is True, (got, plain)
+        assert [c[:80] for c in _ledger_cells(store.health()["path"]) if tok in c] == []
+        first = json.loads(store.step_result(rid, 0))
+        assert first["confirm_token"] == "[가림:confirm_token]" and first["report_id"] == 77
+        assert first["board_targets"] == [{"slug": "dept-a", "audience": 12}], "토큰 값만 가린다 — 나머지는 그대로다"
+        assert json.loads(store.step_result(rid, 1)) == {"report_id": 77, "page_count": 1}
+    asyncio.run(go(*kit))
+
+
 def test_승인_뒤_미리보기가_한_번_실패해도_다음_카드는_승인한_것과의_차이를_보인다(kit):
     """실패 행이 승인 지문과 승인한 미리보기를 지운 동안, 재개한 카드는 '바뀐 줄' 없이 처음 보는 카드처럼 떴다."""
     async def go(store, build):

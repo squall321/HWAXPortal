@@ -27,6 +27,7 @@ from app.main import app
 PW = "pw123456"
 STE_SECRET = "ste-test-secret-0000"
 GW_SECRET = "gw-test-secret-0000"
+RA_SECRET = "ra-test-secret-0000"
 
 
 class _Net:
@@ -60,6 +61,7 @@ def box(tmp_path, monkeypatch):
         s = Settings(_env_file=None, user_store_path=str(tmp_path / "users.sqlite"),
                      token_store_path=str(tmp_path / "tokens.sqlite"), local_bootstrap_admins="boss@corp.com",
                      **{"ste_sso_secret": STE_SECRET, "ste_base_url": "http://ste.test/ste",
+                        "ra_sso_secret": RA_SECRET, "ra_base_url": "http://ra.test",
                         "gateway_shared_token": GW_SECRET, "mcp_gateway_url": "http://gw.test:9110", **over})
         app.dependency_overrides[get_settings] = lambda: s
         from app.auth.routes.local import _rl
@@ -126,22 +128,28 @@ def test_정지하면_ste_RA_게이트웨이_셋을_모두_회수한다(box):
     assert gw.headers["authorization"] == f"Bearer {GW_SECRET}"
 
     assert "user@corp.com" not in ra_sso._CACHE and "other@corp.com" in ra_sso._CACHE
+    # RA 에서도 지운다 — 위임 토큰은 2일을 살아 메모리에서 잊는 것만으로는 그동안 유효하다(RA v0.170.0 의 회수 창구). 발급이 client 별이라
+    # 포털이 받은 것과 게이트웨이가 받은 것을 따로 지운다.
+    ra = net.to("ra.test")
+    assert [(q.method, q.url.path) for q in ra] == [("POST", "/api/auth/sso/revoke")] * 2
+    assert [q.headers["x-heax-client"] for q in ra] == ["hwax-portal", "gateway"]
+    assert {q.headers["x-heax-user-email"] for q in ra} == {"user@corp.com"} and {q.headers["x-heax-gateway-secret"] for q in ra} == {RA_SECRET}
     assert set(net.status_at_call) == {"disabled"}, "정지를 먼저 적는다 — 앱 호출이 늦거나 매달려도 정지는 이미 걸려 있다"
     assert r.json()["app_revocations"] == {"ste": "ok", "reportarchive": "ok", "gateway": "ok"}
 
 
 # ── 하나가 실패해도 ──────────────────────────────────────────────────────────
 @pytest.mark.parametrize("broken", ["ste:refuse", "ste:500", "ste:boom", "gateway:refuse", "gateway:401",
-                                    "gateway:boom", "reportarchive:boom"])
+                                    "gateway:boom", "reportarchive:boom", "reportarchive:refuse", "reportarchive:500"])
 def test_하나가_실패해도_나머지와_정지는_그대로_간다(box, broken, monkeypatch, caplog):
     c, net, h = box()
     app_name, how = broken.split(":")
-    if app_name == "reportarchive":
+    if broken == "reportarchive:boom":
         def boom(_email):
             raise RuntimeError("캐시가 던진 예기치 않은 오류")
         monkeypatch.setattr(ra_sso, "forget", boom)
     else:
-        net.broken[{"ste": "ste.test", "gateway": "gw.test"}[app_name]] = how
+        net.broken[{"ste": "ste.test", "gateway": "gw.test", "reportarchive": "ra.test"}[app_name]] = how
     with caplog.at_level(logging.WARNING):
         r = _suspend(c, h)
     assert r.status_code == 200, f"앱 쪽 실패가 정지를 막았다: {r.status_code} {r.text}"
@@ -170,13 +178,13 @@ def test_다시_활성화할_때는_아무것도_회수하지_않는다(box):
 
 
 def test_꺼진_연동은_부르지_않고_실패로도_적지_않는다(box, caplog):
-    c, net, h = box(ste_sso_secret="", gateway_shared_token="")
+    c, net, h = box(ste_sso_secret="", gateway_shared_token="", ra_sso_secret="")
     with caplog.at_level(logging.WARNING):
         r = _suspend(c, h)
     assert r.status_code == 200 and _is_suspended()
     assert net.calls == [], "비밀이 없는 연동을 불렀다"
     assert "user@corp.com" not in ra_sso._CACHE, "RA 캐시는 설정과 무관하게 포털 안에서 비운다"
-    assert r.json()["app_revocations"] == {"ste": "off", "reportarchive": "ok", "gateway": "off"}
+    assert r.json()["app_revocations"] == {"ste": "off", "reportarchive": "off", "gateway": "off"}
     assert not [rec for rec in caplog.records if "회수" in rec.getMessage()], "꺼진 것을 실패로 적으면 늘 울리는 경보가 된다"
 
 

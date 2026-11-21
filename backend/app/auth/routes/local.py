@@ -194,7 +194,8 @@ def approve_user(
 async def _revoke_app_credentials(settings: Settings, email: str) -> dict[str, str]:
     """정지된 사람의 **앱 쪽 자격**을 회수한다(8차 요청 §7). 정지가 포털 PAT 만 폐기하던 때는 이 셋이 만료까지 남았다.
       · ste — 그 사람이 포털을 거쳐 받은 ste 토큰(12시간). ste 원장에서 죽인다.
-      · reportarchive — 포털이 메모리에 든 그 사람의 RA 위임 토큰(최대 11시간). RA 가 회수 엔드포인트를 내주면 여기에 더한다.
+      · reportarchive — 그 사람의 RA 위임 토큰. 포털 메모리의 것을 잊고, RA 에서도 지운다(RA v0.170.0 의 회수 창구 — 포털이 받은 것과
+        게이트웨이가 받은 것 둘 다. RA 위임 토큰은 2일을 산다). RA 위임이 꺼진 박스 · 회수 창구가 없는 옛 RA 는 off 다.
       · gateway — 게이트웨이가 든 그 사람 명의 토큰과 연결·응답·권한 캐시.
 
     **best-effort 다.** 셋을 따로 시도하고 하나가 실패해도(던져도) 나머지는 간다. 부르는 쪽은 정지를 원장에 적은 **뒤에** 이것을
@@ -207,8 +208,7 @@ async def _revoke_app_credentials(settings: Settings, email: str) -> dict[str, s
         return await ste_credential.revoke_for(settings, email)
 
     async def reportarchive() -> bool | None:
-        ra_sso.forget(email)
-        return True
+        return await ra_sso.revoke_for(settings, email, clients=("hwax-portal", "gateway"))
 
     async def gateway() -> bool | None:
         return await _invalidate_gateway_cache(settings, email)

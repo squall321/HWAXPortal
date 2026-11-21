@@ -479,8 +479,10 @@ def _ra_precheck(request: Request, spec: ProcedureSpec, principal: Principal,
         return []
     if conn and conn.get("token"):
         if not conn.get("workspace"):
-            return [f"Report Archive 연결은 있는데 **워크스페이스를 안 골랐습니다** — "
-                    f"보고서가 개인함에 쌓입니다(단계: {', '.join(tools[:3])})"]
+            # RA 의 초안은 늘 작성자 개인 공간에 생긴다 — 부서는 '어디에 쌓이나' 가 아니라 권한 · 게시의 기준이다. 부서 머리가 없으면
+            # RA 가 홈 부서 → 첫 조직 → 개인 공간으로 정한다(v0.170.0, 그 전 판은 거절한다).
+            return [f"Report Archive 연결은 있는데 **부서를 안 골랐습니다** — RA 가 홈 부서를 기준으로 삼습니다"
+                    f"(초안은 늘 본인 개인 공간에 생기고, 부서는 권한 · 게시의 기준입니다 · 단계: {', '.join(tools[:3])})"]
         return []
     return [f"Report Archive 연결이 없습니다 — 연결 없이 부르는 RA 단계는 게이트웨이가 **거부합니다**"
             f"(공용 계정으로 대신 부르지 않는다). 포털 **개인 토큰 › 외부 연결**(/tokens?tab=connect)에서 "

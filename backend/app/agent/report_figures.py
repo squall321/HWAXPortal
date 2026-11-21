@@ -203,7 +203,7 @@ def block(file_id: str, sha256: str, caption: str, alt: str) -> dict:
 
 async def _ra(request: Request, settings: Settings, principal: Principal) -> _dfd.RaSession:
     """그 사람 명의 RA 세션 — 토큰은 챗 업로드 · 정밀 변환 · 발표자료와 같은 함수 하나로(위임 먼저 · 등록 토큰 다음, 서비스 계정 없음)."""
-    from app.agent.routes import _ra_user_token     # 지연 import — routes 는 이 모듈을 부르지 않는다
+    from app.agent.routes import _ra_user_token, _ra_workspace     # 지연 import — routes 는 이 모듈을 부르지 않는다
 
     try:
         token, via_sso, conn = await _ra_user_token(request, settings, principal)
@@ -216,7 +216,7 @@ async def _ra(request: Request, settings: Settings, principal: Principal) -> _df
         async def remint() -> str | None:
             ra_sso.forget(email)
             return await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
-    return _dfd.RaSession(settings.ra_base_url, token, conn.get("workspace") or "", remint)
+    return _dfd.RaSession(settings.ra_base_url, token, _ra_workspace(conn, via_sso), remint)
 
 
 def _ra_fail(r: httpx.Response, step: str, *, left: str = "") -> FigureError:

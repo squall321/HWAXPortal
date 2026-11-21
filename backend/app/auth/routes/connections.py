@@ -108,9 +108,10 @@ def _workspace_options(me: dict) -> list[dict]:
         slug = str(m.get("workspace_slug") or "").strip()
         if not slug:
             continue
-        personal = (m.get("workspace_kind") == "personal") or slug.startswith("personal-")
+        kind = str(m.get("workspace_kind") or "").strip()
+        personal = (kind == "personal") or slug.startswith("personal-")
         out.append({"slug": slug, "name": str(m.get("workspace_name") or slug),
-                    "personal": personal, "role": str(m.get("role") or "")})
+                    "personal": personal, "role": str(m.get("role") or ""), "kind": kind})
     out.sort(key=lambda w: (w["personal"], w["slug"]))
     return out
 
@@ -123,9 +124,16 @@ def _pick_default_workspace(me: dict, options: list[dict]) -> str:
     home 이 조직이면 그것을 존중하고, 아니면 첫 조직 멤버십으로 간다.
     """
     home = str(me.get("home_workspace_slug") or "").strip()
-    orgs = [w["slug"] for w in options if not w["personal"]]
+    # 가상 공간은 기본값 후보가 아니다 — RA 가 부서 머리 없는 요청에 고르는 규칙과 같다(RA `shared/auth.py`
+    # `_default_workspace_for_token` — 개인 · 가상 · 보관을 뺀 첫 조직). 종류를 모르는 옛 RA 응답(kind 빈 글)은 종전대로 후보다.
+    orgs = [w["slug"] for w in options if not w["personal"] and w.get("kind") != "virtual"]
     if home and home in orgs:
         return home
+    # 부서(org)를 TF · 시스템 공간(RA v0.180.0 — 바깥 시스템의 결과가 게시되는 자리)보다 먼저 고른다. 슬러그순 첫째가 시스템 공간이
+    # 되면 그 사람의 RA 호출이 부서가 아니라 그 게시판을 기준으로 권한을 본다.
+    depts = [w["slug"] for w in options if not w["personal"] and w.get("kind") in ("org", "")]
+    if depts:
+        return depts[0]
     if orgs:
         return orgs[0]
     return home or ""

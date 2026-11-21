@@ -608,7 +608,7 @@ async def open_ra_report(
         token, _via, conn = await _ra_user_token(request, settings, principal)
     except AuthError:
         return {"url": home}
-    ws = conn.get("workspace")
+    ws = _ra_workspace(conn, _via)      # 위임이면 빈 글 — RA 가 그 사람의 홈 부서로 정하고, 못 찾았을 때 갈 곳도 RA 첫 화면이다
     fallback = f"{_RA_PUBLIC}/w/{ws}/reports/{report_id}" if isinstance(ws, str) and _RA_SLUG_OK.fullmatch(ws) else home
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     if ws:
@@ -1699,6 +1699,14 @@ async def _dispatch_audited(request, body, principal, settings) -> dict:
     return out
 
 
+def _ra_workspace(conn: dict, via_sso: bool) -> str:
+    """RA 에 실을 부서(X-Workspace-Slug) — 위임으로 받은 토큰이면 싣지 않는다(빈 글, 사용자 결정 2026-11-21 · docs/leftovers-1121 L21-6).
+    RA 는 부서 머리 없는 개인 토큰 요청을 그 사람의 홈 부서 → 첫 조직 → 개인 공간으로 정한다(RA v0.170.0 `shared/auth.py`
+    `_default_workspace_for_token`). 위임 창구가 답했다는 것이 곧 그 판 이상이라는 뜻이라 머리가 없어 400 이 될 일이 없다. 연결에 저장된
+    부서는 사람이 토큰을 직접 등록한 길에서만 쓴다 — 위임 길에서는 낡은 저장 값이 403 의 원인이 될 뿐이다."""
+    return "" if via_sso else str((conn or {}).get("workspace") or "")
+
+
 async def _ra_user_token(request, settings: Settings, principal: Principal) -> tuple[str, bool, dict]:
     """RA 에 그 사람 명의로 부를 토큰 — (토큰, 위임으로 받았나, 외부 연결 기록). RA_SSO_SECRET 이 있으면 포털이 그 자리에서 받고
     (ste 방식, docs/sso-delegation), 없거나 못 받으면 '외부 연결' 에 등록해 둔 토큰이다. 둘 다 없으면 무엇을 고칠지 말한다."""
@@ -1711,9 +1719,11 @@ async def _ra_user_token(request, settings: Settings, principal: Principal) -> t
     token = token or conn.get("token")
     if not token:
         if settings.ra_sso_secret:
+            why = ra_sso.why_failed(email)
             raise AuthError(
-                "Report Archive 가 본인 명의 토큰을 내주지 않았습니다(포털 위임) — RA 쪽 위임 상태"
-                "(HEAX_SSO_SECRET·그 계정)를 RA 담당에게 확인하세요. 포털 서버 로그 hwax.ra_sso 에 이유가 있습니다.",
+                "Report Archive 가 본인 명의 토큰을 내주지 않았습니다(포털 위임) — "
+                + (f"{why}. " if why else "RA 쪽 위임 상태(HEAX_SSO_SECRET·그 계정)를 ")
+                + "RA 담당에게 확인하세요. 포털 서버 로그 hwax.ra_sso 에 이유가 있습니다.",
                 status_code=502)
         raise AuthError(
             "Report Archive 연결이 없습니다 — 포털 '개인 토큰 › 외부 연결'(/tokens?tab=connect)에서 RA 토큰을 먼저 등록하세요.",
@@ -1858,14 +1868,12 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
 
         async def _post_pptx(tok: str) -> httpx.Response:
             hdrs = {"Authorization": f"Bearer {tok}"}
-            # 부서는 RA 가 그 사람의 홈 부서로 정한다(ra-request §3) — 사람이 '외부 연결' 에서 고른 조직이 있을 때만 싣는다.
-            # ⚠ 위임 토큰(via_sso)으로 부를 때도 싣는 것은 **일부러 둔 것**이다(9차 요청 §6 의 질문, docs/change-request-8-10 D-7).
-            #   게이트웨이가 같은 상황에서 이 헤더를 지우는 것(strip_headers)과 대상이 다르다 — 거기서 지우는 것은 설정에 박힌
-            #   **서비스 계정**의 부서이고, 여기서 싣는 것은 **그 사람**의 연결에 저장된 부서다(고른 값이거나 등록 때 '조직 먼저' 로
-            #   채워진 값). 지금 빼면 RA 의 홈이 개인함인 사람의 PPT 가 개인함으로 가거나 400 이 된다. RA 가 '헤더가 없으면 홈 부서' 를
-            #   보장하는 것이 확인되면 위임일 때는 뺀다 — 지금 동작은 test_ra_sso 가 고정한다.
-            if conn.get("workspace"):
-                hdrs["X-Workspace-Slug"] = conn["workspace"]
+            # 부서 — 위임 토큰이면 싣지 않는다(RA 가 그 사람의 홈 부서로 정한다). 사람이 토큰을 직접 등록한 길에서만 '외부 연결' 에서 고른
+            # 조직을 싣는다(_ra_workspace). 9차 요청 D-7 은 「RA 가 '헤더가 없으면 홈 부서' 를 보장하는 것이 확인되면 위임일 때는 뺀다」 였고
+            # RA v0.170.0 에서 그것이 섰다(사용자 결정 2026-11-21). 게이트웨이는 같은 상황에서 이미 이 헤더를 지운다(strip_headers).
+            ws = _ra_workspace(conn, via_sso)
+            if ws:
+                hdrs["X-Workspace-Slug"] = ws
             async with httpx.AsyncClient(timeout=600) as cli:
                 with path.open("rb") as fh:
                     return await cli.post(
@@ -2204,7 +2212,7 @@ async def upload_docforge_deliver(
 
         try:
             pdir = _dfd.package_dir(settings, pkg.get("package_rel"))
-            got = await _dfd.deliver(settings, pdir, token=token, workspace=conn.get("workspace") or "", remint=_remint)
+            got = await _dfd.deliver(settings, pdir, token=token, workspace=_ra_workspace(conn, via_sso), remint=_remint)
         except _dfd.DeliveryError as exc:
             _audit(request).record(principal=principal.subject, event="upload_deliver", status="failed",
                                    meta={"destination": "reportarchive_precise", "job_id": job_id, "error": exc.message[:300]})

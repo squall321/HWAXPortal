@@ -415,17 +415,18 @@ async def read_report(request: Request, settings: Settings, principal: Principal
     """그 사람 명의로 RA `GET /api/reports/{id}` → (ReportRead, 바이트 수). 서비스 계정으로 내려가는 길은 없다(2026-09-29 사고의 교훈).
     본문은 흘려 받으며 상한(wda_deck_report_max_mb)을 넘는 순간 멈춘다 — 다 받은 뒤 재지 않는다(WD-D53)."""
     # 지연 import — RA 자격은 챗 업로드 · 정밀 변환과 같은 함수 하나로 받는다(위임 먼저 · 등록 토큰 다음 · 둘 다 없으면 고칠 곳을 말한다)
-    from app.agent.routes import _ra_user_token
+    from app.agent.routes import _ra_user_token, _ra_workspace
 
     token, via_sso, conn = await _ra_user_token(request, settings, principal)
+    ws = _ra_workspace(conn, via_sso)       # 위임이면 빈 글 — RA 가 그 사람의 홈 부서로 정한다
     email = principal.email or principal.subject
     url = f"{settings.ra_base_url.rstrip('/')}/api/reports/{report_id}"
     cap = settings.wda_deck_report_max_mb * 1024 * 1024
 
     def hdrs(tok: str) -> dict:
         h = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
-        if conn.get("workspace"):
-            h["X-Workspace-Slug"] = conn["workspace"]
+        if ws:
+            h["X-Workspace-Slug"] = ws
         return h
 
     try:

@@ -182,3 +182,38 @@ def test_invalidate_targets_the_changed_user_only(monkeypatch):
     assert seen["url"] == "http://gw:9110/conn-invalidate"
     assert seen["params"] == {"email": "a@x.com"}      # 남의 캐시까지 날리지 않는다
     assert seen["headers"]["Authorization"] == "Bearer gw-tok"
+
+
+# ── 공간 종류(RA v0.180.0 — tf · system · virtual) ────────────────────────────────────
+def test_default_prefers_a_department_over_system_and_tf_spaces():
+    """슬러그순 첫째가 시스템 공간(바깥 시스템의 결과가 게시되는 자리)이면 그 사람의 RA 호출이 부서가 아니라 그 게시판을 기준으로 권한을
+    본다. 부서(org)를 먼저 고른다 — home 이 개인일 때도, home 이 없을 때도."""
+    me = {"home_workspace_slug": "personal-2", "memberships": [
+        {"workspace_slug": "a-sys-cae", "workspace_kind": "system", "workspace_name": "CAE 결과"},
+        {"workspace_slug": "b-tf", "workspace_kind": "tf", "workspace_name": "TF"},
+        {"workspace_slug": "mx", "workspace_kind": "org", "workspace_name": "MX"},
+        {"workspace_slug": "personal-2", "workspace_kind": "personal"}]}
+    opts = _workspace_options(me)
+    assert [o["kind"] for o in opts] == ["system", "tf", "org", "personal"], "종류를 화면에도 넘긴다(모르는 칸은 화면이 무시한다)"
+    assert _pick_default_workspace(me, opts) == "mx"
+    assert _pick_default_workspace({**me, "home_workspace_slug": ""}, opts) == "mx"
+
+
+def test_default_never_picks_a_virtual_space_but_respects_a_tf_home():
+    """가상 공간은 기본값 후보가 아니다(RA 가 부서 머리 없는 요청에 고르는 규칙과 같다). 부서가 없고 TF 만 있으면 그것을 고르고,
+    home 이 TF 면 그대로 존중한다 — 사람이 정한 소속이다."""
+    me = {"home_workspace_slug": "v-all", "memberships": [
+        {"workspace_slug": "a-virtual", "workspace_kind": "virtual"},
+        {"workspace_slug": "v-all", "workspace_kind": "virtual"},
+        {"workspace_slug": "z-tf", "workspace_kind": "tf"},
+        {"workspace_slug": "personal-2", "workspace_kind": "personal"}]}
+    opts = _workspace_options(me)
+    assert _pick_default_workspace(me, opts) == "z-tf"
+    me2 = {**me, "home_workspace_slug": "z-tf", "memberships": me["memberships"] + [{"workspace_slug": "dev", "workspace_kind": "org"}]}
+    assert _pick_default_workspace(me2, _workspace_options(me2)) == "z-tf"
+
+
+def test_default_treats_an_unknown_kind_as_before():
+    """종류를 안 싣는 옛 RA 응답(kind 없음)은 종전대로 조직 후보다 — 슬러그순 첫째."""
+    me = {"memberships": [{"workspace_slug": "mx"}, {"workspace_slug": "dev"}, {"workspace_slug": "personal-9"}]}
+    assert _pick_default_workspace(me, _workspace_options(me)) == "dev"
