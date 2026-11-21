@@ -46,7 +46,16 @@ export interface InsightRiskDiff {
 export interface InsightStale {
   state: 'stale' | 'current' | 'unknown' | 'not_checked';
   say: string;
-  items: { kind: string; id: string; rev?: string | null; state: string; why?: string; reasons?: string[] }[];
+  items: {
+    kind: string;
+    id: string;
+    rev?: string | null;
+    state: string;
+    why?: string;
+    reasons?: string[];
+    /** 뒤 판(이 CAD 과제를 앞 판으로 가리키는 개정) — 있으면 그 판의 리스크 변경 심사를 물을 수 있다 */
+    next?: { project_id: string; rev_label: string | null }[];
+  }[];
   risk_diffs?: InsightRiskDiff[];
   risk_note?: string;
 }

@@ -61,11 +61,13 @@ function StaleLine({ cardId, stale }: { cardId: string; stale: InsightStale }) {
     }
   };
   const diffs = full?.risk_diffs ?? [];
+  // 뒤 판이 있을 때만 물을 것이 있다 — 내용만 바뀐 카드(뒤 판 없음)는 리스크 변경 심사가 없다
+  const hasNext = stale.items.some((i) => (i.next?.length ?? 0) > 0);
   return (
     <div className={`ins-stale ins-stale-${stale.state}`}>
       <p className={stale.state === 'stale' ? 'ins-why' : 'ins-sub'}>
         판 — {stale.say}
-        {stale.state === 'stale' && !full && (
+        {hasNext && !full && (
           <button type="button" className="btn-secondary ins-inline-btn" disabled={busy} onClick={() => void open()}>
             뒤 판의 리스크 변경 심사 보기
           </button>
