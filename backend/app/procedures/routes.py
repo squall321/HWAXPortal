@@ -17,11 +17,13 @@ import asyncio
 import logging
 import os
 import re
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 import httpx
+import jwt
 import yaml
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -31,7 +33,8 @@ from app.access.policy import ADMIN_GROUP
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import BACKEND_DIR, Settings, get_settings
-from app.deps import ensure, get_current_principal, require_csrf
+from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
+from app.procedures import handoff as _handoff
 from app.procedures import judge as J
 from app.procedures.models import (
     MUST_GATE,
@@ -74,6 +77,47 @@ def _runner(request: Request):
 def _me(principal: Principal = Depends(get_current_principal)) -> Principal:
     ensure(principal, FEAT)
     return principal
+
+
+def _me_any(principal: Principal = Depends(principal_pat_or_session)) -> Principal:
+    """세션 또는 PAT — 게이트웨이의 절차 도구(procedure_list · procedure_get · procedure_run_start · procedure_run_status)가 호출자 PAT 를
+    그대로 넘긴다(분석 루틴과 같은 길, W-116). 세션의 POST 는 `principal_pat_or_session` 이 CSRF 를 본다.
+
+    ⚠ 이 의존성을 다는 라우트가 곧 **도구로 닿는 길**이다. 승인 · 고르기 · 재개 · 펼치기 · 단계 붙이기 · 저장 · 넘기기에는 달지 않는다 —
+    사람 확인을 도구로 넘길 수 있게 된다. 열린 길의 전수는 시험이 고정한다(`test_PAT_로_열리는_길은_다섯뿐이다`)."""
+    ensure(principal, FEAT)
+    return principal
+
+
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    return auth[7:].strip() if auth[:7].lower() == "bearer " else ""
+
+
+def _me_start(request: Request, principal: Principal = Depends(_me_any)) -> Principal:
+    """실행 시작 — `_me_any` 에 더해 읽기 전용 PAT 와 용도가 박힌 PAT 는 받지 않는다. 서명 · 청중 · 만료 · 폐기는 앞 의존성이 같은 요청의
+    같은 머리로 이미 봤다 — 여기서는 칸만 읽는다.
+
+    용도가 박힌 PAT 는 사람이 만든 것이 아니다(`purpose` 는 코드만 넣는다 — pat.py). 절차 실행기의 PAT(purpose=procedure)로 실행을 시작하게
+    두면 절차의 단계가 게이트웨이의 실행 시작 도구를 불러(단계의 별칭 `<백엔드>_<도구>` 가 그 이름이 되게 적으면 닿는다) 절차가 절차를 끝없이
+    시작한다. 게이트웨이도 같은 호출을 거절한다 — 여기는 포털로 바로 오는 길을 막는다."""
+    tok = _bearer(request)
+    if tok:
+        from app.procedures.routine_routes import _read_only_pat   # 늦게 — 그 모듈이 이 모듈을 import 한다
+
+        if _read_only_pat(tok):
+            raise AuthError("읽기 전용 토큰은 절차를 실행하지 못한다(실행 원장에 쓴다)", status_code=403)
+        if jwt.decode(tok, options={"verify_signature": False}).get("purpose"):
+            raise AuthError("절차 실행기 · 패널 같은 용도 토큰으로는 절차 실행을 시작하지 못한다 — 사람의 토큰으로만 시작한다",
+                            status_code=403)
+    return principal
+
+
+def _human_gates(spec: dict) -> list:
+    """이 절차가 **실제로** 사람을 기다리는 단계의 도구들 — 선언(`gate: human`)과 되돌리기 어려운 도구(MUST_GATE). 실행기 `_gate_of` 와 같은
+    판정이다. 선언만 보면 MUST_GATE 가 나중에 늘었을 때 옛 판본의 계약이 '안 멈춘다' 고 말하는데 실행은 멈춘다."""
+    return [st.get("tool") for st in (spec.get("steps") or [])
+            if st.get("gate") == "human" or st.get("tool") in MUST_GATE]
 
 
 def _owned(request: Request, principal: Principal, run_id: str) -> dict:
@@ -405,6 +449,27 @@ def list_procedures(request: Request, principal: Principal = Depends(_me)) -> di
     return {"procedures": _store(request).list_procedures(owner_sub=principal.subject)}
 
 
+@router.get("/catalog")
+def catalog(request: Request, principal: Principal = Depends(_me_any)) -> dict:
+    """내가 볼 수 있는 절차를 **도구 계약의 머리**로 — 게이트웨이 `procedure_list` 가 읽는다(W-116). 시야는 화면의 절차 목록과 같다
+    (내 것 + 공개한 것 — `list_procedures`). 남의 절차는 `mine: false` 로만 말하고 주인의 주소는 싣지 않는다. 입력 스키마 전부는
+    `/procedures/{id}/tool` 이 낸다."""
+    store = _store(request)
+    rows = []
+    for p in store.list_procedures(owner_sub=principal.subject):
+        v = store.latest_version_of(p["id"])
+        if v is None:
+            continue
+        spec = v["spec"]
+        rows.append({
+            "procedure_id": p["id"], "title": p["title"], "version_no": v["version_no"],
+            "mine": p["owner_sub"] == principal.subject, "updated_at": p["updated_at"],
+            "vars": [{"key": x.get("key"), "label": x.get("label") or x.get("key"), "type": x.get("type") or "string",
+                      "required": x.get("required", True) is not False} for x in (spec.get("vars") or [])],
+            "steps": len(spec.get("steps") or []), "human_gates": _human_gates(spec)})
+    return {"count": len(rows), "procedures": rows}
+
+
 @router.post("/procedures", status_code=201, dependencies=[Depends(require_csrf)])
 async def create_procedure(request: Request, body: ProcedureIn,
                   principal: Principal = Depends(_me)) -> dict:
@@ -521,12 +586,18 @@ def _conn_precheck(request: Request, spec: ProcedureSpec, principal: Principal) 
     return out
 
 
-@router.post("/runs", status_code=202, dependencies=[Depends(require_csrf)])
+@router.post("/runs", status_code=202)
 async def start_run(request: Request, body: RunIn,
-                    principal: Principal = Depends(_me),
+                    principal: Principal = Depends(_me_start),
                     settings: Settings = Depends(get_settings)) -> dict:
-    """`procedure_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다."""
+    """`procedure_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다.
+
+    세션(+ CSRF — `principal_pat_or_session` 이 본다) 또는 그 사람의 PAT(게이트웨이 `procedure_run_start`, W-116). PAT 로는 저장된 절차만
+    시작한다. 기본은 계획 모드이고, live 로 시작해도 사람 확인 단계(gate: human · MUST_GATE)에서 멈춘다 — 승인은 화면만 받는다."""
     store, runner = _store(request), _runner(request)
+    if _bearer(request) and not (body.version_id or body.procedure_id):
+        # 빈 실행은 화면에서 한 단계씩 붙이는 자리다 — 단계 붙이기는 PAT 를 받지 않아 도구로 만든 빈 실행은 아무도 못 쓴다
+        raise AuthError("procedure_id 를 준다 — 토큰으로는 저장된 절차만 시작한다(빈 실행은 화면에서 만든다)", status_code=422)
     version = None
     if body.version_id or body.procedure_id:
         version = store.readable_version(
@@ -684,7 +755,7 @@ async def replay_run(request: Request, run_id: str, body: ReplayIn,
 
 
 @router.get("/runs/{run_id}")
-def get_run(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
+def get_run(request: Request, run_id: str, principal: Principal = Depends(_me_any)) -> dict:
     run = _owned(request, principal, run_id)
     for s in run["steps"]:
         s.pop("result_sha256", None)  # 화면은 본문을 따로 받는다
@@ -693,7 +764,7 @@ def get_run(request: Request, run_id: str, principal: Principal = Depends(_me)) 
 
 @router.get("/runs/{run_id}/steps/{ix}/result")
 def step_result(request: Request, run_id: str, ix: int,
-                principal: Principal = Depends(_me)) -> dict:
+                principal: Principal = Depends(_me_any)) -> dict:
     _owned(request, principal, run_id)
     body = _store(request).step_result(run_id, ix)
     if body is None:
@@ -1004,6 +1075,47 @@ def cancel(request: Request, run_id: str, principal: Principal = Depends(_me)) -
     return {"cancelled": True}
 
 
+# ── 실행을 심의 · 챗으로 넘긴다(W-114 · W-115) ───────────────────────────────────────────────────
+# 심의로 넘기기는 실행 id 만 싣는다 — 근거는 챗 중계가 원장에서 지어 싣는다(app/agent/routes.py `_attach_procedure_run`). 아래 미리보기는
+# 화면이 넘기기 전에 '무엇이 실리나' 를 보이는 자리이고 결과 본문은 내지 않는다. 둘 다 주인만이고 세션만 받는다(도구로 닿지 않는다).
+# 챗으로 가져간 대화의 종류는 'chat' 이다 — 화면의 대화 목록은 종류로 거르므로(chat · deliberation) 다른 종류로 만들면 어느 탭에도 안 보인다
+# (docs/leftovers-1017 LO-D2 · 사용자 결정 10-31 A15 (B)). 어디서 왔는지는 답의 meta.procedure_run 이 말한다.
+CHAT_KIND = "chat"
+
+
+@router.get("/runs/{run_id}/handoff")
+def run_handoff(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
+    """심의로 넘기면 무엇이 실리나 — 근거 수 · 단계마다의 상태 · 부르지 않은 단계 · 상한. 넘길 수 없는 실행(도는 실행 · 부른 단계 없음)은
+    중계와 같은 판정으로 거절한다."""
+    run = _owned(request, principal, run_id)
+    got = _handoff.evidence_or_refuse(_store(request), run)
+    return {"run_id": run_id, "title": run.get("title"), "state": run["state"], "mode": run["mode"],
+            "evidence_count": len(got["evidence"]), "called": got["called"], "dropped": got["dropped"],
+            "items": got["brief"], "not_called": got["not_called"],
+            "limits": {"items": _handoff.EVID_ITEMS, "result_chars": _handoff.EVID_RESULT_MAX,
+                       "args_chars": _handoff.EVID_ARGS_MAX}}
+
+
+@router.post("/runs/{run_id}/chat", status_code=201, dependencies=[Depends(require_csrf)])
+def run_to_chat(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
+    """실행을 챗 대화로 가져간다 — 사람 한 줄 + 단계 요약이고, 요약의 조회 근거(meta.activity)로 다음 물음이 그 값을 읽는다. 주인만.
+
+    ⚠ `def` 다 — 대화 저장소는 동기 sqlite 라 이벤트 루프 위에서 부르지 않는다(app/agent/routes.py 의 같은 경고)."""
+    run = _owned(request, principal, run_id)
+    _handoff.refuse_unfinished(run)
+    title, msgs = _handoff.chat_messages(_store(request), run)
+    if not msgs[-1]["meta"]["activity"]:
+        raise AuthError("가져갈 기록이 없습니다 — 이 실행은 부른 단계가 없습니다(계획 모드이거나 첫 단계 전에 멈췄습니다)", status_code=422)
+    conv = getattr(request.app.state, "conv_store", None)
+    if conv is None:
+        raise AuthError("대화 저장소가 열리지 않았습니다", status_code=503)
+    try:
+        cid = conv.create_with_messages(owner_sub=principal.subject, title=title, kind=CHAT_KIND, source="web", messages=msgs)
+    except sqlite3.OperationalError as exc:
+        raise AuthError(f"대화 저장소에 쓰지 못했습니다 — {exc}. 잠시 뒤 다시 시도하세요", status_code=503) from None
+    return {"conversation_id": cid, "title": title}
+
+
 class SaveAsIn(BaseModel):
     title: str
     vars: list[dict] = Field(default_factory=list)
@@ -1066,7 +1178,7 @@ async def _draft_of(request: Request, principal: Principal,
 
 @router.get("/procedures/{procedure_id}/tool")
 def procedure_as_tool(request: Request, procedure_id: str,
-                      principal: Principal = Depends(_me)) -> dict:
+                      principal: Principal = Depends(_me_any)) -> dict:
     """이 절차를 **도구 계약**으로 낸다 — 이름·설명·입력 스키마(PLAN §9).
 
     절차는 사실상 도구다. 계약을 도구와 같은 모양으로 내면 챗·심의가 절차를 부르는 것과
@@ -1079,7 +1191,7 @@ def procedure_as_tool(request: Request, procedure_id: str,
     if v is None:
         raise AuthError("절차를 찾을 수 없습니다", status_code=404)
     spec = v["spec"]
-    gates = [st.get("tool") for st in (spec.get("steps") or []) if st.get("gate") == "human"]
+    gates = _human_gates(spec)
     return {
         "name": f"procedure_{procedure_id}",
         "title": spec.get("title") or "",
