@@ -978,7 +978,9 @@ async def _attach_procedure_run(request: Request, body: "ChatRequest", principal
     """
     do = body.delib_opts
     ensure(principal, "feat:procedures")
-    if _onto_preview.risk_chair(do.chair_template):
+    # 리스크 심사가 낳은 심의 — 의장 틀 risk-review* 와 리스크 앱이 띄운 패널(started_by=app). 에이전트 서버의 risk_family 와 같은 판정이다
+    # (app/insights/cards.py) — 의장만 보면 다른 의장의 앱 패널(쟁점 패널)로 실행 기록이 들어간다.
+    if _insight_cards.risk_family(do.chair_template, do.started_by):
         raise AuthError("절차 실행은 리스크 심사로 넘기지 않습니다 — 리스크 심사의 입구는 리스크 앱(/risk) 하나입니다. 다른 심의 유형을 고르세요",
                         status_code=422)
     if not _is_delib_message(body.message):

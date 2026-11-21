@@ -141,3 +141,22 @@ def test_합친_근거가_상한을_넘으면_잘라_보내지_않고_거절한�
     c, app, seen, _ = portal
     r = _chat(c, _run(app), evidence=[{"source": f"s{i}", "result": "r"} for i in range(119)])   # 119 + 단계 기록 2 = 121 > 120
     assert r.status_code == 422 and "상한" in r.json()["detail"] and seen == [], (r.status_code, r.text[:200])
+
+
+def test_앱이_띄운_패널에는_싣지_않는다(portal):
+    """리스크 계열 판정은 의장만이 아니다 — 리스크 앱 러너가 띄운 패널(started_by=app)도 리스크 심사가 낳은 심의다(에이전트 서버 risk_family 와
+    같은 판정). 의장 이름만 보면 쟁점 패널 같은 다른 의장의 앱 패널로 실행 기록이 들어간다."""
+    c, app, seen, _ = portal
+    r = _chat(c, _run(app), chair_template="diagnosis", started_by="app")
+    assert r.status_code == 422 and "리스크 심사" in r.json()["detail"] and seen == [], (r.status_code, r.text[:200])
+    assert _chat(c, _run(app), chair_template="diagnosis", started_by="human").status_code == 200
+
+
+def test_관리자에게도_남의_실행은_싣지_않는다(portal):
+    from app.access.policy import ADMIN_GROUP
+
+    c, app, seen, who = portal
+    rid = _run(app, owner="someone-else")
+    who["p"] = Principal(subject="u1", email="u1@hwax.local", display_name="U", groups=[*_GROUPS, ADMIN_GROUP])
+    r = _chat(c, rid)
+    assert r.status_code == 404 and seen == [], (r.status_code, r.text[:200])
