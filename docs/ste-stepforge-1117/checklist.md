@@ -15,15 +15,15 @@
 ## 전달 (11-22) — 11-21 재시험 뒤 남은 것(`retest-1121-request.md`)
 
 - [x] 원문을 리포에 정본으로(`retest-1121-request.md`) · 받을 곳 표(PLAN 「11-21 재시험」)
-- [ ] StepForge(`stepforge-d4`)에 SF-1 ~ SF-12 보냄 — 답 받기
-- [ ] ste(`smarttwinexplorer-06`)에 ST-1 ~ ST-17 보냄 — 몫 가름 · 답 받기
-- [ ] 브리지(`koosolvercontainer-da`)에 BG-1 · BG-2 · BG-6 과 앱 래퍼 몫 보냄 — 답 받기
+- [ ] StepForge(`stepforge-d4`)에 SF-1 ~ SF-12 보냄(11-22 08:40 KST 전달됨) — 답 받기
+- [ ] ste(`smarttwinexplorer-06`)에 ST-1 ~ ST-17 보냄(11-22 08:40 KST 전달됨) — 몫 가름 · 답 받기
+- [ ] 브리지(`koosolvercontainer-da`)에 BG-1 · BG-2 · BG-6 과 앱 래퍼 몫 보냄(11-22 08:40 KST 전달됨) — 답 받기
 - [ ] SF-5 ↔ ST-7 어느 쪽이 규약 변환을 맡는지(StepForge · 브리지가 정함)
 - [ ] BG-3 큰 파일(100 MB 급) · cavity_step 을 dev 에서 한 번 옮겨 보기
 - [ ] BG-3 · ST-10 업로드에 scenario.json 더하기 — ste 답 뒤 어느 쪽이 짓는지 정함
 - [ ] BG-4 `gas_transport_lookup` — S = P/D 추정(`derived`) · 온도 차 칸
-- [ ] BG-5 · PT-1 토큰이 없을 때의 답(등록 방법) 확인 · 공용 프리셋은 사용자에게 다시 묻기(SS-6)
-- [ ] PT-2 운영 박스에서 StepForge 줄의 build 가 비는 까닭 — 받은 편지함으로 묻기
+- [ ] BG-5 · PT-1 토큰이 없을 때의 답(등록 방법) 확인(받은 편지함 2026-11-22 Q7 — 답 받기) · 공용 프리셋은 사용자에게 다시 묻기(SS-6)
+- [x] PT-2 운영 박스에서 StepForge 줄의 build 가 비는 까닭 — 받은 편지함으로 묻기(`../cae00-inbox/2026-11-22.md` Q6) — 답 받기
 
 ## P-1 `artifact_to_ste_upload` (P0)
 
