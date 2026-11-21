@@ -70,9 +70,19 @@ curl -s http://127.0.0.1:9009/health | python3 -c 'import sys,json; print(json.l
 - 되돌리기 — `infra/ra-formats.local.json` 을 지운다. 종전 `deliberation` v1 로 돌아간다. RA 에 등록된 형식은 남는다(사람 작성 목록에는 뜨지 않는다).
 - Claude Code 워크플로(`hwax-deliberate.js`)의 저장은 이 파일을 보지 않는다 — 늘 `deliberation` v1 이다.
 
-## 6. 그 밖에 이번에 들어오는 스위치
+## 6. 묶음 B — 받는 것만으로 달라지는 것과 스위치
 
-(묶음이 더 올라오면 여기에 더한다.)
+(묶음 B 가 올라가면 맨 위 「받을 판」 줄에 해시를 더한다.)
+
+| 무엇 | 기본 | 달라지는 것 · 켜는 법 |
+|---|---|---|
+| 사람별 위임 호출의 왕복 | 받으면 달라진다 | 게이트웨이가 일회성 세션으로 `tools/call` 만 보낸다(호출 뒤의 `tools/list` 가 없어진다). 성공한 쓰기 도구가 목록 묻기의 401 때문에 다시 돌던 틈이 닫히고 호출마다 왕복이 하나 준다. 감사 줄에서 그 앱의 `as-user-pat` 호출이 전과 같이 `ok` 인지만 본다 |
+| 챗이 읽는 그림 주소 | 받으면 달라진다 | 조사가 바로 붙은 주소(「…png에」)도 그림으로 읽는다 |
+| 보고서의 AIDataHub 첨부 그림 | 켜짐 | `/보고서` · 심의 보고서의 글에 지식카드 첨부 그림 주소가 있으면 그림 칸으로 싣는다(8 MB 까지 · 래스터만). 끄려면 에이전트 서버 `.env` 에 `REPORT_FIG_ATTACHMENTS=0` — 그때는 주소가 글에 그대로 남는다 |
+| 그림 표지의 짝 안내 | 받으면 달라진다 | 도구 결과에 PNG 와 SVG 가 함께 오면 표지 글이 「보고서 · 문서에는 래스터 ref 를 넣는다」 고 말한다 |
+| 심의 T7(판정 불가 과반 → 측정 계획) | **끔** | 에이전트 서버 `.env` 의 `DELIB_UNDECIDED=1` 또는 심의마다 `advanced.undecided=1`. 재는 법은 `cd ../HWAXAgentServer && $PY -m tools.delib_ab --knob undecided --questions <질문 파일> --repeat 3 --out ab_undecided/`(근거를 비운 질문으로 — 판정 불가가 실제로 뽑히는지). 리스크 심사 · 계획서 틀에는 붙지 않는다 |
+| 절차 씨앗 「낙하 — 결과 귀환 확인」 | 씨앗 | `docs/procedures/fixtures/drop-return-check.yaml` 을 절차 화면에서 가져다 쓴다. 전부 읽기다. DynaForge 11-15 판 이상이어야 한다 |
+| 추천의 판정 후보 | 끔(`SEAT_ONTO` 를 켠 박스만) | AIDataHub `recommend_agents` 의 `onto` 통계에 `verdict`(`core_question` · `no_owner`)가 실린다. 알리기만 하고 순위 · 좌석은 그대로다 |
 
 ## 되돌리기
 
