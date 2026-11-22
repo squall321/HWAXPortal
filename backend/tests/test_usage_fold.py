@@ -309,6 +309,9 @@ class Remote:
         self.ag = _sibling("HWAXAgentServer", "sibling_agent_usage_rollup")
         self.audit, self.db = tmp_path / "gw-audit.jsonl", tmp_path / "gw-usage-rollup.sqlite"
         self.jobs: list[dict] = []
+        self.llm: list[dict] = []                 # 사람별 LLM 토큰 줄(에이전트 서버 usage_tokens.rows 의 꼴) — 기간 · 뺄 계정은 아래에서 건다
+        self.llm_since: str | None = None
+        self.agent_old = False                    # 토큰 칸을 내지 않는 옛 에이전트 서버
         self.asked: list[tuple[str, dict]] = []
         self.status = {"gateway.test": gateway_status, "agent.test": agent_status}
         self.budget = 20.0
@@ -325,7 +328,11 @@ class Remote:
             return httpx.Response(200, json=self.gw.view(self.db, self.audit, body, budget_s=self.budget, today=self.today))
         p = self.ag.params(body, self.today)
         first = min((datetime.fromtimestamp(j["started_at"], KST).date().isoformat() for j in self.jobs), default=None)
-        return httpx.Response(200, json={**self.ag.fold(self.jobs, p), "ledger": {"first_day": first, "scanned": len(self.jobs)}})
+        out = {**self.ag.fold(self.jobs, p), "ledger": {"first_day": first, "scanned": len(self.jobs)}}
+        if not self.agent_old:
+            out["llm"] = [r for r in self.llm if p["since"] <= r["day"] <= p["until"] and r["user"] not in p["exclude"]]
+            out["llm_since"] = self.llm_since
+        return httpx.Response(200, json=out)
 
 
 def test_게이트웨이_창구의_답을_날마다_접는다(tmp_path):
@@ -373,11 +380,15 @@ def test_뺄_계정_목록이_바뀌면_게이트웨이는_닫힌_날도_다시_
     box = _box(tmp_path)
     rem = Remote(tmp_path)
     rem.audit.write_text("".join(_audit_line("2026-11-10T01:00:00+00:00", "t", "app", via="pat", caller=who)
-                                 for who in ("tester@example.com", "real@example.com")), encoding="utf-8")
+                                 for who in ("tester@example.com", "real@example.com"))
+                         # 엔진이 뺄 계정의 일로 만든 RA 초안(누구의 일 — OD-52) — 다시 접으면 그 사람 줄(ra-for)도 지워진다
+                         + _audit_line("2026-11-10T01:00:01+00:00", "create_report_draft", "reportarchive", via="gw-token",
+                                       audit_for="tester@example.com"), encoding="utf-8")
     _conv(box, "c1", "tester@example.com", int(_at(date(2026, 11, 10))))
     _fold(box, handler=rem)
     key, conv = ("2026-11-10", "calls", '{"app":"app","tool":"t","via":"pat"}'), ("2026-11-10", "conversations", '{"kind":"chat","source":"web"}')
     assert _daily(box, "gateway")[key] == 2 and _daily(box, "portal")[conv] == 1 and _folds(box, "gateway")["2026-11-10"][0] == 1
+    assert [s for _d, _e, s, _n, _a in _actors(box, "%-for%")] == ["mcp-for-gw-token", "ra-for"]
     box.s = box.s.model_copy(update={"usage_exclude_accounts": "tester@example.com"})
     rem.asked.clear()
     _fold(box, handler=rem)
@@ -386,6 +397,7 @@ def test_뺄_계정_목록이_바뀌면_게이트웨이는_닫힌_날도_다시_
     assert _daily(box, "portal")[conv] == 1, "포털 쪽 닫힌 날은 그대로다(사라진 줄을 잃지 않게)"
     assert _folds(box, "gateway")["2026-11-10"][1] == usage_fold.fingerprint(["tester@example.com"])
     assert [e for _d, e, _s, _n, _a in _actors(box, "mcp%")] == ["real@example.com"]
+    assert _actors(box, "%-for%") == [], "다시 접은 날의 누구의 일 줄(mcp-for · ra-for)도 지우고 넣는다"
 
 
 def test_게이트웨이가_원장을_다_못_접었으면_그_답은_쓰지_않고_다_접을_때까지_다시_묻는다(tmp_path):

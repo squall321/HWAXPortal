@@ -48,13 +48,16 @@ _ROUTINE_OPEN = ("queued", "running", "waiting")    # 루틴 실행 — interrup
 _ACCESS = "ts >= ? AND ts < ? AND (detail IS NULL OR detail != 'primer')"
 # ── 접어 둔 표(M2) — 접는 쪽(app/usage_fold.py)과 함께 쓰는 값 ──
 FOLD_SOURCES = (("portal", "포털 원장(사람 줄 · 새 대화 · 낸 PAT)"), ("snapshot", "지금 상태(오늘의 PAT · 연결 · 계정 · 허가)"), ("nginx", "정문 접근 로그"),
-                ("gateway", "게이트웨이(MCP 도구 호출)"), ("agent", "에이전트 서버(MCP 심의 잡)"))
+                ("gateway", "게이트웨이(MCP 도구 호출)"), ("agent", "에이전트 서버(MCP 심의 잡 · LLM 토큰)"))
 FOLD_NOCOVER = "nocover"                    # 정문 로그가 그날을 덮지 않는다 — 접은 기록만 있고 값은 없다(기록 전과 같다)
 RA_DRAFT_TOOL = "create_report_draft"       # Report Archive 초안을 만드는 도구의 원래 이름 — 성공 호출이 RA 초안 하나다
 # 지연 칸의 위 끝(ms) — 게이트웨이 usage_rollup.LAT_LE_MS 와 같다(접는 쪽이 창구의 rules.lat_le_ms 와 견주고 시험이 형제 리포와 견준다)
 LAT_LE_MS = (5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 120000, 300000, 600000)
 TOP_TOOLS = 30
-_ACTOR_GROUPS = ("login", "chat", "tile", "mcp", "delib", "nginx")
+# 사람 줄의 갈래 — engine 은 호출자가 빈 엔진 호출을 그 일의 사람에게 이은 것(감사 전용 머리 — 검증하지 않은 주장, OD-52)
+_ACTOR_GROUPS = ("login", "chat", "tile", "mcp", "engine", "delib", "nginx")
+PEOPLE_MAX = 1000               # 사람별 표의 줄 상한 — 넘으면 truncated
+LLM_KINDS = ("chat", "think", "delib", "routine", "card_review", "other")
 _FOLD_PENDING = ("아직 접은 적이 없다 — 포털이 뜬 뒤 첫 접기가 돌면 채워진다(기동 30초 뒤 · 그 뒤 USAGE_FOLD_S 초마다 — 0 이면 접지 않는다).")
 
 
@@ -536,7 +539,17 @@ def _actor_rows(c: sqlite3.Connection, x: _Ctx) -> list[tuple[str, str, str, int
 
 
 def _group_of(source: str) -> str:
+    if source == "ra-for" or source.startswith("mcp-for"):
+        return "engine"
     return "mcp" if source == "ra" or source.startswith("mcp") else source
+
+
+def _via_of(source: str) -> str:
+    """사람 줄 갈래 → 자격(via) — mcp-<via> · mcp-for-<via> · mcp · mcp-for."""
+    for head in ("mcp-for-", "mcp-"):
+        if source.startswith(head):
+            return source[len(head):]
+    return ""
 
 
 def _series(axis: list[str], first: str | None, got: dict) -> list:
@@ -621,7 +634,8 @@ def _active(c: sqlite3.Connection, x: _Ctx) -> dict:
 
 
 _ACTIVE_NOTE = ("원천을 가로지른 쓴 사람이다 — 그날 로그인했거나 · 챗 턴을 시작했거나 · 타일로 들어갔거나 · MCP 도구를 불렀거나(개인 Claude · 포털 챗 · "
-                "절차) · MCP 심의를 맡겼거나 · 정문을 지난 요청이 그 사람의 로그인 연결 ID 로 이어진 서로 다른 계정. 로그인 기준(위)과 달리 며칠씩 "
+                "절차) · 엔진이 그 사람의 일로 도구를 불렀거나(engine — 감사 전용 머리, 검증하지 않은 주장) · MCP 심의를 맡겼거나 · 정문을 지난 요청이 "
+                "그 사람의 로그인 연결 ID 로 이어진 서로 다른 계정. 로그인 기준(위)과 달리 며칠씩 "
                 "다시 로그인하지 않는 사람도 든다. 정문 요청은 귀속이지 증명이 아니고(쿠키), 접기 전에 회전으로 사라진 로그의 날에는 빠진다. ")
 
 
@@ -668,6 +682,7 @@ def _mcp(c: sqlite3.Connection, x: _Ctx) -> dict:
     status_tools: set = set()
     auth: dict[str, int] = defaultdict(int)
     anon: dict[str, int] = defaultdict(int)
+    for_calls: dict[str, int] = defaultdict(int)
     ra_day: dict[str, int] = defaultdict(int)
     ra_via: dict[str, int] = defaultdict(int)
     for d, metric, dims, v in _fold_rows(c, x, "gateway"):
@@ -677,6 +692,9 @@ def _mcp(c: sqlite3.Connection, x: _Ctx) -> dict:
             continue
         if metric == "anon_calls":
             anon[str(dims.get("via") or "")] += n
+            continue
+        if metric == "for_calls":
+            for_calls[str(dims.get("via") or "")] += n
             continue
         a, t, vi = str(dims.get("app") or ""), str(dims.get("tool") or ""), str(dims.get("via") or "")
         if metric == "lat":
@@ -699,20 +717,30 @@ def _mcp(c: sqlite3.Connection, x: _Ctx) -> dict:
             ra_via[vi] += sign * n
     people_day: dict[str, set] = defaultdict(set)
     people_via: dict[str, set] = defaultdict(set)
+    people_for_via: dict[str, set] = defaultdict(set)
+    people_for: set = set()
     people_ra: set = set()
-    ra_named = 0
+    people_ra_for: set = set()
+    ra_named = ra_named_for = 0
     everyone: set = set()
     for d, email, source, n in _actor_rows(c, x):
         if source == "ra":
             people_ra.add(email)
             ra_named += n
+        elif source == "ra-for":
+            people_ra_for.add(email)
+            ra_named_for += n
+        elif source.startswith("mcp-for"):
+            people_for_via[_via_of(source)].add(email)
+            people_for.add(email)
         elif source.startswith("mcp"):
             people_day[d].add(email)
-            people_via[source[4:]].add(email)
+            people_via[_via_of(source)].add(email)
             everyone.add(email)
     x.memo["mcp"] = {"day": day, "via": via, "app": app, "tool": tool, "lat_app": lat_app, "lat_tool": lat_tool, "status_tools": status_tools,
-                     "auth": auth, "anon": anon, "ra_day": ra_day, "ra_via": ra_via, "people_day": people_day, "people_via": people_via,
-                     "people_ra": people_ra, "ra_named": ra_named, "everyone": everyone}
+                     "auth": auth, "anon": anon, "for_calls": for_calls, "ra_day": ra_day, "ra_via": ra_via, "people_day": people_day,
+                     "people_via": people_via, "people_for_via": people_for_via, "people_for": people_for, "people_ra": people_ra,
+                     "people_ra_for": people_ra_for, "ra_named": ra_named, "ra_named_for": ra_named_for, "everyone": everyone}
     return x.memo["mcp"]
 
 
@@ -750,11 +778,14 @@ def _mcp_daily(c: sqlite3.Connection, x: _Ctx) -> dict:
     tot = {k: sum(b[k] for b in m["day"].values()) for k in ("calls", "status_calls", "err_app", "err_gate", "cache", "big")}
     return {"rows": rows, "first_day": meta["first"],
             "totals": {"calls": tot["calls"], "status_calls": tot["status_calls"], "errors_app": tot["err_app"], "errors_gate": tot["err_gate"],
-                       "cache": tot["cache"], "big": tot["big"], "people": len(m["everyone"]), "anon_calls": sum(m["anon"].values())},
+                       "cache": tot["cache"], "big": tot["big"], "people": len(m["everyone"]), "anon_calls": sum(m["anon"].values()),
+                       "for_calls": sum(m["for_calls"].values()), "people_for": len(m["people_for"])},
             "note": "게이트웨이를 지난 MCP 도구 호출이다(게이트웨이 감사 원장을 날마다 접은 것). calls 는 상태 묻기 도구(deliberate_status 등)를 뺀 "
                     "호출, status_calls 는 상태 묻기다(되풀이라 호출 수를 부풀린다). errors 는 실패한 호출(앱 쪽 + 관문 쪽), people 은 그날 도구를 "
-                    "부른 서로 다른 계정이다 — 호출자가 적힌 줄만 사람으로 세고, 심의 엔진의 호출은 대부분 이름이 없다(anon_calls). 캐시 적중도 "
-                    "호출 한 번이다. " + (f"감사 원장의 첫 날({meta['first']}) 전은 null 이다." if meta["first"] else "접어 둔 날이 아직 없다.")
+                    "부른 서로 다른 계정이다 — 호출자가 적힌 줄만 사람으로 센다. 호출자가 빈 엔진 호출 가운데 에이전트 서버가 '누구의 일' 감사 머리를 "
+                    "실은 것은 for_calls · people_for(그 일의 사람 — 검증하지 않은 주장, 위조되면 이 수만 틀린다)이고, 그 머리도 없는 줄이 "
+                    "anon_calls 다. 캐시 적중도 호출 한 번이다. "
+                    + (f"감사 원장의 첫 날({meta['first']}) 전은 null 이다." if meta["first"] else "접어 둔 날이 아직 없다.")
                     + _today_note(meta) + _stale(meta)}
 
 
@@ -763,13 +794,15 @@ def _mcp_via(c: sqlite3.Connection, x: _Ctx) -> dict:
         return _pending()
     m = _mcp(c, x)
     rows = [{"via": v, "calls": b["calls"], "status_calls": b["status_calls"], **_errs(b), "people": len(m["people_via"].get(v, ())),
-             "anon_calls": m["anon"].get(v, 0)} for v, b in m["via"].items()]
+             "anon_calls": m["anon"].get(v, 0), "for_calls": m["for_calls"].get(v, 0), "people_for": len(m["people_for_via"].get(v, ()))}
+            for v, b in m["via"].items()]
     rows.sort(key=lambda r: (-(r["calls"] + r["status_calls"]), r["via"]))
     since = _field_first(c).get("via")
     return {"rows": rows, "via_since": since,
             "note": "어느 자격으로 들어온 호출인가 — pat 은 개인 Claude(와 사람 PAT 로 도는 서버 앱), chat 은 포털 챗, procedure 는 절차 실행기, "
                     "mcp-app 은 앱 패널, gw-token 은 에이전트 서버(심의 엔진 · 좌석 조회), service 는 박스 작업, ticket 은 그림 · 키트 받기다. "
-                    "people 은 그 자격으로 부른 서로 다른 계정, anon_calls 는 호출자가 적히지 않은 줄이다. "
+                    "people 은 그 자격으로 부른 서로 다른 계정, for_calls · people_for 는 호출자가 빈 줄 가운데 '누구의 일' 감사 머리로 사람에게 이은 "
+                    "줄과 그 사람 수(엔진 — 검증하지 않은 주장), anon_calls 는 그 머리도 없는 줄이다. "
                     + (f"via 칸은 {since} 부터 적혔다 — 그 전 호출은 빈 칸으로 든다." if since else "빈 칸은 via 를 적기 전의 호출이다.")}
 
 
@@ -878,11 +911,12 @@ def _ra_drafts(c: sqlite3.Connection, x: _Ctx) -> dict:
     reports = sum(int(v) for _d, metric, _dims, v in _fold_rows(c, x, "agent") if metric == "jobs_report")
     return {"rows": [{"day": d, "n": n} for d, n in zip(x.w.axis(), _series(x.w.axis(), meta["first"], m["ra_day"]), strict=True)],
             "by_via": sorted(({"via": v, "n": n} for v, n in m["ra_via"].items() if n), key=lambda r: (-r["n"], r["via"])),
-            "totals": {"drafts": total, "people": len(m["people_ra"]), "named": m["ra_named"], "unnamed": max(0, total - m["ra_named"]),
+            "totals": {"drafts": total, "people": len(m["people_ra"]), "named": m["ra_named"], "named_for": m["ra_named_for"],
+                       "people_for": len(m["people_ra_for"]), "unnamed": max(0, total - m["ra_named"] - m["ra_named_for"]),
                        "delib_reports": reports},
             "note": f"Report Archive 초안이다 — 게이트웨이를 지난 {RA_DRAFT_TOOL} 의 성공 호출(챗의 /보고서 · 심의 보고서 · 루틴 · 개인 Claude 모두 이 "
-                    "도구로 만든다). people 은 호출자가 적힌 초안을 만든 서로 다른 계정이고, unnamed 는 호출자가 적히지 않은 초안이다(심의 엔진이 "
-                    "서비스 자격으로 만든 것 등). delib_reports 는 MCP 심의 잡 가운데 보고서가 붙은 수다(에이전트 서버의 잡 원장). 포털이 "
+                    "도구로 만든다). people · named 는 호출자가 적힌 초안, people_for · named_for 는 호출자가 빈 엔진 호출을 '누구의 일' 감사 머리로 "
+                    "사람에게 이은 초안(검증하지 않은 주장)이고, unnamed 는 둘 다 아닌 초안이다. delib_reports 는 MCP 심의 잡 가운데 보고서가 붙은 수다(에이전트 서버의 잡 원장). 포털이 "
                     "게이트웨이를 거치지 않고 넣는 보고서(문서 정밀 변환 등)는 들지 않는다." + _stale(meta)}
 
 
@@ -956,6 +990,103 @@ def _conversations_kept(c: sqlite3.Connection, x: _Ctx) -> dict:
                     "대화 칸(지금 남은 대화)과 차이가 지운 대화다. 접기 전에 이미 지워진 대화는 여기에도 없다."}
 
 
+def _has_table(c: sqlite3.Connection, name: str) -> bool:
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def _llm_since(c: sqlite3.Connection) -> str | None:
+    """에이전트 서버가 사람별 LLM 토큰을 적기 시작한 날 — 접는 쪽이 그 날의 표지 줄로 남긴다(그 전 날은 0 이 아니라 기록 전이다)."""
+    got = c.execute("SELECT MIN(day) FROM usage_daily WHERE source = 'agent' AND metric = 'llm_since'").fetchone()
+    return got[0] if got else None
+
+
+def _llm_people(c: sqlite3.Connection, x: _Ctx) -> dict[str, dict]:
+    """기간 안의 사람별 LLM 토큰(usage_llm_daily — 뺄 계정은 여기서 뺀다) — {이메일: {calls, unknown, tokens_in, tokens_out, cache_read}}."""
+    if "llm_people" not in x.memo:
+        out: dict[str, dict] = {}
+        if _has_table(c, "usage_llm_daily"):
+            q, a = _not_in(x.ex, "email")
+            for email, calls, unknown, tin, tout, cache in c.execute(
+                    "SELECT email, SUM(calls), SUM(unknown), SUM(tokens_in), SUM(tokens_out), SUM(cache_read) FROM usage_llm_daily"
+                    f" WHERE day >= ? AND day <= ? AND email != ''{q} GROUP BY email", (x.w.first.isoformat(), x.w.last.isoformat(), *a)):
+                out[email] = {"calls": calls, "unknown": unknown, "tokens_in": tin, "tokens_out": tout, "cache_read": cache}
+        x.memo["llm_people"] = out
+    return x.memo["llm_people"]
+
+
+def _people(c: sqlite3.Connection, x: _Ctx) -> dict:
+    """사람별 이용 — 관리자 화면에서 이메일이 나오는 유일한 칸(사용자 결정 2026-11-22 · OD-55). 사람 줄(usage_actor_daily)과 사람별 LLM 토큰
+    (usage_llm_daily)을 기간으로 더한다. 뺄 계정은 읽을 때 뺀다 · 두 표 모두 400일 보존."""
+    if not _has_fold(c):
+        return _pending()
+    labels = x.labels.get("affiliation") or {}
+    keys = ("login", "chat", "tile", "mcp", "engine", "ra", "delib", "nginx")
+    per: dict[str, dict] = {}
+
+    def row(email: str) -> dict:
+        return per.setdefault(email, {"email": email, "affiliation": "", "days": set(), **dict.fromkeys(keys, 0)})
+    for day, email, source, n in _actor_rows(c, x):
+        r = row(email)
+        r["days"].add(day)
+        if source in ("ra", "ra-for"):
+            r["ra"] += n                # RA 초안 — 도구 호출(mcp · engine)에 이미 든 호출 가운데 초안을 만든 수다
+        else:
+            r[_group_of(source)] += n
+    q, a = _not_in(x.ex, "email")
+    for email, aff in c.execute(f"SELECT email, affiliation FROM usage_actor_daily WHERE day >= ? AND day <= ? AND affiliation != ''{q}"
+                                " ORDER BY day", (x.w.first.isoformat(), x.w.last.isoformat(), *a)):
+        if email in per:
+            per[email]["affiliation"] = aff                     # 기간 안의 가장 늦은 날의 소속(그때의 소속)
+    for email, t in _llm_people(c, x).items():
+        row(email).update({f"llm_{k}": v for k, v in t.items()})
+    rows = []
+    for r in per.values():
+        days = sorted(r.pop("days"))
+        aff = r["affiliation"]
+        rows.append({**r, "affiliation_label": labels.get(aff, aff) if aff else "", "active_days": len(days),
+                     "first_day": days[0] if days else None, "last_day": days[-1] if days else None,
+                     **{f"llm_{k}": r.get(f"llm_{k}", 0) for k in ("calls", "unknown", "tokens_in", "tokens_out", "cache_read")}})
+    rows.sort(key=lambda r: (-r["active_days"], -(r["chat"] + r["mcp"] + r["delib"] + r["llm_calls"]), r["email"]))
+    return {"rows": rows[:PEOPLE_MAX], "total": len(rows), "truncated": len(rows) > PEOPLE_MAX,
+            "note": "사람마다 기간 안의 이용이다 — 관리자 화면에서 이메일이 나오는 칸은 이것 하나다(사용자 결정 2026-11-22). login · chat · tile 은 그 "
+                    "사건 수, mcp 는 그 사람이 부른 MCP 도구 호출, engine 은 호출자가 빈 엔진 호출을 '누구의 일' 감사 머리로 그 사람에게 이은 수(검증하지 "
+                    "않은 주장), ra 는 그 가운데 Report Archive 초안, delib 은 MCP 로 맡긴 심의 잡, nginx 는 정문 요청, llm_* 는 에이전트 서버가 그 사람의 "
+                    "일로 부른 LLM 호출과 토큰이다(llm_unknown 은 사용량이 오지 않은 호출). active_days 는 무엇이든 쓴 날 수, affiliation 은 기간 안 "
+                    "마지막 날의 소속이다. 사람 줄과 토큰은 400일 뒤 지운다."
+                    + (f" 상위 {PEOPLE_MAX}명만 실었다(전체 {len(rows)}명)." if len(rows) > PEOPLE_MAX else "")}
+
+
+def _llm_tokens(c: sqlite3.Connection, x: _Ctx) -> dict:
+    """사람을 뺀 LLM 토큰 합 — 종류 × 모델 · 날마다(usage_daily — 접을 때 뺄 계정을 뺐다)."""
+    if not _has_fold(c):
+        return _pending()
+    meta, since = _fold_meta(c, x, "agent"), _llm_since(c)
+    by: dict[tuple[str, str], dict] = {}
+    daily: dict[str, int] = defaultdict(int)
+    names = {"llm_calls": "calls", "llm_unknown": "unknown", "llm_in": "tokens_in", "llm_out": "tokens_out", "llm_cache": "cache_read"}
+    for d, metric, dims, v in _fold_rows(c, x, "agent"):
+        k = names.get(metric)
+        if k is None:
+            continue
+        r = by.setdefault((str(dims.get("kind") or "other"), str(dims.get("model") or "(unknown)")),
+                          dict.fromkeys(("calls", "unknown", "tokens_in", "tokens_out", "cache_read"), 0))
+        r[k] += int(v)
+        if k in ("tokens_in", "tokens_out"):
+            daily[d] += int(v)
+    order = {k: i for i, k in enumerate(LLM_KINDS)}
+    rows = sorted(({"kind": k, "model": m, **r} for (k, m), r in by.items()),
+                  key=lambda r: (order.get(r["kind"], len(order)), -(r["tokens_in"] + r["tokens_out"]), r["model"]))
+    tot = {k: sum(r[k] for r in rows) for k in ("calls", "unknown", "tokens_in", "tokens_out", "cache_read")}
+    return {"rows": rows, "daily": _series(x.w.axis(), since, daily), "since": since,
+            "totals": {**tot, "people": len(_llm_people(c, x))},
+            "note": "에이전트 서버가 부른 LLM 호출의 토큰이다(챗 · 띵킹 · 심의 · 루틴 · 카드 대조 · 그 밖 × 모델). daily 는 날마다 입력 + 출력 토큰이다. "
+                    "unknown 은 사용량이 오지 않은 호출이다 — 흘려 받는 호출(에이전트 서버 LLM_STREAM_USAGE 를 켜기 전) · 외부 응답자(Claude 워크플로)는 "
+                    "토큰을 모른다(지어내지 않는다). 다른 서비스(AIDataHub · SignalForge 등)가 같은 LLM 을 바로 부른 것은 들지 않는다. "
+                    + (f"에이전트 서버가 적기 시작한 날({since}) 전은 null 이다." if since else
+                       "에이전트 서버가 아직 토큰을 내지 않았다(그쪽이 이 판보다 낡았거나 아직 접지 않았다) — 날마다 칸은 null 이다.")
+                    + _today_note(meta) + _stale(meta)}
+
+
 # 칸 이름 · 원장 · 셈 — 이 차례로 낸다(화면도 이 차례다)
 _SECTIONS: tuple[tuple[str, str, Callable[[sqlite3.Connection, _Ctx], dict]], ...] = (
     ("logins_daily", "audit", _logins_daily),
@@ -993,6 +1124,8 @@ _SECTIONS: tuple[tuple[str, str, Callable[[sqlite3.Connection, _Ctx], dict]], ..
     ("front_door", "audit", _front_door),
     ("snapshots", "audit", _snapshots),
     ("conversations_kept", "audit", _conversations_kept),
+    ("llm_tokens", "audit", _llm_tokens),
+    ("people", "audit", _people),
 )
 
 

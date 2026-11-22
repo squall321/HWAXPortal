@@ -1,6 +1,6 @@
-// 이용 통계 — 날마다 접어 둔 표의 카드: 원천을 가로지른 쓴 사람 · MCP 도구 · MCP 심의 · RA 초안 · 정문 요청 · 접기 상태(docs/ops-dashboard M2)
+// 이용 통계 — 날마다 접어 둔 표의 카드: 원천을 가로지른 쓴 사람 · MCP 도구 · MCP 심의 · RA 초안 · 정문 요청 · LLM 토큰 · 사람별 이용 · 접기 상태(docs/ops-dashboard M2 · OD-52 ~ OD-55)
 import type { ActiveDay, UsageSections } from '../../api/usage.api';
-import { maxOf, monthlyRows, msText, pct, shortDay, spanText } from '../../lib/usageChart';
+import { compact, maxOf, monthlyRows, msText, pct, shortDay, spanText } from '../../lib/usageChart';
 import { Block, Card, Table } from './UsageBlocks';
 import { ColumnChart, Spark } from './UsageCharts';
 
@@ -11,9 +11,18 @@ const GROUP: [keyof ActiveDay & string, string][] = [
   ['chat', '포털 챗'],
   ['tile', '타일 진입'],
   ['mcp', 'MCP 도구'],
+  ['engine', '엔진이 그 사람의 일로 부른 도구'],
   ['delib', 'MCP 심의'],
   ['nginx', '정문 요청'],
 ];
+const LLM_KIND: Record<string, string> = {
+  chat: '챗',
+  think: '띵킹',
+  delib: '심의',
+  routine: '분석 루틴',
+  card_review: '카드 대조',
+  other: '그 밖',
+};
 const VIA: Record<string, string> = {
   pat: '개인 PAT(개인 Claude)',
   chat: '포털 챗',
@@ -145,7 +154,9 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
               ['실패 — 관문 쪽', mcp?.totals?.errors_gate ?? '—'],
               ['캐시 적중', mcp?.totals?.cache ?? '—'],
               ['큰 응답(10만 자 이상)', mcp?.totals?.big ?? '—'],
-              ['호출자가 적히지 않은 줄', mcp?.totals?.anon_calls ?? '—'],
+              ['엔진이 사람의 일로 부른 호출(누구의 일 머리)', mcp?.totals?.for_calls ?? '—'],
+              ['그 일의 사람(서로 다른 계정)', mcp?.totals?.people_for ?? '—'],
+              ['누구의 일인지도 모르는 줄', mcp?.totals?.anon_calls ?? '—'],
             ]}
           />
         </Block>
@@ -158,6 +169,8 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
               '실패(앱 쪽)',
               '실패(관문 쪽)',
               '사람',
+              '누구의 일로 이은 줄',
+              '그 일의 사람',
               '이름 없는 줄',
             ]}
             rows={(s.mcp_via?.rows ?? []).map((r) => [
@@ -167,6 +180,8 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
               r.errors_app,
               r.errors_gate,
               r.people,
+              r.for_calls,
+              r.people_for,
               r.anon_calls,
             ])}
           />
@@ -310,10 +325,47 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
             rows={[
               ['초안', ra?.totals?.drafts ?? '—'],
               ['만든 사람(호출자가 적힌 초안 · 서로 다른 계정)', ra?.totals?.people ?? '—'],
-              ['호출자가 적히지 않은 초안', ra?.totals?.unnamed ?? '—'],
+              ['엔진이 사람의 일로 만든 초안(누구의 일 머리)', ra?.totals?.named_for ?? '—'],
+              ['그 일의 사람(서로 다른 계정)', ra?.totals?.people_for ?? '—'],
+              ['누구의 것인지 모르는 초안', ra?.totals?.unnamed ?? '—'],
               ['보고서가 붙은 MCP 심의 잡', ra?.totals?.delib_reports ?? '—'],
               ['RA 초안까지 간 루틴 실행', s.routine_runs?.ra_drafts ?? '—'],
               ...(ra?.by_via ?? []).map((r) => [`자격 — ${VIA[r.via] ?? r.via}`, r.n]),
+            ]}
+          />
+        </Block>
+      </Card>
+
+      <Card title="LLM 토큰(에이전트 서버)">
+        <Block sec={s.llm_tokens}>
+          {s.llm_tokens?.daily && (
+            <ColumnChart
+              title="날마다 LLM 토큰(입력 + 출력)"
+              values={s.llm_tokens.daily}
+              labels={axis}
+              unit="토큰"
+              height={80}
+            />
+          )}
+          <Table
+            head={['종류 · 모델', '호출', '모름', '입력', '출력', '캐시 읽기']}
+            rows={(s.llm_tokens?.rows ?? []).map((r) => [
+              `${LLM_KIND[r.kind] ?? r.kind} · ${r.model}`,
+              r.calls,
+              r.unknown,
+              compact(r.tokens_in),
+              compact(r.tokens_out),
+              compact(r.cache_read),
+            ])}
+          />
+          <Table
+            head={['합계', '수']}
+            rows={[
+              ['호출', s.llm_tokens?.totals?.calls ?? '—'],
+              ['사용량을 모르는 호출', s.llm_tokens?.totals?.unknown ?? '—'],
+              ['입력 토큰', s.llm_tokens?.totals ? compact(s.llm_tokens.totals.tokens_in) : '—'],
+              ['출력 토큰', s.llm_tokens?.totals ? compact(s.llm_tokens.totals.tokens_out) : '—'],
+              ['토큰을 쓴 사람(서로 다른 계정)', s.llm_tokens?.totals?.people ?? '—'],
             ]}
           />
         </Block>
@@ -346,6 +398,57 @@ export function FoldCards({ s, axis }: { s: Sections; axis: string[] }) {
         </Block>
       </Card>
     </>
+  );
+}
+
+/** 사람별 이용 — 관리자 화면에서 이메일이 나오는 유일한 카드(사용자 결정 2026-11-22 · OD-55). 다른 카드는 서로 다른 계정의 수만 낸다 */
+export function PeopleCard({ s }: { s: Sections }) {
+  const sec = s.people;
+  return (
+    <Card wide title="사람별 이용">
+      <Block sec={sec}>
+        <Table
+          head={[
+            '사람',
+            '소속',
+            '쓴 날',
+            '로그인',
+            '챗',
+            '타일',
+            'MCP 도구',
+            '엔진(그 사람의 일)',
+            'RA 초안',
+            'MCP 심의',
+            '정문',
+            'LLM 호출',
+            'LLM 입력',
+            'LLM 출력',
+          ]}
+          rows={(sec?.rows ?? []).map((r) => [
+            r.email,
+            r.affiliation_label || '—',
+            r.active_days,
+            r.login,
+            r.chat,
+            r.tile,
+            r.mcp,
+            r.engine,
+            r.ra,
+            r.delib,
+            r.nginx,
+            r.llm_unknown ? `${r.llm_calls} (모름 ${r.llm_unknown})` : r.llm_calls,
+            compact(r.llm_tokens_in),
+            compact(r.llm_tokens_out),
+          ])}
+          empty="이 기간에 쓴 사람이 없다."
+        />
+        {sec?.truncated && (
+          <p className="adm-hint">
+            상위 {sec.rows.length}명만 보인다(전체 {sec.total}명).
+          </p>
+        )}
+      </Block>
+    </Card>
   );
 }
 

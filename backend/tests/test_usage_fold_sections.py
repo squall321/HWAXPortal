@@ -2,6 +2,7 @@
 #
 # 한 장면(원장 · 게이트웨이 감사 · 잡 원장 · 정문 로그)을 임시 폴더에 만들고 실제 접기로 접은 뒤 관리자 통계 한 판을 지어 본다. 계정은 example.com 만 쓴다.
 import json
+from contextlib import closing
 from datetime import date
 
 import pytest
@@ -17,7 +18,10 @@ from tests.test_usage_fold import (
     _folds,
     _nginx_log,
     _ngx,
+    _q,
 )
+
+from app import usage_fold
 
 A, B, C = "a@example.com", "b@example.com", "c@example.com"
 D17, D18, D19, D20 = (date(2026, 11, d) for d in (17, 18, 19, 20))
@@ -98,7 +102,8 @@ def test_쓴_사람은_원천을_가로질러_서로_다른_계정이다(scene):
     assert (d18["login"], d18["chat"], d18["tile"], d18["mcp"], d18["delib"], d18["nginx"]) == (0, 1, 1, 2, 0, 0)
     d19 = rows["2026-11-19"]
     assert (d19["mcp"], d19["delib"], d19["nginx"]) == (2, 2, 1)
-    assert sec["totals"] == {"people": 3, "login": 1, "chat": 1, "tile": 1, "mcp": 2, "delib": 2, "nginx": 1} and sec["first_day"] == "2026-11-17"
+    assert sec["totals"] == {"people": 3, "login": 1, "chat": 1, "tile": 1, "mcp": 2, "engine": 0, "delib": 2, "nginx": 1}
+    assert sec["first_day"] == "2026-11-17"
     assert _sec(box, "logins_daily")["totals"]["accounts"] == 1, "로그인 기준(M1)은 A 하나뿐이다 — 그 차이가 이 칸의 까닭이다"
     assert "12:00 에 접은 데까지" in sec["note"]
 
@@ -123,12 +128,16 @@ def test_사람_줄의_뺄_계정은_다시_접지_않아도_읽을_때_빠진�
     assert "접을 때의 목록" in box.build(days=7, now=NOW)["excluded"]["note"]
 
 
-def test_응답에는_사람의_이메일이_실리지_않는다(scene):
-    """사람별 줄은 표(usage_actor_daily)에만 둔다 — 화면에 내는 것은 서로 다른 계정의 수다(사람별 표를 둘지는 사용자 결정)."""
+def test_이메일은_사람별_표_하나에만_실린다(scene):
+    """사람별 표(사용자 결정 2026-11-22 · OD-55)만 이메일을 낸다 — 합계 칸은 서로 다른 계정의 수만. 비밀 · 주소도 어디에도 없다."""
     box, _ = scene
-    blob = json.dumps(box.build(days=30, now=NOW), ensure_ascii=False)
+    rep = box.build(days=30, now=NOW)
+    people = rep["sections"].pop("people")
+    blob = json.dumps(rep, ensure_ascii=False)
     for leak in (A, B, C, "uid-aaaa", TOKEN, "gateway.test"):
         assert leak not in blob, leak
+    assert {r["email"] for r in people["rows"]} == {A, B, C}
+    assert TOKEN not in json.dumps(people) and "uid-aaaa" not in json.dumps(people)
 
 
 # ── MCP 도구 ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -140,7 +149,8 @@ def test_MCP_호출은_날마다_상태_묻기를_따로_세고_기록_전은_nu
     d18 = rows["2026-11-18"]
     assert (d18["calls"], d18["status_calls"], d18["errors"], d18["people"]) == (7, 2, 2, 2)
     assert (rows["2026-11-19"]["calls"], rows["2026-11-19"]["errors"], rows["2026-11-20"]["calls"]) == (3, 1, 0)
-    assert sec["totals"] == {"calls": 10, "status_calls": 2, "errors_app": 2, "errors_gate": 1, "cache": 1, "big": 1, "people": 2, "anon_calls": 1}
+    assert sec["totals"] == {"calls": 10, "status_calls": 2, "errors_app": 2, "errors_gate": 1, "cache": 1, "big": 1, "people": 2, "anon_calls": 1,
+                             "for_calls": 0, "people_for": 0}
     assert sec["first_day"] == "2026-11-18" and "상태 묻기" in sec["note"]
 
 
@@ -190,7 +200,7 @@ def test_RA_초안은_성공한_호출만_세고_이름_없는_초안을_따로_
     sec = _sec(box, "ra_drafts")
     assert {r["day"]: r["n"] for r in sec["rows"] if r["n"]} == {"2026-11-19": 2}, "실패한 호출은 초안이 아니다"
     assert sec["by_via"] == [{"via": "chat", "n": 1}, {"via": "gw-token", "n": 1}]
-    assert sec["totals"] == {"drafts": 2, "people": 1, "named": 1, "unnamed": 1, "delib_reports": 1}
+    assert sec["totals"] == {"drafts": 2, "people": 1, "named": 1, "named_for": 0, "people_for": 0, "unnamed": 1, "delib_reports": 1}
     assert _sec(box, "routine_runs")["ra_drafts"] == 1
 
 
@@ -236,3 +246,124 @@ def test_접기_상태는_원천마다_범위와_실패_까닭을_낸다(scene):
     assert "판이 낡았다" in gw["error"] and gw["last_day"] == "2026-11-20", "앞서 접은 데까지는 그대로 보인다"
     assert "마지막 접기가 실패했다" in _sec(box, "mcp_daily")["note"] and _sec(box, "mcp_daily")["totals"]["calls"] == 10
     assert "판이 낡았다" in _folds(box, "gateway")["*"][2]
+
+
+# ── 사용자 결정 2026-11-22 — 누구의 일 · 사람별 LLM 토큰 · 사람별 표(OD-52 · OD-53 · OD-55) ──────────────────────────────────
+def _tok(day, user, kind, model, calls, unknown=0, tin=0, tout=0, cache=0):
+    return {"day": day.isoformat(), "user": user, "kind": kind, "model": model, "calls": calls, "unknown": unknown, "tokens_in": tin,
+            "tokens_out": tout, "cache_read": cache}
+
+
+@pytest.fixture()
+def decided(tmp_path):
+    """C 는 로그인 없이 심의 준비만 했다 — 엔진이 C 의 일로 서비스 자격 도구를 불렀고(누구의 일 머리) C 의 일로 RA 초안이 하나 생겼다. LLM 토큰은 A · C ·
+    시스템(사람 없음)의 것이 있다."""
+    box = _box(tmp_path)
+    box.user(A, affiliation="CAEG")
+    box.user(C, affiliation="LAB")
+    box.sql("audit", "INSERT INTO access_log (ts, email, event, service, uid, detail) VALUES (?, ?, 'login', 'portal', 'uid-aaaa', 'sso')",
+            [(int(_at(D18, 9)), A)])
+    box.audit((int(_at(D19, 10)), A, "chat_start"))
+    rem = Remote(tmp_path)
+    rem.audit.write_text(
+        _audit_line(_iso(D19, 11, 0, 0), "recommend_agents", "ai-data-hub", via="gw-token", audit_for=C)
+        + _audit_line(_iso(D19, 11, 0, 1), "agent_search", "ai-data-hub", via="gw-token", audit_for=C)
+        + _audit_line(_iso(D19, 11, 0, 2), "create_report_draft", "reportarchive", via="gw-token", audit_for=C)
+        + _audit_line(_iso(D19, 11, 0, 3), "list_agents", "ai-data-hub", via="gw-token")
+        + _audit_line(_iso(D19, 11, 0, 4), "search_cards", "ai-data-hub", via="pat", caller=A), encoding="utf-8")
+    rem.llm_since = D18.isoformat()
+    rem.llm += [_tok(D19, A, "chat", "qwen-chat", 3, unknown=1, tin=900, tout=100, cache=500),
+                _tok(D19, A, "delib", "glm-5", 2, tin=4000, tout=600),
+                _tok(D20, C, "delib", "glm-5", 1, tin=1000, tout=200),
+                _tok(D20, "", "card_review", "glm-5", 4, tin=8000, tout=400)]
+    out = _fold(box, handler=rem)
+    assert not [v for k, v in out.items() if isinstance(v, dict) and k != "nginx"], out     # 정문 로그는 이 장면에 없다
+    return box, rem
+
+
+def test_잡이_없어도_토큰을_적기_시작한_날부터_접는다(tmp_path):
+    """에이전트 서버 원장의 첫 날은 잡 원장과 토큰 기록 가운데 이른 쪽이다 — 잡이 하나도 없는 박스에서 토큰 칸이 영영 비지 않게."""
+    box = _box(tmp_path)
+    rem = Remote(tmp_path)
+    rem.llm_since, rem.llm = D19.isoformat(), [_tok(D19, A, "chat", "qwen-chat", 1, tin=10, tout=2)]
+    assert _fold(box, handler=rem)["agent"] == 2 and _folds(box, "agent")["2026-11-19"][0] == 0
+    assert box.build(days=7, now=NOW)["sections"]["llm_tokens"]["totals"]["tokens_in"] == 10
+
+
+def test_누구의_일로_이은_엔진_호출은_엔진_갈래이고_이름_없는_줄에서_빠진다(decided):
+    box, _ = decided
+    sec = box.build(days=7, now=NOW)["sections"]
+    assert sec["mcp_daily"]["totals"]["for_calls"] == 3 and sec["mcp_daily"]["totals"]["people_for"] == 1
+    assert sec["mcp_daily"]["totals"]["anon_calls"] == 1 and sec["mcp_daily"]["totals"]["people"] == 1, "엔진 줄은 본인이 부른 도구가 아니다"
+    gw = _by(sec["mcp_via"], "via")["gw-token"]
+    assert (gw["for_calls"], gw["people_for"], gw["anon_calls"], gw["people"]) == (3, 1, 1, 0)
+    assert sec["active_daily"]["totals"]["engine"] == 1 and _by(sec["active_daily"], "day")["2026-11-19"]["engine"] == 1
+    assert sec["ra_drafts"]["totals"] == {"drafts": 1, "people": 0, "named": 0, "named_for": 1, "people_for": 1, "unnamed": 0, "delib_reports": 0}
+
+
+def test_사람별_LLM_토큰은_종류와_모델로_합치고_적기_전은_null_이다(decided):
+    box, _ = decided
+    sec = box.build(days=7, now=NOW)["sections"]["llm_tokens"]
+    assert sec["since"] == "2026-11-18" and sec["daily"][-4:] == [None, 0, 5600, 9600] and sec["daily"][0] is None
+    rows = {(r["kind"], r["model"]): r for r in sec["rows"]}
+    assert rows[("chat", "qwen-chat")] == {"kind": "chat", "model": "qwen-chat", "calls": 3, "unknown": 1, "tokens_in": 900, "tokens_out": 100,
+                                           "cache_read": 500}
+    assert rows[("delib", "glm-5")]["tokens_in"] == 5000 and rows[("card_review", "glm-5")]["calls"] == 4
+    assert [r["kind"] for r in sec["rows"]] == ["chat", "delib", "card_review"], "종류는 정해진 차례로"
+    assert sec["totals"] == {"calls": 10, "unknown": 1, "tokens_in": 13900, "tokens_out": 1300, "cache_read": 500, "people": 2}
+    assert "모른다" in sec["note"] and "LLM_STREAM_USAGE" in sec["note"]
+
+
+def test_사람별_표는_사람마다_갈래_수와_토큰을_더하고_뺄_계정은_읽을_때_뺀다(decided):
+    box, _ = decided
+    sec = box.build(days=7, now=NOW, labels={"affiliation": {"CAEG": "CAE그룹"}})["sections"]["people"]
+    rows = {r["email"]: r for r in sec["rows"]}
+    a, c = rows[A], rows[C]
+    assert (a["login"], a["chat"], a["mcp"], a["engine"], a["llm_calls"], a["llm_tokens_in"], a["llm_unknown"]) == (1, 1, 1, 0, 5, 4900, 1)
+    assert (a["affiliation"], a["affiliation_label"], a["active_days"], a["first_day"], a["last_day"]) == ("CAEG", "CAE그룹", 2, "2026-11-18",
+                                                                                                         "2026-11-19")
+    assert (c["login"], c["engine"], c["ra"], c["llm_calls"], c["llm_tokens_out"], c["affiliation"]) == (0, 3, 1, 1, 200, "LAB")
+    assert "" not in rows and sec["total"] == 2 and sec["truncated"] is False, "사람이 없는 일(시스템)은 사람별 표에 없다"
+    assert [r["email"] for r in sec["rows"]] == [A, C], "쓴 날이 많은 사람이 먼저"
+    box.s = box.s.model_copy(update={"usage_exclude_accounts": C})
+    assert [r["email"] for r in box.build(days=7, now=NOW)["sections"]["people"]["rows"]] == [A]
+    assert box.build(days=7, now=NOW)["sections"]["llm_tokens"]["totals"]["people"] == 1
+
+
+def test_토큰_줄은_다시_접어도_같고_400일_뒤_지운다(decided):
+    box, rem = decided
+    dump = lambda: _q(box, "SELECT * FROM usage_llm_daily ORDER BY 1, 2, 3, 4")  # noqa: E731
+    first = dump()
+    assert [(d, e, k, m, calls) for d, e, k, m, calls, *_ in first] == [
+        ("2026-11-19", A, "chat", "qwen-chat", 3), ("2026-11-19", A, "delib", "glm-5", 2), ("2026-11-20", "", "card_review", "glm-5", 4),
+        ("2026-11-20", C, "delib", "glm-5", 1)]
+    assert {r[-1] for r in first if r[1]} == {"CAEG", "LAB"}, "그때의 소속"
+    _fold(box, NOW + 600, rem)
+    assert dump() == first
+    rem.llm = [r for r in rem.llm if r["user"] != A]              # 다시 접은 날의 줄은 지우고 넣는다(늘지 않는다)
+    rem.today = "2026-11-21"
+    _fold(box, _at(date(2026, 11, 21)), rem)                       # 날이 바뀐 첫 접기 — 닫히지 않은 11-19 · 11-20 을 다시 접는다
+    assert [r[1] for r in dump()] == ["", C]
+    with closing(usage_fold.connect(box.s)) as conn:
+        conn.execute("INSERT INTO usage_llm_daily VALUES ('2025-10-16', 'old@example.com', 'chat', 'm', 1, 0, 1, 1, 0, '')")
+    _fold(box, _at(date(2026, 11, 21), 13), rem)
+    assert "old@example.com" not in json.dumps(dump())
+
+
+def test_무기한_합계_표에는_이메일이_없다(decided):
+    """이메일은 사람 줄 · 사람별 토큰(400일)에만 있다 — 합계(usage_daily)와 접기 기록(usage_fold)은 무기한이라 사람을 싣지 않는다."""
+    box, _ = decided
+    assert _q(box, "SELECT COUNT(*) FROM usage_llm_daily WHERE email != ''")[0][0] > 0
+    assert _q(box, "SELECT COUNT(*) FROM usage_actor_daily WHERE source LIKE '%-for%'")[0][0] > 0
+    for table in ("usage_daily", "usage_fold"):
+        assert "@" not in json.dumps(_q(box, f"SELECT * FROM {table}"), ensure_ascii=False), table  # noqa: S608 — 고정 글자
+
+
+def test_옛_에이전트_서버는_토큰_칸이_없어도_접고_토큰_카드는_적기_전이다(tmp_path):
+    box = _box(tmp_path)
+    rem = Remote(tmp_path)
+    rem.agent_old = True
+    out = _fold(box, handler=rem)
+    assert not isinstance(out["agent"], dict), out
+    sec = box.build(days=7, now=NOW)["sections"]["llm_tokens"]
+    assert sec["since"] is None and set(sec["daily"]) == {None} and "아직 토큰을 내지 않았다" in sec["note"]

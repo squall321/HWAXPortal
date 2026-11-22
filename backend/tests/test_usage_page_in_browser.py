@@ -103,6 +103,10 @@ async function open(browser, name, admin = true) {
 }
 const seen = (page) => page.evaluate(() => ({
   text: document.body.innerText,
+  // 사람별 이용 카드를 뺀 글 — 이메일은 그 카드에만 나와야 한다(OD-55)
+  text_wo_people: Array.from(document.querySelectorAll('body *')).filter((el) => !el.closest('section[aria-label="사람별 이용"]')
+    && !el.querySelector('section[aria-label="사람별 이용"]') && el.children.length === 0).map((el) => el.textContent).join(' '),
+  people: (document.querySelector('section[aria-label="사람별 이용"]') || { innerText: '' }).innerText,
   cards: Array.from(document.querySelectorAll('.uc-card > h2')).map((h) => h.textContent),
   tiles: Array.from(document.querySelectorAll('.uc-tile')).map((t) => t.textContent),
   plots: document.querySelectorAll('.uc-plot svg').length,
@@ -178,8 +182,9 @@ def shown(scene, tmp_path, tmp_path_factory):  # noqa: F811
 def test_화면은_터지지_않고_접어_둔_표의_카드와_M1_카드를_함께_그린다(shown):
     page = shown["folded"]
     assert page["errors"] == [], page["errors"]
-    assert page["cards"] == ["쓴 사람(원천을 가로질러)", "MCP 도구", "MCP 도구 — 앱 · 도구", "MCP 심의 · RA 초안", "정문 요청(허브 앱 열기)", "로그인", "챗",
-                             "타일 진입", "대화", "포털 사건", "절차 · 루틴", "계정", "PAT", "권한 수요", "접기 상태"]
+    assert page["cards"] == ["쓴 사람(원천을 가로질러)", "MCP 도구", "MCP 도구 — 앱 · 도구", "MCP 심의 · RA 초안", "LLM 토큰(에이전트 서버)",
+                             "정문 요청(허브 앱 열기)", "로그인", "챗", "타일 진입", "대화", "포털 사건", "절차 · 루틴", "계정", "PAT", "권한 수요",
+                             "사람별 이용", "접기 상태"]
     tiles = " | ".join(page["tiles"])
     assert "쓴 사람3" in tiles and "MCP 도구 호출10" in tiles and "MCP 심의 잡2" in tiles and "로그인한 계정1" in tiles, tiles
     for want in ("ai-data-hub · search_cards", "개인 PAT(개인 Claude) (pat)", "apps/step_forge", "수명이 끝난 토큰", "≈ 38ms", "접어 둔 새 대화"):
@@ -187,7 +192,8 @@ def test_화면은_터지지_않고_접어_둔_표의_카드와_M1_카드를_함
     assert "undefined" not in page["text"] and "NaN" not in page["text"] and "[object" not in page["text"]
     assert page["plots"] >= 12, "그림(막대)이 그려진다"
     for leak in (A, B, C):
-        assert leak not in page["text"], "화면에는 사람의 이메일이 없다"
+        assert leak not in page["text_wo_people"], "이메일은 사람별 이용 카드에만 나온다(OD-55)"
+        assert leak in page["people"], leak
     assert [u for u in page["calls"] if u.startswith("/auth/admin/usage")] == ["/auth/admin/usage?days=30"]
 
 
@@ -202,7 +208,7 @@ def test_접지_못한_원천이_있으면_위에_까닭이_뜨고_접은_적이
     assert "ai-data-hub · search_cards" in failed["text"], "앞서 접은 수는 그대로 보인다"
     assert pending["errors"] == [] and pending["text"].count("아직 접은 적이 없다") >= 10
     assert "쓴 사람—" in " | ".join(pending["tiles"]), "접은 적이 없으면 타일은 0 이 아니라 빈 값이다"
-    assert len(pending["cards"]) == 15 and "undefined" not in pending["text"]
+    assert len(pending["cards"]) == 17 and "undefined" not in pending["text"]
 
 
 def test_읽기가_실패하면_까닭을_보이고_관리자가_아니면_묻지도_않는다(shown):
