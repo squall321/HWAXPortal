@@ -1,8 +1,8 @@
 {
  "_why": "models.py 의 손으로 적은 목록(MUST_GATE·DRY_RUN_TOOLS·WARN_EXACT)이 '게이트웨이가 바뀌면 다시 뽑는다' 고만 적혀 있고 **확인하는 코드가 없었다**. 이 파일이 그 '뽑은 시점' 을 남긴다 — 목록은 이제 데이터에 대조된다.",
  "_refresh": "backend/scripts/refresh-census.py (살아 있는 게이트웨이에서 다시 뽑는다)",
- "generated": "2026-09-15",
- "gateway_tools": 480,
+ "generated": "2026-11-22",
+ "gateway_tools": 773,
  "tools": [
   {
    "name": "activate_model",
@@ -36,14 +36,21 @@
    "name": "agent_search",
    "backend": "ai-data-hub",
    "dry_run": false,
-   "args": 3,
+   "args": 6,
    "args_documented": 0
   },
   {
    "name": "aggregate_reports",
    "backend": "reportarchive",
    "dry_run": false,
-   "args": 11,
+   "args": 14,
+   "args_documented": 0
+  },
+  {
+   "name": "aidatahub_semantic_search",
+   "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -54,11 +61,25 @@
    "args_documented": 0
   },
   {
+   "name": "align_frames",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 3
+  },
+  {
+   "name": "align_image_to_geometry",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 14,
+   "args_documented": 1
+  },
+  {
    "name": "analyze_laminate",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 5,
-   "args_documented": 0
+   "args_documented": 5
   },
   {
    "name": "analyze_sentiment_trend",
@@ -75,11 +96,39 @@
    "args_documented": 0
   },
   {
+   "name": "apply_dimension",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
    "name": "apply_naming_rules",
    "backend": "heax-step_forge",
    "dry_run": true,
+   "args": 6,
+   "args_documented": 3
+  },
+  {
+   "name": "approval_record",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
    "args": 5,
    "args_documented": 0
+  },
+  {
+   "name": "approval_status",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "artifact_to_ste_upload",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
   },
   {
    "name": "ashby_data",
@@ -99,49 +148,112 @@
    "name": "assembly_check",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 2
+  },
+  {
+   "name": "assembly_graph",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 2
   },
   {
    "name": "assess_bonded_lap_joint",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 6,
-   "args_documented": 0
+   "args_documented": 6
+  },
+  {
+   "name": "assess_brittle_fracture",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 7
+  },
+  {
+   "name": "assess_crack_growth_rate",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 8
   },
   {
    "name": "assess_crack_shielding",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
+  },
+  {
+   "name": "assess_crack_tip_field",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 8
+  },
+  {
+   "name": "assess_edit_impact",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 2
   },
   {
    "name": "assess_free_edge_delamination",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
+  },
+  {
+   "name": "assess_interface_crack",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 7
   },
   {
    "name": "assess_notched_strength",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 5,
-   "args_documented": 0
+   "args_documented": 5
   },
   {
    "name": "assess_partial_composite_bending",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "assess_sandwich_local_failure",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "attach_cad",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "attach_cae_package",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "attach_render",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
   },
   {
@@ -156,21 +268,21 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 6,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "batch_evaluate_laminates",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "bend_profile",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 4
   },
   {
    "name": "bind_records_to_agent",
@@ -183,8 +295,8 @@
    "name": "bom_export",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 2
   },
   {
    "name": "browse_experts",
@@ -198,7 +310,42 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 7,
-   "args_documented": 0
+   "args_documented": 1
+  },
+  {
+   "name": "build_laminate_from_geometry",
+   "backend": "heax-laminate_analyzer_mcp",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "campaign_health_table",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "campaign_ingest_status",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "campaign_provenance",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "carryover_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 2
   },
   {
    "name": "catalog_describe",
@@ -243,6 +390,13 @@
    "args_documented": 0
   },
   {
+   "name": "cavity_openings",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
    "name": "chart_category_distribution",
    "backend": "signalforge",
    "dry_run": false,
@@ -278,24 +432,73 @@
    "args_documented": 0
   },
   {
+   "name": "check_claim",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 1
+  },
+  {
    "name": "check_deck",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 1
   },
   {
    "name": "check_design_rules",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "clear_report_unlink",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "clearance_field",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 10,
+   "args_documented": 2
+  },
+  {
+   "name": "cluster_info",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 0,
    "args_documented": 0
+  },
+  {
+   "name": "cold_surface_from_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 2
   },
   {
    "name": "compare_analysis_runs",
    "backend": "reportarchive",
    "dry_run": false,
    "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_assemblies",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 4
+  },
+  {
+   "name": "compare_dimension",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
    "args_documented": 0
   },
   {
@@ -306,10 +509,31 @@
    "args_documented": 0
   },
   {
+   "name": "compare_part_shape",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 10,
+   "args_documented": 4
+  },
+  {
+   "name": "compare_part_view",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 2
+  },
+  {
    "name": "compare_products",
    "backend": "signalforge",
    "dry_run": false,
    "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "compare_projects",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
    "args_documented": 0
   },
   {
@@ -323,7 +547,28 @@
    "name": "compare_revisions",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 5,
+   "args": 6,
+   "args_documented": 3
+  },
+  {
+   "name": "compare_snapshots",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 4
+  },
+  {
+   "name": "compare_stackup",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 13,
+   "args_documented": 6
+  },
+  {
+   "name": "compare_task_revisions",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
   },
   {
@@ -331,91 +576,98 @@
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "compute_bistable_shapes",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "compute_buckling",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
-   "args": 5,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 6
   },
   {
    "name": "compute_failure_envelope",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "compute_interlaminar_stresses",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "compute_large_deflection",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "compute_moisture_uptake",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "compute_natural_frequencies",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "compute_neutral_axis",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "compute_postbuckling",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "compute_thermal_response",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "confirm_interfaces",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
+   "args_documented": 1
+  },
+  {
+   "name": "confirm_task_alias",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
    "args_documented": 0
   },
   {
    "name": "contact_preview",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 2
   },
   {
    "name": "convert_file",
@@ -430,6 +682,13 @@
    "dry_run": false,
    "args": 3,
    "args_documented": 0
+  },
+  {
+   "name": "corner_proximity",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 3
   },
   {
    "name": "corpus_overview",
@@ -460,6 +719,13 @@
    "args_documented": 0
   },
   {
+   "name": "create_campaign",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 11
+  },
+  {
    "name": "create_doc_type",
    "backend": "ai-data-hub",
    "dry_run": false,
@@ -469,6 +735,20 @@
   {
    "name": "create_document",
    "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "create_embed_bundle",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "create_html_report",
+   "backend": "reportarchive",
    "dry_run": false,
    "args": 4,
    "args_documented": 0
@@ -498,7 +778,14 @@
    "name": "create_report_draft",
    "backend": "reportarchive",
    "dry_run": true,
-   "args": 12,
+   "args": 14,
+   "args_documented": 0
+  },
+  {
+   "name": "create_report_from_format",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 9,
    "args_documented": 0
   },
   {
@@ -520,7 +807,35 @@
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "create_sp_properties",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
    "args_documented": 0
+  },
+  {
+   "name": "create_sp_relation_types",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "create_sp_types",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "cross_check",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
   },
   {
    "name": "daily_briefing",
@@ -541,6 +856,13 @@
    "backend": "heax-materialtwin_web",
    "dry_run": false,
    "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "debug_bundle",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -611,7 +933,7 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "delete_relationship",
@@ -635,18 +957,39 @@
    "args_documented": 0
   },
   {
+   "name": "deliberate_batch_start",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "deliberate_batch_status",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "deliberate_batch_stop",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "deliberate_cancel",
    "backend": "hwax-deliberation",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "deliberate_continue",
    "backend": "hwax-deliberation",
    "dry_run": false,
-   "args": 9,
-   "args_documented": 0
+   "args": 12,
+   "args_documented": 12
   },
   {
    "name": "deliberate_jobs",
@@ -659,43 +1002,57 @@
    "name": "deliberate_list",
    "backend": "hwax-deliberation",
    "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
+   "name": "deliberate_resolve_evidence",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "deliberate_result",
    "backend": "hwax-deliberation",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 3
   },
   {
    "name": "deliberate_start",
    "backend": "hwax-deliberation",
    "dry_run": false,
-   "args": 14,
-   "args_documented": 0
+   "args": 17,
+   "args_documented": 17
   },
   {
    "name": "deliberate_status",
    "backend": "hwax-deliberation",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 4
   },
   {
    "name": "deliberate_transcript",
    "backend": "hwax-deliberation",
    "dry_run": false,
-   "args": 5,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 7
+  },
+  {
+   "name": "deliberate_verify",
+   "backend": "hwax-deliberation",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
   },
   {
    "name": "derive_lamina_from_constituents",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 6,
-   "args_documented": 0
+   "args_documented": 6
   },
   {
    "name": "describe_agent_schema",
@@ -705,11 +1062,25 @@
    "args_documented": 0
   },
   {
+   "name": "describe_assembly",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "describe_data_capability",
    "backend": "ai-data-hub",
    "dry_run": false,
    "args": 2,
    "args_documented": 0
+  },
+  {
+   "name": "describe_interface",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 2
   },
   {
    "name": "describe_metadata",
@@ -726,10 +1097,24 @@
    "args_documented": 0
   },
   {
+   "name": "describe_part",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 2
+  },
+  {
    "name": "describe_record_schema",
    "backend": "ai-data-hub",
    "dry_run": false,
    "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "describe_report_format",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -754,8 +1139,64 @@
    "args_documented": 0
   },
   {
+   "name": "dimension_chart",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "dimension_view",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
    "name": "discover",
    "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "docforge_cancel",
+   "backend": "heax-doc_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "docforge_capabilities",
+   "backend": "heax-doc_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "docforge_convert",
+   "backend": "heax-doc_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "docforge_list_inputs",
+   "backend": "heax-doc_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "docforge_package",
+   "backend": "heax-doc_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "docforge_status",
+   "backend": "heax-doc_forge",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -764,8 +1205,8 @@
    "name": "download_artifact",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 2
   },
   {
    "name": "download_file",
@@ -789,11 +1230,25 @@
    "args_documented": 0
   },
   {
+   "name": "drop_check",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 2
+  },
+  {
+   "name": "dt_budget_advice",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 2
+  },
+  {
    "name": "duplicate_shapes",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 4,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 2
   },
   {
    "name": "echo",
@@ -810,25 +1265,60 @@
    "args_documented": 0
   },
   {
+   "name": "enclosure_candidates",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
+   "name": "estimate_cost",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 1
+  },
+  {
    "name": "estimate_fatigue_life",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 5,
-   "args_documented": 0
+   "args_documented": 5
   },
   {
    "name": "estimate_spectrum_life",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "evaluate_laminate",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
+  },
+  {
+   "name": "explain_difference",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 4
+  },
+  {
+   "name": "explain_kind",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 1
+  },
+  {
+   "name": "explain_number",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
   },
   {
    "name": "export_document",
@@ -845,10 +1335,38 @@
    "args_documented": 0
   },
   {
+   "name": "export_part_fragment",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 1
+  },
+  {
+   "name": "export_part_step",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
+   "name": "export_sidecar",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
    "name": "export_step",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
+   "args": 3,
+   "args_documented": 1
+  },
+  {
+   "name": "extract_pptx_images",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
   },
   {
@@ -859,6 +1377,27 @@
    "args_documented": 0
   },
   {
+   "name": "extract_surface_to_cad",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "fastener_distribution",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "fastener_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
    "name": "fetch_rerank_model",
    "backend": "ai-data-hub",
    "dry_run": false,
@@ -866,11 +1405,60 @@
    "args_documented": 0
   },
   {
-   "name": "file_distances",
+   "name": "field_check_report",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 2
+  },
+  {
+   "name": "figure_get",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "figure_list",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "figure_to_doc",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "figure_to_report",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "file_distances",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 1
+  },
+  {
+   "name": "find_cae_load_paths",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "find_cae_parts",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
   },
   {
    "name": "find_materials_by_metadata",
@@ -890,15 +1478,22 @@
    "name": "find_parts",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 7,
-   "args_documented": 0
+   "args": 11,
+   "args_documented": 11
+  },
+  {
+   "name": "find_plm_task",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 1
   },
   {
    "name": "find_reports",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
-   "args": 21,
-   "args_documented": 0
+   "args": 23,
+   "args_documented": 23
   },
   {
    "name": "find_similar_data",
@@ -908,11 +1503,39 @@
    "args_documented": 0
   },
   {
+   "name": "find_similar_parts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 2
+  },
+  {
+   "name": "find_similar_projects",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 2
+  },
+  {
+   "name": "forget_dimension",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 1
+  },
+  {
+   "name": "format_list",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
    "name": "free_bodies",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "fts_search",
@@ -929,6 +1552,13 @@
    "args_documented": 0
   },
   {
+   "name": "gas_transport_lookup",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
    "name": "gate_expert_now",
    "backend": "heax-paper_ingest",
    "dry_run": false,
@@ -940,14 +1570,14 @@
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "geometry_health",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 2
   },
   {
    "name": "get_agent_session",
@@ -973,6 +1603,13 @@
   {
    "name": "get_analysis_summary",
    "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_app_schema",
+   "backend": "ste",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -1048,6 +1685,27 @@
    "args_documented": 0
   },
   {
+   "name": "get_format_binding_misses",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_format_binding_plan",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_format_bindings",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
    "name": "get_glossary_term",
    "backend": "mx-white-paper",
    "dry_run": false,
@@ -1076,10 +1734,31 @@
    "args_documented": 0
   },
   {
+   "name": "get_job_file",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
    "name": "get_job_outputs",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_job_result",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "get_job_status",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
   },
   {
@@ -1132,6 +1811,13 @@
    "args_documented": 0
   },
   {
+   "name": "get_ontology",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
    "name": "get_page",
    "backend": "heax-web_research_mcp",
    "dry_run": false,
@@ -1143,7 +1829,7 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "get_platform_breakdown",
@@ -1164,7 +1850,7 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "get_quote",
@@ -1184,7 +1870,7 @@
    "name": "get_record_sections",
    "backend": "ai-data-hub",
    "dry_run": false,
-   "args": 3,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -1192,7 +1878,7 @@
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "get_related_subgraph",
@@ -1212,7 +1898,7 @@
    "name": "get_report",
    "backend": "reportarchive",
    "dry_run": false,
-   "args": 2,
+   "args": 3,
    "args_documented": 0
   },
   {
@@ -1251,10 +1937,45 @@
    "args_documented": 0
   },
   {
+   "name": "get_sp_catalog",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_sp_mapping_plan",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "get_sp_ontology_plan",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
    "name": "get_subgraph",
    "backend": "reportarchive",
    "dry_run": false,
    "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "get_sync_settings",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "get_tagging_coverage",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
   },
   {
@@ -1286,6 +2007,13 @@
    "args_documented": 0
   },
   {
+   "name": "glossary",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 1
+  },
+  {
    "name": "heaxkooremapper_mcp_cancel_job",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
@@ -1297,6 +2025,13 @@
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "heaxkooremapper_mcp_recipe_run",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 6,
    "args_documented": 0
   },
   {
@@ -1338,8 +2073,15 @@
    "name": "heaxstep_forge_job_status",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
+   "args": 2,
    "args_documented": 0
+  },
+  {
+   "name": "heaxstep_forge_list_jobs",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 2
   },
   {
    "name": "heaxstep_forge_register_material",
@@ -1352,8 +2094,8 @@
    "name": "heaxstep_forge_system_capabilities",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 0,
-   "args_documented": 0
+   "args": 1,
+   "args_documented": 1
   },
   {
    "name": "heaxstep_forge_system_status",
@@ -1374,14 +2116,14 @@
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "homogenize_patterned_layer",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "how_to_measure",
@@ -1402,28 +2144,21 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "identify_parts",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 2
   },
   {
    "name": "import_archive",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
-  },
-  {
-   "name": "import_file",
-   "backend": "mx-white-paper",
-   "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "import_record",
@@ -1438,6 +2173,13 @@
    "dry_run": false,
    "args": 0,
    "args_documented": 0
+  },
+  {
+   "name": "ingest_campaign_manifest",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
   },
   {
    "name": "ingest_now",
@@ -1468,6 +2210,20 @@
    "args_documented": 0
   },
   {
+   "name": "insight_find",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "insight_get",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "inspect_file",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
@@ -1478,8 +2234,8 @@
    "name": "inspect_report",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 2,
+   "args_documented": 2
   },
   {
    "name": "instrument_summary",
@@ -1500,14 +2256,21 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "interface_summary",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 8,
-   "args_documented": 0
+   "args_documented": 1
+  },
+  {
+   "name": "interference_recheck",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 6
   },
   {
    "name": "invoke_tool",
@@ -1541,8 +2304,8 @@
    "name": "job_params_guide",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 2,
+   "args_documented": 1
   },
   {
    "name": "job_postprocess",
@@ -1566,6 +2329,13 @@
    "args_documented": 0
   },
   {
+   "name": "job_subscribe",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 4
+  },
+  {
    "name": "keyword_stats",
    "backend": "signalforge",
    "dry_run": false,
@@ -1573,11 +2343,18 @@
    "args_documented": 0
   },
   {
+   "name": "kit_get",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "leak_report",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 4,
-   "args_documented": 0
+   "args": 5,
+   "args_documented": 1
   },
   {
    "name": "lifecycle_compare",
@@ -1590,8 +2367,8 @@
    "name": "ligament_check",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 6,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 2
   },
   {
    "name": "link_objects",
@@ -1599,6 +2376,13 @@
    "dry_run": false,
    "args": 5,
    "args_documented": 0
+  },
+  {
+   "name": "link_plm_tasks",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 1
   },
   {
    "name": "link_reports",
@@ -1650,11 +2434,18 @@
    "args_documented": 0
   },
   {
+   "name": "list_apps",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
    "name": "list_artifacts",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 2
   },
   {
    "name": "list_boards",
@@ -1678,6 +2469,20 @@
    "args_documented": 0
   },
   {
+   "name": "list_data_source_runs",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "list_data_sources",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
    "name": "list_doc_types",
    "backend": "ai-data-hub",
    "dry_run": false,
@@ -1697,6 +2502,20 @@
    "dry_run": false,
    "args": 1,
    "args_documented": 0
+  },
+  {
+   "name": "list_failure_modes",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 1
+  },
+  {
+   "name": "list_fill_rules",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
   },
   {
    "name": "list_folders",
@@ -1723,15 +2542,15 @@
    "name": "list_interfaces",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 1
   },
   {
-   "name": "list_jobs",
+   "name": "list_joints",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 2
   },
   {
    "name": "list_local_materials",
@@ -1745,6 +2564,13 @@
    "backend": "heax-materialtwin_web",
    "dry_run": false,
    "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_measure_metrics",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
   },
   {
@@ -1786,8 +2612,15 @@
    "name": "list_parts",
    "backend": "heax-step_forge",
    "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "list_planar_regions",
+   "backend": "heax-step_forge",
+   "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "list_presets",
@@ -1800,7 +2633,7 @@
    "name": "list_projects",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -1816,6 +2649,13 @@
    "dry_run": false,
    "args": 1,
    "args_documented": 0
+  },
+  {
+   "name": "list_recipes",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 1
   },
   {
    "name": "list_records",
@@ -1853,6 +2693,13 @@
    "args_documented": 0
   },
   {
+   "name": "list_risk_verdicts",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 2
+  },
+  {
    "name": "list_saved_searches",
    "backend": "reportarchive",
    "dry_run": false,
@@ -1881,6 +2728,13 @@
    "args_documented": 0
   },
   {
+   "name": "list_shape_ops",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
    "name": "list_submittable_composites",
    "backend": "reportarchive",
    "dry_run": false,
@@ -1890,6 +2744,13 @@
   {
    "name": "list_tags",
    "backend": "ai-data-hub",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "list_tasks",
+   "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 3,
    "args_documented": 0
@@ -1909,6 +2770,13 @@
    "args_documented": 4
   },
   {
+   "name": "list_unknowns",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "list_versions",
    "backend": "reportarchive",
    "dry_run": false,
@@ -1926,8 +2794,15 @@
    "name": "mass_estimate",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 5,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 2
+  },
+  {
+   "name": "match_parts_across",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 10,
+   "args_documented": 4
   },
   {
    "name": "material_lookup",
@@ -1962,7 +2837,7 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "measurement_gaps",
@@ -1975,8 +2850,8 @@
    "name": "measurement_guide",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 0,
-   "args_documented": 0
+   "args": 2,
+   "args_documented": 1
   },
   {
    "name": "meeting_close",
@@ -1993,6 +2868,20 @@
    "args_documented": 0
   },
   {
+   "name": "meeting_list",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "meeting_minutes",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
    "name": "meeting_personas",
    "backend": "heax-web_design_agents",
    "dry_run": false,
@@ -2003,7 +2892,7 @@
    "name": "meeting_start",
    "backend": "heax-web_design_agents",
    "dry_run": false,
-   "args": 4,
+   "args": 5,
    "args_documented": 0
   },
   {
@@ -2021,29 +2910,78 @@
    "args_documented": 0
   },
   {
+   "name": "merge_objects",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
    "name": "mesh_forecast",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 2
   },
   {
    "name": "mesh_report",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "mesh_section_figure",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 10,
    "args_documented": 0
   },
   {
    "name": "mesh_size_advice",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 4,
+   "args": 6,
+   "args_documented": 3
+  },
+  {
+   "name": "mesh_stack_diagram",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "mesh_surface_figure",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "metrics_report",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 0,
    "args_documented": 0
   },
   {
    "name": "model_extents",
    "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "model_provenance",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
+   "name": "module_list",
+   "backend": "heax-web_design_agents",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -2056,10 +2994,17 @@
    "args_documented": 0
   },
   {
-   "name": "mxwhitepaper_extract_pptx_images",
-   "backend": "mx-white-paper",
+   "name": "move_object_taggings",
+   "backend": "reportarchive",
    "dry_run": false,
-   "args": 1,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "move_objects_to_type",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -2067,13 +3012,167 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "nearest_parts",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 4,
+   "args_documented": 1
+  },
+  {
+   "name": "onto_cad_view",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 1
+  },
+  {
+   "name": "onto_candidates",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 1
+  },
+  {
+   "name": "onto_define",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 5,
+   "args_documented": 2
+  },
+  {
+   "name": "onto_explode",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_export_rdf",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_lineage",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_link",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 3
+  },
+  {
+   "name": "onto_neighbors",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_object",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 3
+  },
+  {
+   "name": "onto_overview",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_path",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_put",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "onto_query",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 3
+  },
+  {
+   "name": "onto_reach",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "onto_search",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 1
+  },
+  {
+   "name": "onto_walk",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 1
+  },
+  {
+   "name": "ontology_find",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "ontology_lookup",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "ontology_model",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "ontology_object",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "ontology_sync_state",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "ontology_types",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 0,
    "args_documented": 0
   },
   {
@@ -2091,32 +3190,74 @@
    "args_documented": 0
   },
   {
-   "name": "part_info",
+   "name": "part_history",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 1
+  },
+  {
+   "name": "part_id_audit",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 1
+  },
+  {
+   "name": "part_index",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 3
+  },
+  {
+   "name": "part_info",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
   },
   {
    "name": "part_location",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 5,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 2
   },
   {
    "name": "part_mesh_map",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 1
+  },
+  {
+   "name": "part_outline_2d",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 2
+  },
+  {
+   "name": "part_plane_frame",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 1
   },
   {
    "name": "part_relations",
    "backend": "heax-step_forge",
    "dry_run": false,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "part_stack",
+   "backend": "heax-step_forge",
+   "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "patch_agent",
@@ -2147,6 +3288,13 @@
    "args_documented": 0
   },
   {
+   "name": "plan_task_links",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
    "name": "plot_ashby",
    "backend": "heax-materialtwin_web",
    "dry_run": false,
@@ -2168,6 +3316,13 @@
    "args_documented": 0
   },
   {
+   "name": "precheck_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
    "name": "predict_sed",
    "backend": "heax-thermal_shock_mcp",
    "dry_run": false,
@@ -2182,10 +3337,10 @@
    "args_documented": 0
   },
   {
-   "name": "prepare_upload",
+   "name": "prepare_download",
    "backend": "reportarchive",
    "dry_run": false,
-   "args": 1,
+   "args": 2,
    "args_documented": 0
   },
   {
@@ -2196,11 +3351,39 @@
    "args_documented": 0
   },
   {
+   "name": "procedure_get",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "procedure_list",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "procedure_run_start",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "procedure_run_status",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
    "name": "project_tree",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "property_distribution",
@@ -2245,10 +3428,80 @@
    "args_documented": 0
   },
   {
+   "name": "recent_activity",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 2
+  },
+  {
+   "name": "recipe_deprecate",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_evaluate",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_get",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_history",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "recipe_list",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_propose",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_register",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_save",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "recipe_search",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
    "name": "recommend_agents",
    "backend": "ai-data-hub",
    "dry_run": false,
-   "args": 4,
+   "args": 5,
    "args_documented": 0
   },
   {
@@ -2259,11 +3512,32 @@
    "args_documented": 0
   },
   {
+   "name": "record_dimension",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 1
+  },
+  {
+   "name": "record_part_lineage",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
    "name": "recover_ply_stresses",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 5,
-   "args_documented": 0
+   "args_documented": 5
+  },
+  {
+   "name": "region_mask_transfer",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 4
   },
   {
    "name": "register_materials",
@@ -2277,7 +3551,7 @@
    "backend": "heax-step_forge",
    "dry_run": true,
    "args": 5,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "register_property",
@@ -2294,6 +3568,13 @@
    "args_documented": 0
   },
   {
+   "name": "register_report_format",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 0
+  },
+  {
    "name": "register_tensile_test",
    "backend": "heax-materialtwin_web",
    "dry_run": true,
@@ -2301,24 +3582,38 @@
    "args_documented": 0
   },
   {
+   "name": "reliability_test_conditions",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "remesh_parts",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 1
   },
   {
    "name": "remove_part",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "remove_rows",
    "backend": "reportarchive",
    "dry_run": true,
    "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "remove_task_alias",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
   },
   {
@@ -2333,14 +3628,21 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "render_3d",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 4,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 1
+  },
+  {
+   "name": "render_interface",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 1
   },
   {
    "name": "render_status",
@@ -2353,12 +3655,19 @@
    "name": "render_submit",
    "backend": "heax-web_design_agents",
    "dry_run": false,
-   "args": 5,
+   "args": 10,
    "args_documented": 0
   },
   {
    "name": "reply_comment",
    "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_analytics",
+   "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
    "args_documented": 0
@@ -2371,10 +3680,52 @@
    "args_documented": 0
   },
   {
+   "name": "report_behavior_clusters",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "report_block",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "report_blocks",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "report_cae",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
    "name": "report_case",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "report_compare",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "report_contact_profile",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 5,
    "args_documented": 0
   },
   {
@@ -2389,7 +3740,7 @@
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "report_energy_flow",
@@ -2410,7 +3761,7 @@
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "report_fragmentize",
@@ -2427,10 +3778,38 @@
    "args_documented": 0
   },
   {
+   "name": "report_health",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "report_hotspots",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "report_image",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
    "name": "report_ingest",
    "backend": "heax-web_design_agents",
    "dry_run": false,
    "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "report_media",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 5,
    "args_documented": 0
   },
   {
@@ -2445,20 +3824,27 @@
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "report_part_series",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "report_query",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 13,
+   "args_documented": 0
+  },
+  {
+   "name": "report_revision",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
   },
   {
@@ -2473,7 +3859,7 @@
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "report_upload_instructions",
@@ -2490,17 +3876,17 @@
    "args_documented": 0
   },
   {
-   "name": "reportarchive_extract_pptx_images",
-   "backend": "reportarchive",
-   "dry_run": false,
-   "args": 1,
-   "args_documented": 0
-  },
-  {
    "name": "reportarchive_list_reports",
    "backend": "reportarchive",
    "dry_run": false,
    "args": 21,
+   "args_documented": 0
+  },
+  {
+   "name": "reportarchive_prepare_upload",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
   },
   {
@@ -2518,11 +3904,32 @@
    "args_documented": 0
   },
   {
+   "name": "resolve",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
    "name": "resolve_materials",
    "backend": "heax-step_forge",
    "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "resolve_product_keyword",
+   "backend": "signalforge",
+   "dry_run": false,
    "args": 1,
    "args_documented": 0
+  },
+  {
+   "name": "resolve_project",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
   },
   {
    "name": "resolve_thread",
@@ -2532,6 +3939,20 @@
    "args_documented": 0
   },
   {
+   "name": "rest_call",
+   "backend": null,
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "rest_catalog",
+   "backend": null,
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
    "name": "restore_version",
    "backend": "reportarchive",
    "dry_run": true,
@@ -2539,88 +3960,284 @@
    "args_documented": 0
   },
   {
+   "name": "revision_history",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "rib_boss_features",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 3
+  },
+  {
    "name": "rigid_body_check",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 2
   },
   {
    "name": "rigid_properties",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "risk_ack_gate",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
   },
   {
    "name": "risk_add_finding",
    "backend": "heax-hwax_risk",
    "dry_run": false,
    "args": 14,
-   "args_documented": 0
+   "args_documented": 14
+  },
+  {
+   "name": "risk_add_source",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "risk_build_evidence_bundle",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "risk_capture_snapshot",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
   },
   {
    "name": "risk_claims_for_ref",
    "backend": "heax-hwax_risk",
    "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "risk_create_diff",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "risk_create_project",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 7
+  },
+  {
+   "name": "risk_decide_sameas",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
+   "name": "risk_export_report_bundle",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "risk_find_ecad_boards",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
+  },
+  {
+   "name": "risk_find_projects_by_subject",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
   },
   {
    "name": "risk_get_brief",
    "backend": "heax-hwax_risk",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
+  },
+  {
+   "name": "risk_get_cells",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 7
   },
   {
    "name": "risk_get_coverage",
    "backend": "heax-hwax_risk",
    "dry_run": false,
-   "args": 3,
-   "args_documented": 0
+   "args": 5,
+   "args_documented": 5
   },
   {
    "name": "risk_get_diff",
    "backend": "heax-hwax_risk",
    "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "risk_get_evidence_bundle",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
+  },
+  {
+   "name": "risk_get_expert_report",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "risk_get_issues",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
   },
   {
    "name": "risk_get_panel_transcript",
    "backend": "heax-hwax_risk",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "risk_get_precedents",
    "backend": "heax-hwax_risk",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
+  },
+  {
+   "name": "risk_get_provenance",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
   },
   {
    "name": "risk_get_registry",
    "backend": "heax-hwax_risk",
    "dry_run": false,
+   "args": 7,
+   "args_documented": 7
+  },
+  {
+   "name": "risk_get_report",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
+  },
+  {
+   "name": "risk_get_sameas",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
   },
   {
    "name": "risk_get_snapshot",
    "backend": "heax-hwax_risk",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 3,
+   "args_documented": 3
+  },
+  {
+   "name": "risk_get_units",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "risk_job_action",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "risk_ledger_apply_decision",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 9
+  },
+  {
+   "name": "risk_ledger_build",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "risk_ledger_diff",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "risk_ledger_export",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "risk_ledger_overview",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "risk_ledger_put_layer",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "risk_ledger_put_template",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
   },
   {
    "name": "risk_list_panels",
    "backend": "heax-hwax_risk",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 2,
+   "args_documented": 2
   },
   {
    "name": "risk_list_projects",
@@ -2630,46 +4247,193 @@
    "args_documented": 0
   },
   {
+   "name": "risk_locate_for_section",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 11
+  },
+  {
+   "name": "risk_next_step",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "risk_numbers_check",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "risk_numbers_put",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
+   "name": "risk_open_target",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "risk_propose_board_transform",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "risk_repersist_panel",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "risk_screen",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 3
+  },
+  {
+   "name": "risk_set_board_transform",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 13,
+   "args_documented": 13
+  },
+  {
+   "name": "risk_set_ecad_board",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "risk_set_item_location",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "risk_set_project_subject",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
    "name": "risk_similar_projects",
    "backend": "heax-hwax_risk",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
+  },
+  {
+   "name": "risk_start_job",
+   "backend": "heax-hwax_risk",
+   "dry_run": false,
+   "args": 11,
+   "args_documented": 11
   },
   {
    "name": "risk_submit_panel_result",
    "backend": "heax-hwax_risk",
    "dry_run": false,
-   "args": 7,
-   "args_documented": 0
+   "args": 8,
+   "args_documented": 8
   },
   {
    "name": "risk_taxonomy",
    "backend": "heax-hwax_risk",
    "dry_run": false,
-   "args": 0,
-   "args_documented": 0
+   "args": 2,
+   "args_documented": 2
+  },
+  {
+   "name": "role_pairs",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 4
+  },
+  {
+   "name": "routine_call",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "routine_get",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 5
+  },
+  {
+   "name": "routine_list",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "routine_report_submit",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 4
+  },
+  {
+   "name": "routine_run_start",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 7
+  },
+  {
+   "name": "routine_step_done",
+   "backend": "_gateway",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 8
   },
   {
    "name": "run_job",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "run_operation",
    "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "run_progressive_failure",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
+  },
+  {
+   "name": "run_recipe",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
   },
   {
    "name": "run_saved_search",
@@ -2683,13 +4447,41 @@
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 4
   },
   {
    "name": "save_conversation",
    "backend": "_gateway",
    "dry_run": false,
-   "args": 4,
+   "args": 6,
+   "args_documented": 3
+  },
+  {
+   "name": "save_failure_mode",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "save_fill_rule",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 6,
+   "args_documented": 2
+  },
+  {
+   "name": "save_part_stack",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "save_recipe",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 6,
    "args_documented": 1
   },
   {
@@ -2707,6 +4499,13 @@
    "args_documented": 0
   },
   {
+   "name": "save_role_pairs",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 2
+  },
+  {
    "name": "scenario_build",
    "backend": "heax-web_design_agents",
    "dry_run": false,
@@ -2715,6 +4514,13 @@
   },
   {
    "name": "scenario_patch",
+   "backend": "heax-web_design_agents",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "scenario_revise",
    "backend": "heax-web_design_agents",
    "dry_run": false,
    "args": 2,
@@ -2815,14 +4621,14 @@
    "name": "search_tools",
    "backend": "_gateway",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 2
+   "args": 4,
+   "args_documented": 4
   },
   {
    "name": "search_voc",
    "backend": "signalforge",
    "dry_run": false,
-   "args": 6,
+   "args": 7,
    "args_documented": 0
   },
   {
@@ -2836,8 +4642,36 @@
    "name": "section_area",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 5,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 2
+  },
+  {
+   "name": "section_atlas",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 14,
+   "args_documented": 3
+  },
+  {
+   "name": "section_batch",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "section_batch_result",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 3
+  },
+  {
+   "name": "section_compare_station",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 7
   },
   {
    "name": "section_contact_usage",
@@ -2847,38 +4681,73 @@
    "args_documented": 0
   },
   {
+   "name": "section_pair_view",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 18,
+   "args_documented": 18
+  },
+  {
    "name": "section_profile",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 4,
-   "args_documented": 0
+   "args": 5,
+   "args_documented": 2
   },
   {
    "name": "section_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 2
+  },
+  {
+   "name": "section_view",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 16,
+   "args_documented": 2
+  },
+  {
+   "name": "sed_sample_from_odb",
+   "backend": "heax-thermal_shock_mcp",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "session_includes",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "set_admin",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 3,
    "args_documented": 0
   },
   {
-   "name": "section_view",
-   "backend": "heax-step_forge",
+   "name": "set_campaign_health_thresholds",
+   "backend": "heax-kooremapper_mcp",
    "dry_run": false,
-   "args": 4,
-   "args_documented": 0
-  },
-  {
-   "name": "semantic_search",
-   "backend": "ai-data-hub",
-   "dry_run": false,
-   "args": 4,
-   "args_documented": 0
+   "args": 6,
+   "args_documented": 6
   },
   {
    "name": "set_file_transform",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 6,
+   "args_documented": 1
+  },
+  {
+   "name": "set_format_bindings",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -2893,34 +4762,90 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "set_job_sync",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
+  },
+  {
+   "name": "set_joint",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 1
   },
   {
    "name": "set_part_metadata",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 6,
-   "args_documented": 0
+   "args": 7,
+   "args_documented": 1
   },
   {
    "name": "set_part_rules",
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "set_project_meta",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 9,
-   "args_documented": 0
+   "args": 10,
+   "args_documented": 1
   },
   {
    "name": "set_report_folders",
    "backend": "reportarchive",
    "dry_run": false,
    "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "set_report_revision",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 0
+  },
+  {
+   "name": "set_revision",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 12,
+   "args_documented": 2
+  },
+  {
+   "name": "set_risk_verdict",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
+   "args_documented": 1
+  },
+  {
+   "name": "set_sp_type_mapping",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 8,
+   "args_documented": 0
+  },
+  {
+   "name": "shape_op",
+   "backend": "heax-step_forge",
+   "dry_run": true,
+   "args": 7,
+   "args_documented": 2
+  },
+  {
+   "name": "signalforge_semantic_search",
+   "backend": "signalforge",
+   "dry_run": false,
+   "args": 5,
    "args_documented": 0
   },
   {
@@ -2941,8 +4866,8 @@
    "name": "slenderness_check",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 6,
-   "args_documented": 0
+   "args": 8,
+   "args_documented": 3
   },
   {
    "name": "slurm_cluster_health",
@@ -3064,6 +4989,13 @@
    "args_documented": 0
   },
   {
+   "name": "smarttwin_capabilities",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
    "name": "smarttwin_scenario_options",
    "backend": "smart-twin-cluster",
    "dry_run": false,
@@ -3085,43 +5017,106 @@
    "args_documented": 0
   },
   {
+   "name": "smarttwinmcp_recipe_run",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "smarttwinmcp_submit_job",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "snapshot_descriptors",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 3
+  },
+  {
    "name": "solve_load_response",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 3,
-   "args_documented": 0
+   "args_documented": 3
   },
   {
    "name": "solve_nonlinear_shear_response",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 2,
-   "args_documented": 0
+   "args_documented": 2
   },
   {
    "name": "solve_prescribed_curvature",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 7,
-   "args_documented": 0
+   "args_documented": 7
   },
   {
    "name": "solve_required_thickness_scale",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 6,
-   "args_documented": 0
+   "args_documented": 6
   },
   {
    "name": "solve_stress_relaxation",
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 8,
-   "args_documented": 0
+   "args_documented": 8
+  },
+  {
+   "name": "stackup_figure",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 15,
+   "args_documented": 15
   },
   {
    "name": "stackup_profile",
    "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 6,
+   "args_documented": 6
+  },
+  {
+   "name": "ste_cancel_job",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "ste_job_summary",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "ste_list_jobs",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 0
+  },
+  {
+   "name": "ste_prepare_upload",
+   "backend": "ste",
+   "dry_run": false,
+   "args": 0,
+   "args_documented": 0
+  },
+  {
+   "name": "ste_submit_job",
+   "backend": "ste",
    "dry_run": false,
    "args": 4,
    "args_documented": 0
@@ -3130,8 +5125,15 @@
    "name": "step_header_info",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 2,
-   "args_documented": 0
+   "args": 4,
+   "args_documented": 2
+  },
+  {
+   "name": "stiffness_jump",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 2
   },
   {
    "name": "stress_strain_plot",
@@ -3141,11 +5143,11 @@
    "args_documented": 0
   },
   {
-   "name": "submit_job",
-   "backend": "smart-twin-mcp",
+   "name": "structure_report",
+   "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 5,
+   "args_documented": 2
   },
   {
    "name": "submit_lsdyna_job",
@@ -3169,10 +5171,31 @@
    "args_documented": 0
   },
   {
+   "name": "summarize_warnings",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 1
+  },
+  {
+   "name": "sync_data_source",
+   "backend": "reportarchive",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
    "name": "tag_search",
    "backend": "ai-data-hub",
    "dry_run": false,
    "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "task_revisions",
+   "backend": "heax-kooremapper_mcp",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
   },
   {
@@ -3186,8 +5209,29 @@
    "name": "thickness_report",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 3,
+   "args": 6,
+   "args_documented": 3
+  },
+  {
+   "name": "tolerance_sweep",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 1
+  },
+  {
+   "name": "tool_result",
+   "backend": "smart-twin-mcp",
+   "dry_run": false,
+   "args": 1,
    "args_documented": 0
+  },
+  {
+   "name": "tool_usage_report",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 4,
+   "args_documented": 1
   },
   {
    "name": "top_emerging_keywords",
@@ -3208,11 +5252,18 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 6,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "trash_report",
    "backend": "reportarchive",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "unlink_report_revision",
+   "backend": "heax-kooremapper_mcp",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -3274,17 +5325,17 @@
    "args_documented": 0
   },
   {
-   "name": "upload_image",
-   "backend": "mx-white-paper",
-   "dry_run": false,
-   "args": 1,
-   "args_documented": 0
-  },
-  {
    "name": "upload_image_base64",
    "backend": "mx-white-paper",
    "dry_run": false,
    "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "upload_image_bytes",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 4,
    "args_documented": 0
   },
   {
@@ -3320,13 +5371,20 @@
    "backend": "heax-step_forge",
    "dry_run": false,
    "args": 4,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "use_experts",
    "backend": "_gateway",
    "dry_run": false,
    "args": 1,
+   "args_documented": 1
+  },
+  {
+   "name": "uv_mask_from_region",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 7,
    "args_documented": 1
   },
   {
@@ -3341,7 +5399,7 @@
    "backend": "heax-laminate_analyzer_mcp",
    "dry_run": false,
    "args": 1,
-   "args_documented": 0
+   "args_documented": 1
   },
   {
    "name": "verify_answer",
@@ -3354,15 +5412,148 @@
    "name": "view_3d",
    "backend": "heax-step_forge",
    "dry_run": false,
-   "args": 1,
-   "args_documented": 0
+   "args": 2,
+   "args_documented": 2
   },
   {
    "name": "voc_breakdown",
    "backend": "signalforge",
    "dry_run": false,
-   "args": 10,
+   "args": 11,
+   "args_documented": 0
+  },
+  {
+   "name": "what_changed_near",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 9,
+   "args_documented": 4
+  },
+  {
+   "name": "what_holds",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
+   "name": "what_next",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 2
+  },
+  {
+   "name": "where_is",
+   "backend": "heax-step_forge",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 1
+  },
+  {
+   "name": "wiki_add_question",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_ask",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_entity",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_fileback",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 5,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_graph",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_index",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_lint_report",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_log",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_propose",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 3,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_questions",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_read",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_search",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_source",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 1,
+   "args_documented": 0
+  },
+  {
+   "name": "wiki_submit_source",
+   "backend": "mx-white-paper",
+   "dry_run": false,
+   "args": 2,
    "args_documented": 0
   }
- ]
+ ],
+ "_kept_absent": {
+  "smart-twin-cluster": {
+   "tools": 19,
+   "since": "2026-09-15",
+   "why": "게이트웨이 /health 가 내려갔다고 한다"
+  }
+ }
 }

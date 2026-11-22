@@ -81,13 +81,53 @@ def test_백엔드째_안_보이면_총수가_늘어도_갱신을_막는다(run)
     rc, out, after = run(down={"reportarchive"})
     assert rc == 2, out
     assert after == _old(), "막았으면 고정물은 그대로다"
-    assert "reportarchive" in out and "--force" in out
+    assert "reportarchive" in out and "--force" in out and "--keep-absent" in out
 
 
 def test_force_면_사람이_확인한_것으로_보고_덮어쓴다(run):
     rc, out, after = run("--force")
     assert rc == 0, out
     assert {t["name"] for t in after["tools"]} == {t["name"] for t in _fresh()["tools"]}
+
+
+def test_keep_absent_는_안_보이는_백엔드의_옛_줄을_지키고_나머지만_갱신한다(run):
+    """띄울 수 없는 백엔드(dev 11-22 — smart-twin-cluster)가 있어도 갱신은 해야 한다. 그 줄을 지우면 그 뒤 가드가 없는 도구로 친다."""
+    old = _old(days_ago=5)
+    rc, out, after = run("--keep-absent", old=old, down={"reportarchive"})
+    assert rc == 0, out
+    names = [t["name"] for t in after["tools"]]
+    assert names == sorted(names)
+    assert set(names) == {"ra_a", "ra_b", "sf_a", "sf_n1", "sf_n2", "sf_n3", "gw"}, "사라진 sf_old 만 빠진다"
+    assert next(t for t in after["tools"] if t["name"] == "ra_a")["dry_run"] is True, "지킨 줄은 옛 줄 그대로다"
+    assert after["gateway_tools"] == 5, "게이트웨이가 낸 수는 그대로 — 지킨 줄은 표지의 수만큼 더 있다"
+    assert after["_kept_absent"] == {"reportarchive": {
+        "tools": 2, "since": old["generated"], "why": "게이트웨이 /health 가 내려갔다고 한다"}}
+
+
+def test_keep_absent_는_다른_백엔드로_옮겨_보이는_이름을_두_줄로_만들지_않는다(run):
+    f = _fresh()
+    rc, out, after = run("--keep-absent", fresh={**f, "tools": [*f["tools"], _t("ra_a", "signalforge")]})
+    assert rc == 0, out
+    rows = [t for t in after["tools"] if t["name"] == "ra_a"]
+    assert rows == [_t("ra_a", "signalforge")], "지금 보이는 줄이 정본이다"
+    assert after["_kept_absent"]["reportarchive"]["tools"] == 1
+
+
+def test_keep_absent_를_이어서_돌려도_처음_지킨_날짜가_남는다(run):
+    old = {**_old(), "_kept_absent": {"reportarchive": {"tools": 2, "since": "2026-09-15", "why": "옛 까닭"}}}
+    rc, out, after = run("--keep-absent", old=old)
+    assert rc == 0, out
+    assert after["_kept_absent"]["reportarchive"]["since"] == "2026-09-15"
+    assert "기록은 2026-09-15 줄을 지키고 있다" in out
+
+
+def test_백엔드가_돌아오면_지킨_표지가_사라진다(run):
+    """표지는 물려받지 않는다 — 다시 보이는 백엔드의 줄은 살아 있는 줄로 갈린다. pull 은 옛 `_` 칸을 그대로 싣는다(그 꼴을 흉내 낸다)."""
+    f = _fresh()
+    mark = {"_kept_absent": {"reportarchive": {"tools": 2, "since": "2026-09-15", "why": "옛 까닭"}}}
+    rc, out, after = run(old={**f, **mark}, fresh={**f, **mark, "tools": [*f["tools"], _t("ra_a", "reportarchive")]})
+    assert rc == 0, out
+    assert "_kept_absent" not in after
 
 
 def test_check_는_나이와_안_보이는_까닭을_보이고_쓰지_않는다(run):
