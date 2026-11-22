@@ -6,6 +6,8 @@
 > 받을 판(묶음 B · 11-22) — 게이트웨이 `bd37738` · `26183c3` · `d2878f9`(master `0e113bd`) · 에이전트 서버 `29f8554` · `5aa25c4` · `db4b75e` ·
 > `a291297` · `fd6a4fc` · `d058c5c` · `190c8f4` · `ca02ada` · `ee8d5db` · `26c78f2`(main `ee26311`) · 포털 `3dfebc6e` · `1bb54c55` · `18016612` ·
 > `e4cb252e` · `951fe9c6`(main `67fccb15`) · AIDataHub `9d2ced1` · `d2fa5c5`(main `b2f1b72`). 6절이 받는 것만으로 달라지는 것이다.
+> 받을 판(묶음 C · 통합 판 11-22) — 게이트웨이 master `eb6fee8` · 에이전트 서버 main `ec90cb6` · 포털 main `c7cc3852` · 리스크 앱(HWAXRisk) main `699bba8`
+> (허브 앱 — Drive SIF 를 함께 받는다). 7절이 받는 것만으로 달라지는 것과 스위치다.
 > 대조 시점 — dev 11-22. 묶음 A 를 지을 때 dev 에는 Report Archive 가 떠 있지 않아 RA 에 닿는 것은 전부 가짜 RA 시험이었다. 그 뒤 dev 에 RA 최신판을
 > 띄웠지만(context-notes L21-14) 사람 자격이 드는 실호출은 아직 못 했다 — 아래 3 · 4절이 진짜 RA 로 보는 첫 확인이다.
 
@@ -89,6 +91,25 @@ curl -s http://127.0.0.1:9009/health | python3 -c 'import sys,json; print(json.l
 | 심의 생각 강도(T4) | 서버 값 그대로 | 심의마다 `advanced.reasoning_effort`(low · medium · high · xhigh)를 줄 수 있다. 주지 않으면 종전과 같다. 재는 법은 `$PY -m tools.delib_ab --knob reasoning_effort …`([measurements.md](measurements.md)) |
 | 절차 씨앗 「낙하 — 결과 귀환 확인」 | 씨앗 | `docs/procedures/fixtures/drop-return-check.yaml` 을 절차 화면에서 가져다 쓴다. 전부 읽기다. DynaForge 11-15 판 이상이어야 한다 |
 | 추천의 판정 후보 | 끔(`SEAT_ONTO` 를 켠 박스만) | AIDataHub `recommend_agents` 의 `onto` 통계에 `verdict`(`core_question` · `no_owner`)가 실린다. 알리기만 하고 순위 · 좌석은 그대로다. `no_owner` 는 이번 추천의 후보 안에서 세고, 카드가 한 장도 없는 객체는 잡지 못한다(카드에 이어진 객체만 질문에서 풀린다) — 드물게만 나오는 것이 정상이다 |
+
+## 7. 묶음 C(통합 판) — 받는 것만으로 달라지는 것과 스위치
+
+새 설정은 없다(스위치는 모두 기본 꺼짐이거나 종전 그대로). 게이트웨이 · 에이전트 서버 · 포털(프론트 빌드)이 함께 재기동돼야 한다 — **에이전트 서버가
+게이트웨이보다 먼저이거나 함께**다(새 절차 도구 `procedure_run_start` 를 챗 턴 밖에서 막는 관문이 에이전트 서버에 있다). 워크플로 사본을 맞춘다
+(`sync-workflows.sh` — update-all 에 든다). 리스크 앱은 첫 기동에 스키마 v8 → v9 이행이 저절로 돈다(`pre-migrate-v8-*` 사본 하나 — 반출 · 들여오기는
+두 박스가 같은 판일 때만).
+
+| 무엇 | 기본 | 달라지는 것 · 켜는 법 |
+|---|---|---|
+| 과제 인사이트 깔기 | 켜짐(권한 `feat:insights` · 과제를 단 일반 심의에서만) | 같은 (과제, 차수)의 확인 · 반박 카드를 근거로 깐다(최근 20장 · 보고서 독자가 볼 수 있는 것만 — 부서 작업 공간은 같은 소속으로 본다). 봉인 심의는 깔지 않는다 · 기준일 심의는 그 날 뒤 카드를 뺀다 · 리스크 심사 계열은 대상이 아니다. 끄는 스위치는 없다 — 주제를 달지 않으면 안 깐다 |
+| 과제 인사이트 화면 | 받으면 달라진다 | 「판이 바뀜」 · 「같은 결론 n번」 칩 · 옛 key 알림 · 「검토 줄」 탭. StepForge 개정을 그 사람 PAT 로 한 번 묻는다(못 읽으면 「모름」) |
+| 절차 → 심의 · 챗 | 받으면 달라진다(권한 `feat:procedures`) | 실행 화면의 「심의로 넘기기」 · 「챗으로 가져가기」. 리스크 심사로는 넘기지 않는다 |
+| 게이트웨이 절차 도구 넷 | 받으면 생긴다 | `procedure_list` · `procedure_get` · `procedure_run_start`(기본 plan) · `procedure_run_status`. 개인 토큰으로 live 를 시작할 때 확인 없이 도는 쓰기 · 잡 단계가 있으면 거절. 손잡이 `GATEWAY_PROCEDURE_TIMEOUT_S`(기본 60) |
+| 이용 통계 접기 | 켜짐(`USAGE_FOLD_S` 기본 3600 · 0 은 끔) | 포털이 기동 30초 뒤와 한 시간마다 원천 다섯을 날마다 접는다(포털 감사 원장 안의 표 셋 · 게이트웨이는 감사 원장 곁 `usage-rollup.sqlite`). 첫 접기는 감사 원장 전체를 한 번 읽는다 — 받은 편지함 Q11 |
+| 발표자료 관리 | 꺼짐(`WDA_DECK_ENABLED`) | 켠 박스에서 PDF 미리보기 · 다시 시도 · 사본 지우기 · 루틴 RA 초안의 단추 |
+| 리스크 종합 보고서 → RA 초안 | 꺼짐(리스크 앱 `HWAXRISK_RA_REPORT_DRAFT`) | 포털 창구가 그 사람 명의로 쓴다(리스크 앱 절차서 `docs/ra-report-draft.md`). 켜려면 리스크 앱 `knobs.env` 에 한 줄 · 게이트웨이의 리스크 앱 사람별 위임이 켜져 있어야 한다 |
+| 웹 챗 Claude 모델 권한 | 아무에게도 없다 | 권한 표에 `feat:chat-claude` 가 보인다. 「전부」 · 관리자 전권에 딸려 오지 않고 개별 허가로만 연다. 에이전트 서버 쪽이 올라오기 전에는 줘도 아무 일이 없다 |
+| 리스크 심사 · 보고서 정리 | 받으면 달라진다 | 리스크 심사의 지정 도구 · 좌석 조회에서 절차 도구를 닫는다 · `/보고서 정리` 는 도구를 묶지 않은 챗 모델로 돈다 |
 
 ## 되돌리기
 
