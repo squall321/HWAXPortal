@@ -15,14 +15,16 @@
 ## 전달 (11-22) — 11-21 재시험 뒤 남은 것(`retest-1121-request.md`)
 
 - [x] 원문을 리포에 정본으로(`retest-1121-request.md`) · 받을 곳 표(PLAN 「11-21 재시험」)
-- [ ] StepForge(`stepforge-d4`)에 SF-1 ~ SF-12 보냄(11-22 08:40 KST 전달됨) — 답 받기
-- [ ] ste(`smarttwinexplorer-06`)에 ST-1 ~ ST-17 보냄(11-22 08:40 KST 전달됨) — 몫 가름 · 답 받기
-- [ ] 브리지(`koosolvercontainer-da`)에 BG-1 · BG-2 · BG-6 과 앱 래퍼 몫 보냄(11-22 08:40 KST 전달됨) — 답 받기
-- [ ] SF-5 ↔ ST-7 어느 쪽이 규약 변환을 맡는지(StepForge · 브리지가 정함)
+- [x] StepForge(`stepforge-d4`)에 SF-1 ~ SF-12 보냄 — 받음 · D-708 로 갈래에서 짓는 중(1차 SF-1 · 2 · 3 · 8 · 9 · 11 · 12), 착지 판 · 날짜는 그쪽 사용자 확인 뒤. 짚은 것 — SF-12 의 `source` · `to_ste_upload` 는 11-18 결정으로 없다(옮기기는 게이트웨이 한 길) · SF-8 원인(산출물 열쇠 글롭) · SF-2 의 접촉 넓이 0 은 참값으로 보임(`contact_zero_why`)
+- [x] ste(`smarttwinexplorer-06`)에 ST-1 ~ ST-17 보냄 — ste 코어 몫 ST-4 · ST-5(틀) · ST-12 · ST-14 · ST-16 은 지어 로컬 main 에 있음(origin 보다 22커밋 앞 · Drive 는 1e53260 그대로 — 그쪽 사용자 확인 뒤 나간다). ST-5 는 `report_url` 대신 경로 · 크기 · `job_url`(저장형 XSS). ST-3 은 그쪽 사용자에게 묻는다(11-18 ST-R1 결정을 다시 여는 일). 나머지는 브리지 몫
+- [x] 브리지(`koosolvercontainer-da`)에 BG-1 · BG-2 · BG-6 과 앱 래퍼 몫 보냄 — 받음 · 11-17 의 19 항목과 겹쳐 Phase 7 차례(ST-2 · ST-1 · BG-1 · BG-2 먼저), 반영은 Drive 동결 해제와 그쪽 사용자 확인 뒤. BG-2 를 합성 판으로 재현해 고침(KooSolverContainer `0296fab` · `41c2cc9`, 미배포 — 운영 진단기 숫자로 원인 확정). 새로 찾은 결함 — part-study 레디쉬 길이 mm 좌표를 m 로 읽어 1000배 판을 풀었다(단독 reddish 잡은 영향 없음)
+- [x] SF-5 ↔ ST-7 어느 쪽이 규약 변환을 맡는지 — StepForge 가 geometry 절 변환(축 · 원점 · 변 4묶음 · UV 창), ST-7 은 그 절을 손대지 않고 싣고 검사 · 메시 크기 · placeholders 만(두 세션 합의 11-22)
+- [ ] SF-11 운영 박스에서 맨 이름 `leak_report` 의 서명에 `parts` 가 왜 안 보였나(받은 편지함 2026-11-22 Q8) — 게이트웨이는 스키마 변화를 지문으로 알아채 다시 모은다(소스 확인)
+- [ ] StepForge 2차 물음 — SF-10 테이프 이름 꼴 · SF-6 인쇄 도면 그림(받은 편지함 Q9 · Q10), SF-4 material_id 는 MaterialTwin 재료 id 라고 답함, SF-2 의 ST-8 쪽 물음은 브리지에 전함
 - [ ] BG-3 큰 파일(100 MB 급) · cavity_step 을 dev 에서 한 번 옮겨 보기
-- [ ] BG-3 · ST-10 업로드에 scenario.json 더하기 — ste 답 뒤 어느 쪽이 짓는지 정함
+- [x] BG-3 · ST-10 업로드에 scenario.json 더하기 — ste 가 받는다(`submit_job` 이 files 와 upload_id 를 함께 · 같은 이름은 400). 게이트웨이에 새 도구 없음
 - [ ] BG-4 `gas_transport_lookup` — S = P/D 추정(`derived`) 지음(게이트웨이 통합 가지 — 같은 시료 · 온도 1 K 안 · O2 일 때만, 올림은 통합 가지와 함께) · 온도 차 칸은 이미 있다(`delta_K`) · 층별 조회는 SF-4 의 material_id 뒤
-- [ ] BG-5 · PT-1 토큰이 없을 때의 답(등록 방법) 확인(받은 편지함 2026-11-22 Q7 — 답 받기) · 공용 프리셋은 사용자에게 다시 묻기(SS-6)
+- [ ] BG-5 · PT-1 토큰이 없을 때의 답(등록 방법) 확인(받은 편지함 2026-11-22 Q7 — 답 받기) · 공용 프리셋은 만들지 않는다(사용자 결정 11-22 — SS-6 그대로)
 - [x] PT-2 운영 박스에서 StepForge 줄의 build 가 비는 까닭 — 받은 편지함으로 묻기(`../cae00-inbox/2026-11-22.md` Q6) — 답 받기
 
 ## P-1 `artifact_to_ste_upload` (P0)
