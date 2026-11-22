@@ -8,7 +8,13 @@ import { PersonaPicker } from './PersonaPicker';
 import { useOperatorGone } from './useOperatorGone';
 
 export function ExpertToggle() {
-  const { pinnedAgent, pinnedAgentName, setPinnedAgent, thinking } = useChat();
+  const { pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers, setPinnedHelpers, thinking } = useChat();
+  // 대화 중에도 보조 전문가를 더한다(사용자 결정 11-22 — 종전엔 시작 화면에서만 됐다). 시작 화면의 규칙 그대로 — 주 전문가가 있을 때만 ·
+  // 주 전문가와 같은 사람 · 이미 있는 사람은 안 받고 · 상한 4.
+  const addHelper = (a: { key: string; name?: string }) => {
+    if (!pinnedAgent || a.key === pinnedAgent || pinnedHelpers.some((h) => h.key === a.key) || pinnedHelpers.length >= 4) return;
+    setPinnedHelpers([...pinnedHelpers, { key: a.key, name: a.name }]);
+  };
   // null=닫힘 · quick=가벼운 선택기 · browse=전창 조직도
   const [mode, setMode] = useState<null | 'quick' | 'browse'>(null);
   const label = pinnedAgentName || pinnedAgent || '';
@@ -48,7 +54,13 @@ export function ExpertToggle() {
         </button>
       )}
       {mode === 'quick' && <PersonaPicker onClose={() => setMode(null)} onExpand={() => setMode('browse')} />}
-      {mode === 'browse' && <PersonaBrowser onClose={() => setMode(null)} onBack={() => setMode('quick')} />}
+      {mode === 'browse' && (
+        <PersonaBrowser
+          onClose={() => setMode(null)}
+          onBack={() => setMode('quick')}
+          onAddHelper={pinnedAgent && pinnedHelpers.length < 4 ? addHelper : undefined}
+        />
+      )}
     </div>
   );
 }
