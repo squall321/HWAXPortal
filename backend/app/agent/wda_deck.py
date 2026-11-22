@@ -7,6 +7,8 @@
 2. 진행 — 화면이 묻는다. WDA 의 낱말 둘(파이프라인 · 렌더)을 하나로 접는다(`fold`, PLAN §7.2). 부작용이 없다.
 3. advance(POST · CSRF) — 잡 잠금 안에서 렌더 맡기기(WDA 가 이어서 렌더하지 않는 판) · 끝나면 알림 한 건(단추를 누른 그 대화의 서버 사본, 한 번만).
 4. 받기 — 기록의 주인만. **요청한 사람의** 이름으로 WDA 에서 받아 흘린다(WDA 가 주인을 다시 본다 — 두 겹).
+1-1. M3(사용자 결정 11-22) — 템플릿 보고서(쪽 content 에 템플릿 블록 id 만 있고 정의는 RA 템플릿 스키마에 있다 — 심의 결과 · '/보고서' ·
+   분석 루틴 초안)는 그 사람 명의로 RA 템플릿 스키마를 읽어 `template_schemas` 로 함께 넘긴다. 못 읽으면 정해진 글로 실패한다(WDA 를 부르지 않는다).
 5. M2 — 다시 시도(실패한 잡의 WDA 실행을 끊긴 단계부터 다시 돌린다 — 보고서를 다시 넘기지 않는다 · 포털 잡은 새로 선다) · 지우기(WDA 의 사본을
    그 사람 이름으로 지운다, W-17) · PDF 미리보기(받기와 같은 중계 — inline · 응답 머리 CSP sandbox). 셋 다 맡긴 사람만.
 
@@ -413,17 +415,16 @@ async def _get_capped(cli: httpx.AsyncClient, url: str, headers: dict, cap: int)
         return r.status_code, bytes(buf[:limit])
 
 
-async def read_report(request: Request, settings: Settings, principal: Principal, report_id: int) -> tuple[dict, int]:
-    """그 사람 명의로 RA `GET /api/reports/{id}` → (ReportRead, 바이트 수). 서비스 계정으로 내려가는 길은 없다(2026-09-29 사고의 교훈).
-    본문은 흘려 받으며 상한(wda_deck_report_max_mb)을 넘는 순간 멈춘다 — 다 받은 뒤 재지 않는다(WD-D53)."""
+async def _ra_get(request: Request, settings: Settings, principal: Principal, path: str, cap: int) -> tuple[int, bytes | None]:
+    """그 사람 명의로 RA `GET {path}` — (상태, 몸 | None(상한을 넘었다)). 서비스 계정으로 내려가는 길은 없다(2026-09-29 사고의 교훈).
+    위임 토큰을 RA 가 401 로 거절하면 한 번만 새로 받는다. 연결 실패는 httpx.HTTPError 로 올린다(부른 쪽이 글을 정한다)."""
     # 지연 import — RA 자격은 챗 업로드 · 정밀 변환과 같은 함수 하나로 받는다(위임 먼저 · 등록 토큰 다음 · 둘 다 없으면 고칠 곳을 말한다)
     from app.agent.routes import _ra_user_token, _ra_workspace
 
     token, via_sso, conn = await _ra_user_token(request, settings, principal)
     ws = _ra_workspace(conn, via_sso)       # 위임이면 빈 글 — RA 가 그 사람의 홈 부서로 정한다
     email = principal.email or principal.subject
-    url = f"{settings.ra_base_url.rstrip('/')}/api/reports/{report_id}"
-    cap = settings.wda_deck_report_max_mb * 1024 * 1024
+    url = f"{settings.ra_base_url.rstrip('/')}{path}"
 
     def hdrs(tok: str) -> dict:
         h = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
@@ -431,15 +432,23 @@ async def read_report(request: Request, settings: Settings, principal: Principal
             h["X-Workspace-Slug"] = ws
         return h
 
+    async with _http(httpx.Timeout(60.0, connect=10.0)) as cli:
+        st, body = await _get_capped(cli, url, hdrs(token), cap)
+        if st == 401 and via_sso:
+            # 캐시해 둔 위임 토큰을 RA 가 거절했다(회수 · 비밀 교체) — 한 번만 새로 받는다(RA 가지와 같은 규칙)
+            ra_sso.forget(email)
+            fresh = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+            if fresh:
+                st, body = await _get_capped(cli, url, hdrs(fresh), cap)
+    return st, body
+
+
+async def read_report(request: Request, settings: Settings, principal: Principal, report_id: int) -> tuple[dict, int]:
+    """그 사람 명의로 RA `GET /api/reports/{id}` → (ReportRead, 바이트 수). 서비스 계정으로 내려가는 길은 없다(2026-09-29 사고의 교훈).
+    본문은 흘려 받으며 상한(wda_deck_report_max_mb)을 넘는 순간 멈춘다 — 다 받은 뒤 재지 않는다(WD-D53)."""
+    cap = settings.wda_deck_report_max_mb * 1024 * 1024
     try:
-        async with _http(httpx.Timeout(60.0, connect=10.0)) as cli:
-            st, body = await _get_capped(cli, url, hdrs(token), cap)
-            if st == 401 and via_sso:
-                # 캐시해 둔 위임 토큰을 RA 가 거절했다(회수 · 비밀 교체) — 한 번만 새로 받는다(RA 가지와 같은 규칙)
-                ra_sso.forget(email)
-                fresh = await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
-                if fresh:
-                    st, body = await _get_capped(cli, url, hdrs(fresh), cap)
+        st, body = await _ra_get(request, settings, principal, f"/api/reports/{report_id}", cap)
     except httpx.HTTPError as exc:
         raise DeckError(f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
     if st in (401, 403):
@@ -461,13 +470,81 @@ async def read_report(request: Request, settings: Settings, principal: Principal
     return data, len(body)
 
 
+# ── RA 템플릿 스키마(M3 — 사용자 결정 11-22, WD-D96) ───────────────────────────────────────────────────────
+# RA 의 템플릿 보고서는 쪽 content 에 **템플릿 블록 id 만** 싣고 블록 정의(종류 · 라벨)는 템플릿 스키마에 둔다(ReportArchive
+# modules/reports/schemas.py — extra_blocks 는 보고서 작성 때 덧붙인 블록뿐). 정의 없이는 WDA 가 그 블록을 건너뛰어 '블록 0개' 로 거절했다
+# (dev RA 의 심의 보고서 70건이 다 그 꼴 — 11-22 읽기 전용 확인). 그래서 그 사람 명의로 그 판의 스키마를 읽어 함께 넘긴다.
+_TPL_ID_RE = re.compile(r"^(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}$")
+TEMPLATE_SCHEMA_MAX = 2 * 1024 * 1024      # 판 하나의 응답 상한 — 스키마는 블록 정의뿐이다(RA 는 데이터 예시를 블록마다 8 KB 로 묶는다)
+TEMPLATES_MAX = 20                         # 한 보고서가 쓰는 템플릿 판의 상한 — 넘으면 RA 를 그만큼 부르지 않고 막는다
+
+
+def templates_needed(data: dict) -> list[tuple]:
+    """이 ReportRead 를 풀려면 스키마가 있어야 하는 템플릿 판 — 정의(extra_blocks)에 없는 content · 순서 키가 있는 쪽의 (template_id, 판).
+    쪽에 없으면 보고서의 것. pages 가 빈 옛 행은 최상위 content 를 본다. 차례는 처음 나온 순서, 같은 판은 한 번. 꼴은 여기서 보지 않는다."""
+    out: list[tuple] = []
+    pages = [p for p in (data.get("pages") or []) if isinstance(p, dict)]
+    if not pages and isinstance(data.get("content"), dict):
+        pages = [{"content": data["content"]}]
+    for p in pages:
+        defined = {str(b.get("id")) for b in (p.get("extra_blocks") or []) if isinstance(b, dict)}
+        used = {str(k) for k in (p.get("content") or {})} | {str(k) for k in (p.get("blocks_order") or [])}
+        if not used - defined:
+            continue
+        key = (p.get("template_id"), p.get("template_version")) if p.get("template_id") else \
+              (data.get("template_id"), data.get("template_version"))
+        if key not in out:
+            out.append(key)
+    return out
+
+
+async def read_template_schemas(request: Request, settings: Settings, principal: Principal, needed: list[tuple]) -> dict:
+    """그 사람 명의로 RA `GET /api/templates/{id}/versions/{판}` → `{"<id>@<판>": data.schema}`(바꾸지 않고). 못 읽으면 정해진 글의
+    DeckError — 권한(401 · 403) 403 · 없음 409 · 그 밖(불통 · 5xx · 꼴이 틀림) 502. RA 의 글은 서버 로그에만(WD-D49). 서비스 자격 없음."""
+    if len(needed) > TEMPLATES_MAX:
+        raise DeckError(f"보고서가 쓰는 서식(템플릿)이 {len(needed)}개로 너무 많습니다 — 상한 {TEMPLATES_MAX}개.", 409)
+    out: dict[str, dict] = {}
+    for tid, ver in needed:
+        if not (isinstance(tid, str) and _TPL_ID_RE.fullmatch(tid)
+                and isinstance(ver, int) and not isinstance(ver, bool) and ver > 0):
+            raise DeckError("보고서의 서식(템플릿) 이름이나 판을 알 수 없습니다 — 발표자료로 만들 수 없습니다.", 409)
+        name = f"서식(템플릿 {tid} 판 {ver})"
+        try:
+            st, body = await _ra_get(request, settings, principal, f"/api/templates/{quote(tid, safe='')}/versions/{ver}",
+                                     TEMPLATE_SCHEMA_MAX)
+        except httpx.HTTPError as exc:
+            raise DeckError(f"Report Archive 가 {name}을 주지 않았습니다(연결 {exc.__class__.__name__}) — 잠시 뒤 다시 누르세요.", 502) from exc
+        if st in (401, 403):
+            raise DeckError(f"이 보고서의 {name}을 읽을 수 없습니다(HTTP {st}) — RA 권한을 확인하세요.", 403)
+        if st == 404:
+            raise DeckError(f"이 보고서의 {name}이 Report Archive 에 없습니다 — 서식이 지워졌거나 판이 바뀌었습니다.", 409)
+        schema = None
+        if st == 200 and body is not None:
+            try:
+                j = json.loads(body)
+            except ValueError:
+                j = None
+            d = j.get("data") if isinstance(j, dict) else None
+            schema = d.get("schema") if isinstance(d, dict) else None
+        if not (isinstance(schema, dict) and isinstance(schema.get("blocks"), list)):
+            logger.warning("발표자료 — RA 가 서식 %s@%s 를 주지 않았다 HTTP %s 까닭=%r", tid, ver, st, (body or b"")[:300])
+            raise DeckError(f"Report Archive 가 {name}을 주지 않았습니다(HTTP {st}) — 잠시 뒤 다시 누르세요.", 502)
+        out[f"{tid}@{ver}"] = schema
+    return out
+
+
+def schemas_ready(caps: "Caps") -> bool:
+    """WDA 가 템플릿 스키마로 블록을 푸는 판인가(health features 의 template_schemas). 옛 판은 받은 칸을 버리고 블록 0개로 실패한다."""
+    return "template_schemas" in caps.features
+
+
 # ── WDA 부르기 ────────────────────────────────────────────────────────────────────────────────────────
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
 async def wda_create(base: str, token: str, *, data: dict, report_id: int, targets: list[str], doc_style: str, job_id: str,
-                     fmt: str | None, owner_email: str) -> str:
+                     fmt: str | None, owner_email: str, template_schemas: dict | None = None) -> str:
     """WDA `POST /api/runs` — 본문은 RA ReportRead 를 **바꾸지 않고**(WD-D31). render 칸이 있으면 WDA 가 빌드 뒤 이어서 렌더한다(요청 W-8).
     `format` 은 꼴이 정해진 템플릿(심의 → delib-16x9)일 때만 싣는다 — 없으면 WDA 기본(wide-16x9). WDA 가 모르는 꼴이면 곧바로 400 이다(실행 없음)."""
     body = {"report_json": data, "slug": f"ra-{report_id}",
@@ -475,6 +552,8 @@ async def wda_create(base: str, token: str, *, data: dict, report_id: int, targe
             "render": {"targets": list(targets), "doc_style": doc_style, "pptx_mode": PPTX_MODE, "narration": False}}
     if fmt:
         body["format"] = fmt
+    if template_schemas:
+        body["template_schemas"] = template_schemas      # 템플릿 보고서의 블록 정의(M3) — 필요 없는 보고서에는 싣지 않는다(종전 그대로)
     try:
         async with _http(httpx.Timeout(60.0, connect=10.0)) as cli:
             r = await cli.post(f"{base}/api/runs", json=body, headers={**_auth(token), "Idempotency-Key": job_id})
@@ -836,7 +915,8 @@ async def deck_status(
         out["reason"] = "no_owner"
     else:
         # delete — WDA 가 지우기(W-17)를 갖춘 판인가. 켜진 박스의 답에만 싣는다(꺼진 박스의 답은 종전 꼴 그대로)
-        out.update(enabled=True, formats={t: format_ready(caps, f) for t, f in TEMPLATE_FORMAT.items()},
+        # 심의 템플릿 보고서는 늘 템플릿 스키마가 있어야 풀린다(실물 꼴 — WD-D96) — 그 꼴이 active 여도 스키마를 푸는 판이 아니면 숨긴다
+        out.update(enabled=True, formats={t: format_ready(caps, f) and schemas_ready(caps) for t, f in TEMPLATE_FORMAT.items()},
                    delete="delete" in caps.features)
     return out
 
@@ -922,6 +1002,11 @@ async def deck_create(
     # ② 잠금 밖 — RA 읽기 · 꼴 문 · WDA 만들기. 실패하면 예약을 놓는다(WDA 에 간 것이 없다 — 상한 · 중복에서 빠진다)
     try:
         data, size = await read_report(request, settings, principal, body.report_id)
+        needed = templates_needed(data)
+        if needed and not schemas_ready(caps):
+            raise DeckError("이 박스의 WebDesignAgents 는 서식(템플릿) 보고서를 풀지 못하는 판입니다 — 넘기면 블록이 비어 실패합니다. 새 판으로 "
+                            "올린 뒤 다시 누르세요.", 409)
+        schemas = await read_template_schemas(request, settings, principal, needed) if needed else None
         fmts = sorted({TEMPLATE_FORMAT[t] for t in templates_of(data) if t in TEMPLATE_FORMAT})
         not_ready = [f for f in fmts if not format_ready(caps, f)]
         if not_ready:
@@ -931,7 +1016,7 @@ async def deck_create(
         fmt = fmts[0] if fmts else None
         run_id = await wda_create(base, _token(request, settings, principal), data=data, report_id=body.report_id,
                                   targets=targets, doc_style=body.doc_style, job_id=job_id, fmt=fmt,
-                                  owner_email=principal.email or owner)
+                                  owner_email=principal.email or owner, template_schemas=schemas)
     except DeckOwnerError as exc:
         # WDA 에는 실행이 생겼다 — 따라가지 않되 run_id 를 실패한 잡으로 남긴다(진단 · 지우기). 알림은 없다(맡긴 사람이 지금 이 답을 본다)
         logger.warning("발표자료 잡 %s — WDA 202 의 주인이 맡긴 사람이 아니다 owner=%r run_id=%s", job_id, exc.owner, exc.run_id)

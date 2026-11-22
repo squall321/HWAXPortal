@@ -51,11 +51,37 @@ EMPTY = {**IMPORT, "id": 42, "title": "빈 보고서", "pages": [{
     "template_id": "__import_blank__", "template_version": 1,
     "extra_blocks": [{"id": "b001", "type": "heading", "props": {"default_text": "제목"}}, {"id": "b002", "type": "rich_text", "props": {}}],
     "content": {}}]}
-# 심의 템플릿 보고서 — 블록 정의가 보고서에 없다(템플릿 블록은 content 키만, 에이전트 서버 create_report_draft template deliberation)
-DELIB = {"id": 58, "workspace_slug": "personal-5", "template_id": "deliberation", "template_version": 1, "title": "심의 — 굽힘",
-         "tags": ["심의"], "content": {}, "pages": [{
-             "template_id": "deliberation", "template_version": 1, "extra_blocks": [],
-             "content": {"background": {"markdown": "심의 주제: 굽힘"}, "recommendation": {"markdown": "결정 — 12um 는 쓰지 않는다"}}}]}
+# 심의 템플릿 보고서 — **실물 꼴**(RA v0.186.3 · dev RA 의 심의 보고서 70건을 읽기 전용으로 본 것, 11-22): 블록 정의가 보고서에 없고(쪽
+# content 에 템플릿 블록 id 만 · extra_blocks 빈 것), 긴 글은 items[{depth, text}](RA ai-draft 가 문자열 목록을 이 꼴로 저장한다 — markdown
+# 이 아니다), 쪽 이름은 None, 내용 키 순서는 JSONB 가 바꾼다. 세 출처(심의 결과 · '/보고서' 저장 답 · 분석 루틴 초안)가 다 이 템플릿이다.
+def _items(*texts):
+    return {"items": [{"depth": 0, "text": t} for t in texts]}
+
+
+def _delib_report(rid, title, content):
+    order = ["background", "results", "recommendation", "minutes"]
+    return {"id": rid, "workspace_slug": "personal-5", "template_id": "deliberation", "template_version": 1, "title": title,
+            "phase": "draft", "tags": ["심의"], "pages": [{
+                "name": None, "template_id": "deliberation", "template_version": 1, "extra_blocks": [], "blocks_order": order,
+                "block_sections": {}, "block_updated_at": {}, "layout_overrides": None, "props_overrides": None,
+                "content": {k: content[k] for k in ("minutes", "results", "background", "recommendation") if k in content}}]}
+
+
+DELIB = _delib_report(58, "심의 — 굽힘", {
+    "background": _items("심의 주제: 굽힘"), "results": _items("• [기구] 12um 는 피로 수명이 준다."),
+    "recommendation": _items("■ 핵심 요약", "결정 — 12um 는 쓰지 않는다"), "minutes": _items("참여: 기구, 재료")})
+SAVED = _delib_report(77, "대화 정리 — 낙하", {
+    "background": _items("심의 주제: 모서리 파손", "질문 전문:\nR 을 키우면 줄까?"), "results": _items("응력이 18% 낮아졌다."),
+    "recommendation": _items("사용자 결론: R 1.0 으로 반영한다."), "minutes": _items("대화 3턴")})
+ROUTINE = _delib_report(91, "분석 루틴 보고서 — 스웰링", {
+    "background": _items("루틴 「시장불량 원인 분석」 판 3"), "results": _items("기준 키 — SM-S938", "이력 — 12건"),
+    "recommendation": _items("인사이트 — 고온 보관 시험을 우선한다."), "minutes": _items("근거 부록\n· 조회 2회")})
+# dev RA 에 손으로 둔 deliberation 템플릿 v1 의 스키마(GET /api/templates/deliberation/versions/1 의 data.schema) — 블록 넷 · 모두 rich_text
+DELIB_SCHEMA = {"version": "widget-v1", "blocks": [
+    {"id": "background", "type": "rich_text", "props": {"label": "심의 주제", "required": True}},
+    {"id": "results", "type": "rich_text", "props": {"label": "심화 논의(2R)"}},
+    {"id": "recommendation", "type": "rich_text", "props": {"label": "의사결정문"}},
+    {"id": "minutes", "type": "rich_text", "props": {"label": "회의록(참여·라운드)"}}]}
 
 
 WDA_MEDIA = {"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "pdf": "application/pdf",
@@ -67,7 +93,7 @@ SPA_INDEX = b"<!doctype html><html><head><title>HEAX Hub</title></head><body><di
 class FakeHubWDA:
     """허브 게이트(포털 PAT 검증 → X-Heax-User-Email) + 요청서 계약의 WDA + RA."""
 
-    def __init__(self, keystore, *, features=("owner",), chain=True, error_codes=False):
+    def __init__(self, keystore, *, features=("owner", "template_schemas"), chain=True, error_codes=False):
         self.keystore, self.features, self.chain, self.error_codes = keystore, set(features), chain, error_codes
         # WDA 의 꼴 등록부(꼴 id → 상태) — features 에 format:<id> 가 저절로 실린다. 심의 꼴(delib-16x9)은 시험이 넣는다
         self.formats = {"wide-16x9": "active", "short-9x16": "active", "print-a4": "draft"}
@@ -77,7 +103,11 @@ class FakeHubWDA:
         self.lose_create_response = 0                  # 만들기를 받아 실행을 만든 뒤 답을 잃는다(읽기 시간 초과) — 남은 횟수
         self.refuse_connect = 0                        # 만들기에 연결 자체를 거절한다 — 남은 횟수
         self.runs: dict[str, dict] = {}
-        self.reports = {41: IMPORT, 42: EMPTY, 58: DELIB}
+        self.reports = {41: IMPORT, 42: EMPTY, 58: DELIB, 77: SAVED, 91: ROUTINE}
+        # RA 템플릿 판 — (id, 판) → 스키마. tpl_status 로 그 판의 거절을 흉내 낸다(401 · 403 · 404 · 500 · 'junk' = 스키마 없는 200)
+        self.templates = {("deliberation", 1): DELIB_SCHEMA}
+        self.tpl_status: dict[tuple[str, int], object] = {}
+        self.tpl_calls: list[tuple[str, str]] = []      # (경로, 실은 Authorization)
         self.calls: list[tuple[str, str]] = []          # (메서드, 경로)
         self.created: list[dict] = []                  # 받은 만들기 본문
         self.client_identity: list[str] = []           # 클라이언트가 보낸 X-Heax-User-Email(있으면 안 된다)
@@ -188,7 +218,28 @@ class FakeHubWDA:
             self.chunks_sent += 1
             yield b"x" * size
 
+    def ra_template(self, req: httpx.Request) -> httpx.Response:
+        """RA `GET /api/templates/{id}/versions/{v}` — v0.186.3 의 꼴: success 봉투의 data 가 TemplateRead(schema 칸은 by_alias 'schema')."""
+        self.tpl_calls.append((req.url.path, req.headers.get("authorization", "")))
+        if req.headers.get("authorization") not in ("Bearer rat_kim", "Bearer rat_lee"):
+            return httpx.Response(401, json={"detail": "unauthorized"})
+        parts = req.url.path.split("/")              # ['', 'api', 'templates', id, 'versions', v]
+        key = (parts[3], int(parts[5]))
+        st = self.tpl_status.get(key)
+        if st == "junk":
+            return httpx.Response(200, json={"success": True, "data": {"template_id": key[0], "version": key[1]}})
+        if isinstance(st, int):
+            return httpx.Response(st, json={"detail": f"RA 내부 글 {key[0]} — 밖에 보이면 안 된다"})
+        if key not in self.templates:
+            return httpx.Response(404, json={"success": False, "message": f"Template version not found: {key[0]}@{key[1]}"})
+        return httpx.Response(200, json={"success": True, "data": {
+            "template_id": key[0], "version": key[1], "name": "심의", "description": "", "category": "misc",
+            "schema": copy.deepcopy(self.templates[key]), "owner_workspace_slugs": None, "is_published": True, "is_latest": True,
+            "archived_at": None, "registered_by_system": None, "created_by_user_id": 1, "created_at": "2026-11-01T00:00:00Z"}})
+
     def ra(self, req: httpx.Request) -> httpx.Response:
+        if req.url.path.startswith("/api/templates/"):
+            return self.ra_template(req)
         self.ra_auth.append(req.headers.get("authorization", ""))
         rid = int(req.url.path.rsplit("/", 1)[1])
         if req.headers.get("authorization") not in ("Bearer rat_kim", "Bearer rat_lee"):
@@ -201,20 +252,29 @@ class FakeHubWDA:
             return httpx.Response(404, json={"success": False, "message": "Report not found"})
         return httpx.Response(200, json={"success": True, "data": copy.deepcopy(self.reports[rid])})
 
-    def _text_blocks(self, report: dict, fmt: str) -> tuple[int, int]:
-        """WDA 의 블록 글자 규칙(11-01) — (블록 수, 글자 있는 블록 수)."""
+    def _text_blocks(self, report: dict, schemas: dict | None) -> tuple[int, int]:
+        """WDA 의 블록 글자 규칙 — (블록 수, 글자 있는 블록 수). 정의는 extra_blocks 와 **받은 템플릿 스키마**(`<id>@<판>` — 쪽의 것 먼저)뿐이다.
+        정의 없는 content 키는 건너뛴다(진짜 WDA 와 같다 — 11-22 전에는 이 가짜가 '심의 꼴이면 템플릿 블록을 안다' 로 진짜보다 너그러웠다).
+        긴 글은 markdown 이거나 items[{text}](RA 의 실물 꼴)."""
         n = t = 0
         for p in report.get("pages") or []:
             content = p.get("content") or {}
             defs = list(p.get("extra_blocks") or [])
-            if p.get("template_id") == "deliberation" and fmt == "delib-16x9":
-                defs += [{"id": k, "type": "rich_text"} for k in content]      # 심의 꼴로 맡긴 실행은 템플릿 블록을 안다(W-21)
+            tid = p.get("template_id") or report.get("template_id")
+            ver = p.get("template_version") if p.get("template_id") else report.get("template_version")
+            known = {b["id"] for b in defs}
+            for b in ((schemas or {}).get(f"{tid}@{ver}") or {}).get("blocks") or []:
+                if b["id"] in content and b["id"] not in known:
+                    defs.append(b)
             for b in defs:
                 n += 1
                 c = content.get(b["id"], b.get("content"))
                 if not isinstance(c, dict):
                     continue
-                txt = c.get("markdown") if b["type"] == "rich_text" else c.get("text") if b["type"] == "heading" else None
+                if b["type"] == "rich_text":
+                    txt = c.get("markdown") or " ".join(str(i.get("text") or "") for i in c.get("items") or [] if isinstance(i, dict))
+                else:
+                    txt = c.get("text") if b["type"] == "heading" else None
                 if txt and str(txt).strip():
                     t += 1
         return n, t
@@ -285,7 +345,9 @@ class FakeHubWDA:
                 return httpx.Response(400, json={"success": False, "data": None,
                                                  "message": f"ValueError: 모르는 format '{fmt}' — 쓸 수 있는 꼴: {', '.join(sorted(self.formats))}",
                                                  **({"code": "INVALID"} if self.error_codes else {})})
-            n, t = self._text_blocks(body["report_json"], fmt)
+            # 템플릿 스키마는 그 능력이 있는 판만 받는다 — 옛 판은 모르는 칸을 버린다(진짜 WDA 의 body.get 과 같다)
+            schemas = body.get("template_schemas") if "template_schemas" in self.features else None
+            n, t = self._text_blocks(body["report_json"], schemas)
             if not t:
                 return self.env(422, message=f"ValueError: 텍스트를 가진 블록이 없다 (블록 {n}개, 텍스트 0개)", code="INVALID")
             rid = f"wr-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}-{uuid.uuid4().hex}"    # WDA 의 주인 있는 실행 id 꼴(runs.py new_run_id)
@@ -1553,6 +1615,135 @@ def test_감사에는_보고서_본문이_없다(box):
     events = {r[0] for r in rows}
     assert {"deck_create", "deck_finish", "deck_download"} <= events
     assert all("두께 12um" not in (r[2] or "") for r in rows)
+
+
+# ── M3 — 템플릿 보고서는 그 사람 명의로 RA 템플릿 스키마를 읽어 함께 넘긴다(사용자 결정 11-22, WD-D96) ──────────────────────
+def _delib_ready(box):
+    box["fake"].formats["delib-16x9"] = "active"
+
+
+@pytest.mark.parametrize("rid", [58, 77, 91], ids=["심의 결과", "보고서 저장 답", "분석 루틴 초안"])
+def test_템플릿_보고서는_그_사람_명의로_스키마를_읽어_함께_넘기고_세_출처가_다_끝까지_간다(box, rid):
+    """실물 꼴의 심의 보고서는 블록 정의가 보고서에 없다 — 스키마 없이 넘기면 WDA 가 '보고서 읽기' 에서 블록 0개로 거절했다(WD-D94 ①)."""
+    c, fake = box["c"], box["fake"]
+    _delib_ready(box)
+    r = _make(box, report_id=rid)
+    assert r.status_code == 200, r.text
+    (sent,) = fake.created
+    assert sent["report_json"] == fake.reports[rid], "ReportRead 는 바꾸지 않고 넘긴다"
+    assert sent["template_schemas"] == {"deliberation@1": DELIB_SCHEMA}, "RA 의 data.schema 를 그대로, 키는 <template_id>@<판>"
+    assert sent["format"] == "delib-16x9"
+    assert fake.tpl_calls == [("/api/templates/deliberation/versions/1", "Bearer rat_kim")], "그 사람 명의로 한 번 — 서비스 자격 없음"
+    run_id = _run_id(box)
+    fake.built(run_id)
+    fake.rendered(run_id)
+    a = c.post(f"/agent/deck/jobs/{r.json()['job_id']}/advance").json()
+    assert a["state"] == "done" and [f["kind"] for f in a["files"]] == ["pptx", "pdf"]
+
+
+def test_스키마가_필요_없는_보고서는_RA_를_더_부르지_않고_칸도_싣지_않는다(box):
+    """RA 보내기 알림(__import_blank__)은 블록 정의가 extra_blocks 에 있다 — 종전 그대로."""
+    assert _make(box).status_code == 200
+    (sent,) = box["fake"].created
+    assert "template_schemas" not in sent and box["fake"].tpl_calls == []
+
+
+def test_덧붙인_블록과_템플릿_블록이_섞인_쪽도_스키마를_싣는다(box):
+    """실물 70건 가운데 넷 — extra_blocks 에 정의가 있는 블록과 정의 없는 템플릿 블록이 한 쪽에 섞여 있다."""
+    _delib_ready(box)
+    mixed = copy.deepcopy(DELIB)
+    mixed["pages"][0]["extra_blocks"] = [{"id": "compare_table", "type": "heading", "props": {}}]
+    mixed["pages"][0]["content"]["compare_table"] = {"text": "대안 비교"}
+    box["fake"].reports[58] = mixed
+    assert _make(box, report_id=58).status_code == 200
+    assert box["fake"].created[0]["template_schemas"] == {"deliberation@1": DELIB_SCHEMA}
+
+
+@pytest.mark.parametrize("how,status,said", [
+    (403, 403, "서식(템플릿 deliberation 판 1)을 읽을 수 없습니다"),
+    (401, 403, "서식(템플릿 deliberation 판 1)을 읽을 수 없습니다"),
+    (404, 409, "서식(템플릿 deliberation 판 1)이 Report Archive 에 없습니다"),
+    (500, 502, "Report Archive 가 서식(템플릿 deliberation 판 1)을 주지 않았습니다"),
+    ("junk", 502, "Report Archive 가 서식(템플릿 deliberation 판 1)을 주지 않았습니다"),
+])
+def test_스키마를_못_읽으면_정해진_글로_실패하고_WDA_를_부르지_않는다(box, how, status, said):
+    """권한 · 없음 · RA 불통 — 서비스 자격으로 내려가지 않고, 블록 0개로 WDA 에 넘기지도 않는다. RA 의 글은 사람에게 가지 않는다."""
+    _delib_ready(box)
+    if how == 401:
+        box["fake"].templates = {}
+        box["fake"].tpl_status[("deliberation", 1)] = 401
+    else:
+        box["fake"].tpl_status[("deliberation", 1)] = how
+    r = _make(box, report_id=58)
+    assert r.status_code == status and said in r.json()["detail"], r.text
+    assert "RA 내부 글" not in r.json()["detail"] and "Template version not found" not in r.json()["detail"]
+    assert box["fake"].created == [] and W.records(box["s"]) == [], "예약을 놓는다 — 상한 · 중복에서 빠진다"
+
+
+def test_RA_에_닿지_못하면_정해진_글로(box, monkeypatch):
+    _delib_ready(box)
+    fake = box["fake"]
+    orig = fake.ra_template
+
+    def down(req):
+        raise httpx.ConnectError("연결 거절", request=req)
+
+    fake.ra_template = down
+    r = _make(box, report_id=58)
+    assert r.status_code == 502 and "서식(템플릿 deliberation 판 1)" in r.json()["detail"] and fake.created == []
+    fake.ra_template = orig
+
+
+@pytest.mark.parametrize("tid,ver", [("../reports", 1), ("deliberation", 0), ("deliberation", "1"), ("", 1), ("a" * 65, 1)])
+def test_서식_이름이나_판이_이상하면_RA_에_묻지_않고_막는다(box, tid, ver):
+    _delib_ready(box)
+    odd = copy.deepcopy(DELIB)
+    odd["template_id"] = tid
+    odd["template_version"] = ver
+    odd["pages"][0]["template_id"] = tid
+    odd["pages"][0]["template_version"] = ver
+    box["fake"].reports[58] = odd
+    r = _make(box, report_id=58)
+    assert r.status_code == 409 and "서식" in r.json()["detail"], r.text
+    assert box["fake"].tpl_calls == [] and box["fake"].created == []
+
+
+def test_스키마를_풀지_못하는_WDA_판이면_단추를_숨기고_만들기는_까닭을_말한다(box):
+    """옛 WDA(health 에 template_schemas 가 없다)는 받은 스키마를 버리고 블록 0개로 실패한다 — 넘기지 않는다. 판을 모르면 숨긴다(WD-D23 의 자세)."""
+    fake = box["fake"]
+    _delib_ready(box)
+    fake.features.discard("template_schemas")
+    assert box["c"].get("/agent/deck/status").json()["formats"] == {"deliberation": False}
+    r = _make(box, report_id=58)
+    assert r.status_code == 409 and "서식(템플릿) 보고서를 풀지 못하는 판" in r.json()["detail"]
+    assert fake.created == [] and fake.tpl_calls == [], "RA 서식도 읽지 않는다"
+    assert _make(box).status_code == 200, "서식이 필요 없는 보고서는 그대로 된다"
+
+
+def test_스키마가_여럿이면_쪽마다_제_판으로(box):
+    """쪽마다 템플릿 · 판이 다를 수 있다 — 쓰는 판마다 한 번씩만 읽는다(같은 판은 한 번)."""
+    _delib_ready(box)
+    fake = box["fake"]
+    two = copy.deepcopy(DELIB)
+    p2 = copy.deepcopy(two["pages"][0])
+    p2["template_version"] = 2
+    two["pages"] += [p2, copy.deepcopy(two["pages"][0])]
+    fake.reports[58] = two
+    fake.templates[("deliberation", 2)] = DELIB_SCHEMA
+    assert _make(box, report_id=58).status_code == 200
+    assert sorted(fake.created[0]["template_schemas"]) == ["deliberation@1", "deliberation@2"]
+    assert len(fake.tpl_calls) == 2
+
+
+def test_템플릿_스키마_필요_판정(box):
+    """정의가 extra_blocks 에 다 있으면 필요 없다 · 하나라도 정의 없는 content · 순서 키가 있으면 그 쪽의 템플릿 · 판이 필요하다."""
+    assert W.templates_needed(IMPORT) == []
+    assert W.templates_needed(DELIB) == [("deliberation", 1)]
+    only_order = copy.deepcopy(IMPORT)
+    only_order["pages"][0]["blocks_order"] = ["b001", "tpl_block"]
+    assert W.templates_needed(only_order) == [("__import_blank__", 1)]
+    legacy = {"template_id": "deliberation", "template_version": 1, "pages": [], "content": {"background": _items("x")}}
+    assert W.templates_needed(legacy) == [("deliberation", 1)], "pages 가 빈 옛 행은 최상위 content"
 
 
 # ── M2 — 다시 시도(WDA resume) · 지우기(W-17) · PDF 미리보기(CSP sandbox) ───────────────────────────────────────
