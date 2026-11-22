@@ -264,6 +264,10 @@ class Settings(BaseSettings):
     # 과제 인사이트(docs/project-insight-graph contracts §5) — 끝난 MCP 심의 잡의 카드를 에이전트 서버의 공유 비밀 창구(GET /insights/cards)에서
     # 당겨 들이는 간격(초). 인사이트 읽기 창구가 불릴 때 이만큼 지났으면 한 번 당긴다(PG-9 — 엔진이 밀지 않는다). 0 은 끔(웹 · 워크플로 카드만 든다).
     insight_sync_s: int = 60
+    # 과제 인사이트의 RA 투영(docs/project-insight-graph M5 · 사용자 결정 11-21 L21-6 ③) — 주인이 화면에서 누르면 조직에 연 확인 카드의 RA 보고서에
+    # SP 과제 객체(code = SP 키)를 그 사람의 RA 연결로 태그로 단다(app/insights/ra_project). 기본 꺼짐 — 끄면 창구가 없는 것과 같고(404) 화면 ·
+    # 읽기 답이 바이트까지 같다. 켜는 조건은 cae00 RA 의 SP 받기가 과제를 싣고 있을 때다(docs/project-insight-graph/server-setup.md).
+    insight_ra_project: bool = False
     # 심의 묶음 끝남 알림(docs/request-1117 contracts §7 · 사용자 결정 R-12 ②) — 포털 백그라운드 작업이 이 간격(초)마다 에이전트 서버의 공유 비밀 창구
     # (POST /deliberate/batch/finished)를 물어 끝난 묶음마다 주인에게 포털 알림 한 줄을 남긴다(app/notices). 0 은 끔(창구를 부르지 않고 알림도 새로 안 생긴다 —
     # 이미 쌓인 알림은 그대로 보인다). 비밀은 위 gateway_shared_token 을 그대로 쓴다 — 비면 부르지 않고 경고만 남긴다.

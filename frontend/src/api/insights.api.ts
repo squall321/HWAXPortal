@@ -60,6 +60,18 @@ export interface InsightStale {
   risk_note?: string;
 }
 
+/** RA 투영(M5) — 카드의 RA 보고서에 단 SP 과제 객체 태그. 박스 스위치(INSIGHT_RA_PROJECT)가 켜진 화면 읽기에만 온다. */
+export interface InsightRa {
+  state: 'projected';
+  report_id: number;
+  entity_id: number;
+  type_slug: string;
+  value: string;
+  added: boolean | null;
+  at: number;
+  by: string;
+}
+
 /** 카드 한 장 — 서버가 읽는 사람 기준으로 거른 뒤의 꼴이다(보이지 않는 카드는 오지 않는다). */
 export interface InsightCard {
   id: string;
@@ -99,6 +111,8 @@ export interface InsightCard {
   stale?: InsightStale;
   /** 같은 칸에서 주장 글이 같은 다른 카드 — 내가 볼 수 있는 것만 센다(묶어 보일 뿐 합치지 않는다) */
   same?: { n: number; ids: string[] };
+  /** RA 투영 — 칸이 없으면 박스에서 꺼져 있다(단추를 그리지 않는다), null 이면 아직 달지 않았다 */
+  ra?: InsightRa | null;
 }
 
 /** 리스크 앱 등록부의 앞 행 — 그 사람이 risk_get_registry 로 받는 행과 같은 문을 지났다(칸 값 · 상태 낱말 그대로). */
@@ -203,4 +217,7 @@ export const setCardClaim = (id: string, claim: string) => post<InsightCard>(`${
 export const widenCard = (id: string) => post<InsightCard>(`${card(id)}/widen`, '조직에 열기', { to: 'org' });
 export const disputeCard = (id: string, byCard: string, note: string) =>
   post<InsightCard>(`${card(id)}/dispute`, '반박 표시', { ...(byCard ? { by_card: byCard } : {}), note });
-export const withdrawCard = (id: string) => post<{ id: string; status: string }>(`${card(id)}/withdraw`, '거두기');
+export const withdrawCard = (id: string) =>
+  post<{ id: string; status: string; ra?: { state: 'withdrawn'; report_id: number; note: string } }>(`${card(id)}/withdraw`, '거두기');
+export const projectCardToRa = (id: string) =>
+  post<{ id: string; ra: InsightRa; already: boolean; note: string }>(`${card(id)}/ra`, 'RA 과제 객체에 달기');
