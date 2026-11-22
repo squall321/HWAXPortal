@@ -28,9 +28,13 @@ MUST_GATE = frozenset({
     # 도구라 바깥으로 나가고 되돌리려면 남의 손이 필요하다. 465종에서 뽑을 땐 없었다.
     "publish_report_to_datahub",
     # 2026-11-21 추가 — Report Archive v0.180.0 의 양식 수신. 양식에 수신 게시판이 묶여 있으면 **같은 호출에서 바로 게시**하고
-    # 확인 토큰 단계가 없다(RA `imports/routes.py` `_mount_to_destination`). 게시 취소는 남의 승인이 필요하다. dev 에 RA 가 떠 있지
-    # 않아 인구조사에는 없고 `catalog-forward.json` 에 소스 근거로 적는다(docs/leftovers-1121 L21-4 B1).
+    # 확인 토큰 단계가 없다(RA `imports/routes.py` `_mount_to_destination`). 게시 취소는 남의 승인이 필요하다(docs/leftovers-1121
+    # L21-4 B1). 11-22 인구조사가 실었다(dev 에 RA 를 띄운 뒤 — L21-14).
     "create_report_from_format",
+    # 2026-11-22 추가(인구조사 480 → 773종 · W-118) — 되돌릴 수 없는 지우기인데 게이트웨이 접두 · 접미에 안 걸린다.
+    # Report Archive 객체 합치기(원본을 지우고 남의 보고서 태그를 옮긴다) · 타입 옮기기(대상 타입에 같은 값이 있으면 원본을 지운다),
+    # StepForge 치수 기록 지우기(키 전체면 모든 과제의 기록 — destructiveHint).
+    "merge_objects", "move_objects_to_type", "forget_dimension",
 })
 
 # 게시 2단 확인(ReportArchive) — `publish_report` 는 `preview_publish` 가 준 확인 토큰을 요구한다. 토큰은 **실행기가**
@@ -40,7 +44,13 @@ PUBLISH_TOOL, PREVIEW_TOOL, PUBLISH_TOKEN = "publish_report", "preview_publish",
 
 # 자원을 쓰거나 잡을 만든다 — 거절이 아니라 경고. must-gate 로 하면 S5 일괄 재생이 죽는다.
 WARN_PREFIX = ("submit_", "register_", "upload_", "ingest_")
-WARN_EXACT = frozenset({"run_job", "train_model", "smarttwin_submit", "slurm_submit_job"})
+WARN_EXACT = frozenset({
+    "run_job", "train_model", "smarttwin_submit", "slurm_submit_job",
+    # 2026-11-22 추가(인구조사 480 → 773종 · W-118) — 잡을 맡기거나 원천을 들이는데 위 접두에 안 걸린다. DocForge 변환 잡 · 리스크
+    # 심사 잡 · StepForge 덱 → STEP 반입 잡(새 과제) · MX 백서 위키 원천 들이기 둘. ⚠ 단계는 **원래 이름**을 싣는다(Step.tool) — 이름이 겹쳐
+    # 게이트웨이가 접두를 붙인 `ste_submit_job` 등은 단계에서 `submit_job` 이라 접두 규칙이 그대로 잡는다.
+    "docforge_convert", "risk_start_job", "extract_surface_to_cad", "wiki_submit_source", "wiki_fileback",
+})
 
 # 게이트웨이 invoke_tool 이 막는 것(gateway.py:1100-1101). **백스톱일 뿐** 안전 목록이 아니다 —
 # trash_report·job_stop 은 이 목록을 통과하고 앱 접두 이름(odb_delete_job)은 하나도 안 걸린다.
@@ -73,7 +83,7 @@ def gateway_caches(tool: str) -> bool:
     return (tool.startswith(CACHE_PREFIX) and tool not in CACHE_DENY
             and not CACHE_DENY_WORDS.search(tool))
 
-# 자기 dry_run 인자를 가진 도구(465종 중 16). 그 밖의 도구 args 에 dry_run 이 적혀 있으면
+# 자기 dry_run 인자를 가진 도구(465종 중 16 → 11-22 인구조사 792줄 중 25). 그 밖의 도구 args 에 dry_run 이 적혀 있으면
 # 백엔드가 조용히 버리고 **실제로 실행된다**.
 DRY_RUN_TOOLS = frozenset({
     "create_report_draft", "update_report_draft", "append_rows", "patch_cells", "remove_rows",
@@ -81,6 +91,9 @@ DRY_RUN_TOOLS = frozenset({
     "smarttwin_submit", "slurm_submit_job", "heaxmaterialtwin_web_register_material",
     "register_tensile_test", "register_relaxation_test", "apply_naming_rules",
     "register_materials_csv",
+    # 2026-11-22 인구조사(W-118) — StepForge 의 쓰기 아홉이 dry_run 을 받는다.
+    "export_sidecar", "link_plm_tasks", "onto_define", "onto_link", "onto_put", "save_fill_rule",
+    "save_recipe", "set_revision", "shape_op",
 })
 
 _KEY = re.compile(r"^[a-z_][a-z0-9_]*$")

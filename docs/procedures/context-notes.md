@@ -2896,3 +2896,58 @@ W-113 ~ W-116 의 반대 검토(높음 0 · 중간 5 · 낮음 5 · 시험이 �
 - **고치지 않은 것.** 다시 시도의 기억은 화면 세션 동안뿐이다(새로고침 뒤에는 글만 간다). 좌석 · 유형 같은 다른 일회성 손잡이를 다시 시도가
   잃는 것(이 다리 이전부터)은 넓히지 않았다. 세션의 live 는 확인 없는 쓰기를 종전대로 돈다(사람이 화면에서 '재생' 을 누른 것이다 — 저장
   검증의 경고와 실행 화면이 그 단계를 보인다).
+
+## W-118. 인구조사를 다시 찍고 새 도구 320종을 가렸다 — 내려간 백엔드는 옛 줄을 지킨다(11-22, 사용자 결정 11-22)
+
+`refresh-census.py` 머리의 「갱신은 사람이 돌린다」 를 **사용자 결정(11-22 직접 승인)으로 대신해** 에이전트가 dev 게이트웨이(:9110)에서 찍었다.
+기록 480종(09-15, 68일 전) → 지금 773종이다 — 새로 320 · 사라짐 8 · dry_run 이 생긴 9 · 백엔드째 안 보임 smart-twin-cluster 19(게이트웨이
+`/health` 가 내려갔다고 한다). 가지 `wt1122/census`(포털 · 게이트웨이 둘 다 — `MUST_GATE` 와 게이트웨이 `_INVOKE_DENY_EXACT` 는 같아야 한다).
+
+- **내려간 백엔드는 지우지 않는다.** 스크립트는 그 경우 인자 없는 갱신을 막고(rc 2) `--force` 는 그 19줄을 지운다 — 지우면 `smarttwin_submit` ·
+  `slurm_submit_job`(WARN_EXACT) · `slurm_job_control` 등(DRY_RUN_TOOLS)이 인구조사에서 빠져 가드가 붉어지거나, 목록에서 빼면 지키던 것을 잃는다.
+  새 손잡이 `--keep-absent` 를 뒀다 — 그 백엔드의 옛 줄을 그대로 싣고 나머지만 갱신하며 `_kept_absent`(백엔드마다 줄 수 · 마지막으로 살아서 본 기록
+  날짜 `since` · 까닭)를 남긴다. `gateway_tools` 는 게이트웨이가 낸 수(773) 그대로이고 `tools` 는 그보다 19줄 많다(792). 표지는 물려받지 않고
+  갱신마다 다시 센다 — 백엔드가 돌아오면 사라지고, 계속 안 보이면 처음 날짜가 남는다. `--check` 는 지킨 날짜를 함께 보인다.
+- **판정 기준은 새로 만들지 않았다.** `MUST_GATE` 는 W-15 의 「되돌리려면 타인 승인이 필요한 바깥 방향 행위」 와 시험 머리의 「게이트웨이 접두 ·
+  접미에 안 걸리는 파괴 도구」, `WARN_EXACT` 는 「자원을 쓰거나 잡을 만든다 — 접두(submit_ · register_ · upload_ · ingest_)에 안 걸리는 것」,
+  `DRY_RUN_TOOLS` 는 인구조사 그대로다. 표지(readOnlyHint · destructiveHint)와 설명은 인구조사 줄에 없어(줄은 이름 · 백엔드 · dry_run · 인자 수뿐)
+  같은 때 받은 `tools/list` 전문과 `/tools-map`(write · orig)으로 보고, 갈리는 것은 앱 소스(RA v0.186.3 · StepForge)로 확인했다.
+- **더한 것.** `MUST_GATE` 셋 — RA `merge_objects`(원본 객체를 지우고 남의 보고서 태그를 옮긴다 · RA 독스트링 「되돌릴 수 없는 작업」) ·
+  `move_objects_to_type`(대상 타입에 같은 값이 있으면 원본을 지운다) · StepForge `forget_dimension`(키 전체면 모든 과제의 치수 기록 · 「되돌릴 수
+  없다」 · destructiveHint). 게이트웨이 `_INVOKE_DENY_EXACT` 에도 같은 셋. `WARN_EXACT` 다섯 — `docforge_convert`(변환 잡) · `risk_start_job`(심사 잡 ·
+  LLM 비용) · `extract_surface_to_cad`(덱 → STEP 잡과 새 과제) · `wiki_submit_source` · `wiki_fileback`(MX 백서 위키 원천 들이기). `DRY_RUN_TOOLS` 아홉 —
+  StepForge `export_sidecar` · `link_plm_tasks` · `onto_define` · `onto_link` · `onto_put` · `save_fill_rule` · `save_recipe` · `set_revision` · `shape_op`.
+- **넣지 않은 것(판단이 갈린다 — 사람이 정한다).** ① 이름 접두 밖의 취소 · 멈춤 — `docforge_cancel` · `risk_job_action`(cancel) ·
+  `deliberate_batch_stop`. 선례가 둘로 갈린다(`job_stop` 은 넣었고 `deliberate_cancel` 은 안 넣었다). ② 남에게 내는 일인데 되돌리기가 제 손인 것 —
+  KooRemapper `recipe_register`(사람 승인 없이 모두에게 등록 · 올린 사람이 `recipe_deprecate` 로 내린다) · WDA `approval_record`(사람 승인 · 거절 원장).
+  ③ RA 관리자 온톨로지 쓰기 다섯(`sync_data_source` · `create_sp_types` · `create_sp_properties` · `create_sp_relation_types` · `set_sp_type_mapping`) —
+  앱이 확인을 요구하지만 지우기가 아니다. ④ 심의 잡 시작 — `deliberate_batch_start`(선례 `deliberate_start` 는 경고 부류가 아니다).
+  ⑤ StepForge `set_risk_verdict`(사람 판정 — `risk_add_finding` 과 닮았지만 다시 낼 수 있다). 리스크 앱의 「쓰기: 사용자에게 확인한 뒤 부른다」
+  도구 열아홉(`risk_start_job` 은 경고 부류로 넣었다)은 하나하나가 남의 승인 없이는 못 되돌리는 바깥 행위가 아니고 챗 쪽은 운영자 정의
+  (he-team.json 의 writes · confirm)가 맡아 `MUST_GATE` 로 넓히지 않았다.
+- **단계는 원래 이름을 싣는다 — 인구조사는 노출 이름이다.** `Step.tool` 은 원래 이름이고(화면이 `<앱키>_` 접두를 뗀다 · 실행기는 늘 별칭으로 부른다)
+  저장 검증도 그 이름으로 판정한다. 그래서 이름이 겹쳐 접두가 붙은 `ste_submit_job` · `smarttwinmcp_submit_job` 은 단계에서 `submit_job` 이라 접두
+  규칙이 그대로 잡는다(넣지 않았다). 반대로 `recipe_run`(smart-twin-mcp · KooRemapper 둘 다 잡 제출)은 원래 이름이 인구조사에 없어(둘 다 접두로만
+  나온다) `WARN_EXACT ⊆ 인구조사` 가드에 막혀 넣을 수 없다 — 사람이 정한다. 같은 갈래의 옛 흠 — `DRY_RUN_TOOLS` 의 `heaxmaterialtwin_web_register_material`
+  은 노출 이름이라 단계(`register_material`)의 dry_run 을 「인자가 없다」 로 거절한다. 게이트웨이 자체 도구(`_gateway` 21종 — `rest_call` ·
+  `artifact_to_ste_upload` 등)는 단계 백엔드 꼴(`_BACKEND`)에 안 맞아 절차에 못 들어가므로 가르지 않았다.
+- **사라진 8종.** 목록 · 시험 · `catalog-forward.json` 어디에도 없어 고칠 것이 없다. 넷은 이름 겹침으로 접두가 붙은 것이다 — AIDataHub
+  `semantic_search` → `aidatahub_semantic_search`(SignalForge 와 겹침) · StepForge `list_jobs` → `heaxstep_forge_list_jobs`(ste 와) · RA `prepare_upload` →
+  `reportarchive_prepare_upload`(ste 와) · smart-twin-mcp `submit_job` → `smarttwinmcp_submit_job`(ste 와). 셋은 MX 백서 http 모드가 뺀 로컬 경로 도구다
+  (`upload_image` · `import_file` · `extract_pptx_images` — MXWP MW-02 · `bb0a6a1`. `upload_image_bytes` 는 대신하는 이름이 아니라 `figure_to_doc` 용 새
+  도구다). 그래서 RA 의 `reportarchive_extract_pptx_images` 는 겹침이 풀려 맨 이름 `extract_pptx_images` 가 됐다. 곁에서 본 것 — 심의 워크플로
+  (`infra/pipeline/hwax-deliberate.js`)의 좌석 지시가 맨 이름 `semantic_search` 를 부르라고 하는데 dev 에서는 그 이름이 없다(고치지 않았다).
+- **`catalog-forward.json`** — `create_report_from_format` 을 인구조사가 실어(dev 에 RA 를 띄운 뒤 — docs/leftovers-1121 L21-14) 그 줄을 지웠다.
+  파일과 `_why` 는 다음 앞선 이름을 위해 남겼다(빈 목록).
+- **이 인구조사가 못 본 것.** dev 게이트웨이의 백엔드 18 가운데 17 이 보였다(smart-twin-cluster 만 내려감). cae00 에만 붙은 앱(정본 허브 셋 ·
+  ODB 허브 · ARP · FMEA · MatNexus · SIREN 등)의 도구는 없다 — 그 앱의 파괴 도구는 이 가드 밖이고, 그쪽 이름은 소스로 확인해
+  `catalog-forward.json` 에 적거나 cae00 에서 찍은 인구조사로만 들어온다.
+- **시험이 안 물던 것.** 인구조사 대조는 목록이 **줄어든 것**을 못 본다(`MUST_GATE ⊆ 인구조사` 는 빠져도 선다 — `MUST_GATE` 는 게이트웨이 대조가
+  잡지만 `WARN_EXACT` 는 아무것도 안 잡았다). 더한 이름이 저장 검증에서 실제로 걸리는지 보는 시험을 붙였다. `--keep-absent` 는 옛 줄을 **이름으로**
+  고른다(내려간 백엔드의 이름이 지금 다른 백엔드로 보이면 지금 줄이 정본 — 같은 이름 두 줄 방지).
+- **변이.** 열셋이 모두 붉어졌다 — MUST_GATE 에서 하나 빼기 · 게이트웨이에서만 빼기 · 둘 다에서 빼기 · WARN_EXACT 둘 · DRY_RUN_TOOLS 하나 ·
+  `--keep-absent` 가 옛 줄을 안 싣기 · 이름 대신 백엔드로 고르기 · 표지 물려받기 · 지킨 날짜 새로 쓰기 · 인구조사에서 지킨 줄 하나 지우기 ·
+  forward 줄 되살리기 · 게이트웨이 시험의 자기 목록 변이(사본에서 돌리고 되돌렸다).
+- **시험.** 포털 전체 5,024 통과 · 붉은 셋은 알려진 것(main 에서도 붉은 `test_HA29_StepForge_…` · 워크트리에서만 붉은 `test_ste_doctor_and_drive` ·
+  `test_tlscert`). 게이트웨이 전체 1,184 통과(가지 `wt1122/census` `c7aff49` — 워크트리에는 박스 설정이 없어 `GATEWAY_CONFIG` 에 예시 설정을 줬다).
+  올리기 · 병합 · 재기동은 하지 않았다 — 포털(저장 검증 목록)과 게이트웨이(거절 목록)는 재기동해야 먹는다.

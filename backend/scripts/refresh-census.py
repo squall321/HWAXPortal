@@ -19,6 +19,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CENSUS = ROOT / "docs" / "procedures" / "fixtures" / "catalog-census.json"
+# `--keep-absent` 로 옛 줄을 지킨 백엔드의 표지 — {백엔드: {tools, since(그 줄을 마지막으로 살아서 본 기록 날짜), why}}.
+# `gateway_tools` 는 게이트웨이가 낸 수 그대로이고 지킨 줄은 이 칸의 수만큼 `tools` 에 더 있다.
+KEPT = "_kept_absent"
 
 
 def _gateway_token() -> str:
@@ -114,9 +117,13 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="갱신하지 않고 어긋난 것만 보고")
     ap.add_argument("--force", action="store_true",
                     help="도구가 크게 줄거나 백엔드째 안 보여도 덮어쓴다(부분 실패 · 내려감이 아님을 확인했을 때)")
+    ap.add_argument("--keep-absent", action="store_true",
+                    help="백엔드째 안 보이는 도구는 옛 줄을 그대로 지키고 나머지만 갱신한다(그 백엔드를 지금 띄울 수 없을 때)")
     a = ap.parse_args()
 
     fresh = pull()
+    # 지킨 줄의 표지는 물려받지 않는다(pull 은 옛 `_` 칸을 싣는다) — 이번 갱신에서 다시 센다.
+    fresh.pop(KEPT, None)
     # ⚠ 0종을 고정물로 쓰면 그 뒤 인구조사 가드가 **전부 통과한다**(비교 대상이 없다).
     if not fresh["tools"]:
         print("✗ 게이트웨이에서 도구를 하나도 못 받았다 — 고정물을 건드리지 않는다")
@@ -143,15 +150,29 @@ def main() -> int:
                      ("dry_run 이 없어진 도구", c["dry_removed"])):
         if s:
             print(f"  ⚠ {label} {len(s)}: {s[:12]}")
+    kept_was = old.get(KEPT) or {}
+    whys = {}
     for b, names in sorted(c["absent"].items()):
-        why = "게이트웨이 /health 가 내려갔다고 한다" if b in down else "도구가 하나도 안 보인다(내려갔거나 빠졌다)"
-        print(f"  ⚠ 백엔드째 안 보임 — {b} {len(names)}종: {why}")
+        whys[b] = "게이트웨이 /health 가 내려갔다고 한다" if b in down else "도구가 하나도 안 보인다(내려갔거나 빠졌다)"
+        since = f" — 기록은 {kept_was[b].get('since')} 줄을 지키고 있다" if b in kept_was else ""
+        print(f"  ⚠ 백엔드째 안 보임 — {b} {len(names)}종: {whys[b]}{since}")
     if a.check:
         return 1 if any(c.values()) else 0
     # ⚠ **안 보이는 백엔드의 도구를 지우지 않는다**(compare 머리말). 띄운 뒤 다시 돌리는 게 맞다.
-    if c["absent"] and not a.force:
+    # 띄울 수 없으면 `--keep-absent` — 그 백엔드의 옛 줄을 그대로 싣고 나머지만 갱신한다. 지운 것이 아니라 못 본 것이라
+    # 가드(MUST_GATE · DRY_RUN_TOOLS · WARN_EXACT 대조)가 그 줄을 계속 본다. `since` 는 그 줄을 마지막으로 살아서 본 기록 날짜다.
+    if c["absent"] and a.keep_absent:
+        # 이름으로 고른다 — 내려간 백엔드의 옛 줄이라도 그 이름이 지금 다른 백엔드로 보이면 지금 줄이 정본이다(같은 이름이 두 줄이 되지 않게).
+        gone_with = {n for names in c["absent"].values() for n in names}
+        fresh["tools"] = sorted(fresh["tools"] + [t for t in old["tools"] if t["name"] in gone_with],
+                                key=lambda t: t["name"])
+        fresh[KEPT] = {b: {"tools": len(names), "since": (kept_was.get(b) or {}).get("since") or old.get("generated"),
+                           "why": whys[b]} for b, names in sorted(c["absent"].items())}
+        kept = ", ".join(f"{b} {v['tools']}종({v['since']})" for b, v in fresh[KEPT].items())
+        print(f"  ○ 옛 줄을 지킨다 — {kept}")
+    elif c["absent"] and not a.force:
         print(f"✗ 백엔드째 안 보이는 도구가 있다({', '.join(sorted(c['absent']))}) — 지금 갱신하면 그 도구가 "
-              f"고정물에서 빠진다. 띄운 뒤 다시 돌리거나, 정말 뺀 백엔드면 --force")
+              f"고정물에서 빠진다. 띄운 뒤 다시 돌리거나, 띄울 수 없으면 --keep-absent(옛 줄을 지킨다), 정말 뺀 백엔드면 --force")
         return 2
     # ⚠ **줄어든 것을 그냥 덮어쓰지 않는다.** 부분 실패로 소수만 받아 고정물을 줄이면,
     # 그 뒤 가드는 줄어든 목록을 기준으로 삼아 조용히 통과한다. 크게 줄면 사람이 본다.

@@ -44,9 +44,13 @@ def census() -> dict:
 
 
 def test_인구조사가_실물_규모다(census):
-    """빈 파일을 훑고 통과하는 사고를 막는다."""
+    """빈 파일을 훑고 통과하는 사고를 막는다. 백엔드째 안 보여 옛 줄을 지킨 도구(`_kept_absent` — refresh-census.py
+    `--keep-absent`)는 게이트웨이가 낸 수 밖에 그 수만큼 더 있다."""
     assert census["gateway_tools"] > 400, census["gateway_tools"]
-    assert len(census["tools"]) == census["gateway_tools"]
+    kept = census.get("_kept_absent") or {}
+    assert len(census["tools"]) == census["gateway_tools"] + sum(v["tools"] for v in kept.values())
+    for b, v in kept.items():
+        assert sum(1 for t in census["tools"] if t["backend"] == b) == v["tools"], f"{b} — 지킨 줄 수가 표지와 다르다"
 
 
 # ── dry_run — 여기 없는 도구에 적으면 **조용히 버려지고 실제로 실행된다** ──
@@ -80,6 +84,26 @@ def test_앞서_적은_이름은_근거가_있고_인구조사에_아직_없다(
         assert t["name"] not in have, (
             f"{t['name']} 가 이제 인구조사에 있다 — catalog-forward.json 에서 그 줄을 지운다")
         assert t["name"] in MUST_GATE, f"{t['name']} — MUST_GATE 에 없는 이름은 여기 적을 까닭이 없다"
+
+
+def test_11_22_인구조사에서_더한_이름이_저장_검증에서_실제로_걸린다():
+    """W-118 — 위 대조는 목록이 **줄어든 것**을 못 본다(빠져도 `<=` 가 선다). 더한 이름이 저장 검증에서 실제로 걸리는지 여기서 본다.
+    단계는 원래 이름을 싣는다(Step.tool — 노출 이름의 앱 접두는 화면이 뗀다)."""
+    from app.procedures.models import ProcedureSpec, ungated_write, validate_spec
+
+    def one(backend: str, tool: str, **kw) -> ProcedureSpec:
+        return ProcedureSpec.model_validate({"title": "t", "steps": [{"backend": backend, "tool": tool, **kw}]})
+
+    need = "gate: human 이 필수다"
+    for backend, tool in (("reportarchive", "merge_objects"), ("reportarchive", "move_objects_to_type"),
+                          ("heax-step_forge", "forget_dimension")):
+        assert any(need in e for e in validate_spec(one(backend, tool))), tool
+        assert not any(need in e for e in validate_spec(one(backend, tool, gate="human"))), tool
+    for backend, tool in (("heax-doc_forge", "docforge_convert"), ("heax-hwax_risk", "risk_start_job"),
+                          ("heax-step_forge", "extract_surface_to_cad"), ("mx-white-paper", "wiki_submit_source"),
+                          ("mx-white-paper", "wiki_fileback")):
+        assert ungated_write(one(backend, tool).steps[0]), tool
+        assert not ungated_write(one(backend, tool, gate="human").steps[0]), tool
 
 
 def test_되돌리기_어려운_도구가_새로_생기지_않았나(census):
