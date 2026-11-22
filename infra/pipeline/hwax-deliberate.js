@@ -1,6 +1,6 @@
 // HWAX 심의 파이프라인 — 재사용 다중 라운드 전문가 심의 워크플로
 // 입력(args): { question, context, evidence:[{source,tool,args,result}], options, personas:[{key,role}], rounds, saveReport, saveConversation,
-//               continueFrom:{summary, roundsSoFar}, humanNote, appendToReportId }
+//               continueFrom:{summary, roundsSoFar}, humanNote, appendToReportId, undecided }
 //   - question        : 심의 주제(문자열)
 //   - context         : 정량 근거/분석 결과(도구로 산출한 데이터의 텍스트 요약)
 //   - evidence        : 원천 근거 항목 [{source, tool, args, result, key?}] — 좌석에 '검증 대상' 으로 싣는다(건수·합계·항목 상한은
@@ -65,6 +65,13 @@
 //   - stopAfterRound  : 1 이면 초기 라운드만 돌고 멈춘다(인간 체크포인트). 결정문·보고서 없이 checkpoint
 //                       페이로드를 반환하므로, 사람이 빠진 관점을 보태 continueFrom+humanNote 로 이어하기를
 //                       호출하면 그 지점부터 이어진다. 좌석 재심사가 사람이 준 방향에 맞는 도메인을 불러온다.
+//   - undecided       : 판정 불가 과반이면 결정문 결론부를 측정 계획으로(T7 — 엔진 · MCP 의 손잡이 undecided 와 같은 낱말 · 같은 규칙). 기본 꺼짐
+//                       — 꺼져 있으면 프롬프트 · 결과가 종전과 같다. 켜면(true · 1 · 'on') 수렴 라운드 좌석이 근거가 모자랄 때 stance 를 '판정 불가'
+//                       로, next_measurement 에 다음에 잴 것을 낼 수 있고(회의록에 '다음에 잴 것' 줄로 남는다), **앉은 좌석**(지정 반대석 포함 —
+//                       응답자가 아니다)의 과반이 stance 나 vote 머리에 '판정 불가' 를 밝히면 의장이 결론부를 측정 계획으로 쓰고 코드가 결정문
+//                       머리에 '■ 판정 불가 과반' 표지를 찍는다(반환 undecidedMajority). 의장이 결정문을 못 냈으면 표지는 없다. 리스크 심사 ·
+//                       계획서 틀(sim-plan · test-plan · build-plan)에는 켜도 붙지 않고, 다단 워크플로(hwax-sim-deliberate · hwax-test-plan)는
+//                       이 칸을 자식에 넘기지 않는다(엔진이 다단 심의 1단에서 끄는 것과 같다).
 //   - appendToReportId: 지정 시 새 RA 보고서를 만들지 않고 이 report_id 에 새 페이지로 결과를 이어붙인다.
 //   - subject         : 과제 심의면 사람이 시작 때 고른 주제 {sp_task(허브 과제 key — find_plm_task 결과 행의 key), round(차수 — pre · dv1 ~ dv3 ·
 //                       dvr · pv1 ~ pv3 · pvr · pra · mp), text, artifacts:[{kind: mcad|ecad|cae, app?, id, rev?}]}. 과제 대상이 아닌 질문이면 뺀다.
@@ -73,6 +80,7 @@
 //                       risk-review*)는 싣지 않는다.
 // 출력: { question, rounds:[페르소나별 라운드결과 배열...], roundLabels, decision, report, conversation, nextRoundOffset }
 //   — stopAfterRound:1 이면 decision/report/conversation 이 null 이고 checkpoint{stage,seats,positions,ask} 가 붙는다.
+//   — undecidedMajority:{undecided, seated} 는 undecided 를 켠 심의에서 앉은 좌석의 과반이 '판정 불가' 였을 때만 붙는다(의장 실패 반환에도).
 //   — evidenceOmitted:[{source,count,text}] 는 좌석에 주지 않은 근거다(본문 없음 · 건수 상한 초과 · 합계 예산 초과).
 //     빈 배열이 아니면 좌석은 보낸 근거의 일부만 보고 발언한 것이다 — 어느 반환에나 붙는다.
 //   — inputNotices:[{source,count,text}] 는 받은 입력을 **그대로 쓰지 못한** 것이다 — 항목 상한에서 앞부분만 실은 근거 ·
@@ -86,7 +94,7 @@
 export const meta = {
   name: 'hwax-deliberate',
   description: '질문을 다중 라운드 전문가 심의로 수렴 — chairTemplate 로 심의 유형(원인규명·안선택·신뢰판정·자유 등), modifiers 로 얹을 층 선택',
-  whenToUse: '기본 길은 서버 엔진이다(사용자 결정 11-02 · docs/token-saving TS-5) — deliberate_start 로 맡기고 deliberate_status 를 한 번(wait_s 를 받으면 wait_s 로) 부른 뒤 deliberate_result 를(view=summary 를 받으면 요약 먼저) 받는다. 이 워크플로는 좌석마다 Claude 에이전트를 돌려 토큰이 크다 — Claude 로 품질을 따로 재야 할 때만 쓴다. 여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?, subject?} — subject 는 과제 심의면 사람에게 물은 과제 key · 차수(과제 대상이 아니면 뺀다). chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · risk-review(리스크 심사 보고서·risk_spec, 기준선 옹호 지정석 자동) · default(자유 의사결정문). modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · eliminative(완결 기준) · anon1r(익명 1R). 시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-deliberate.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
+  whenToUse: '기본 길은 서버 엔진이다(사용자 결정 11-02 · docs/token-saving TS-5) — deliberate_start 로 맡기고 deliberate_status 를 한 번(wait_s 를 받으면 wait_s 로) 부른 뒤 deliberate_result 를(view=summary 를 받으면 요약 먼저) 받는다. 이 워크플로는 좌석마다 Claude 에이전트를 돌려 토큰이 크다 — Claude 로 품질을 따로 재야 할 때만 쓴다. 여러 도메인 전문가 의견이 갈리는 결정을 도구 근거 위에서 라운드로 수렴시킬 때. args 는 객체 {question, chairTemplate?, modifiers?, personas?, evidence?, rounds?, subject?, undecided?} — subject 는 과제 심의면 사람에게 물은 과제 key · 차수(과제 대상이 아니면 뺀다). undecided(기본 꺼짐 — 엔진 손잡이와 같은 낱말)를 켜면 앉은 좌석의 과반이 판정 불가일 때 결정문 결론부가 측정 계획이 된다(리스크 심사 · 계획서 틀에는 붙지 않는다). chairTemplate 로 심의 유형을 고른다 — diagnosis(원인규명·FTA↔FMEA·is/is-not·ACH, 반증 지정석 자동) · option-select(안선택·Pugh 2R/Flip) · credibility(신뢰판정·NASA-STD-7009 축별 채점, red-team 지정석 자동) · sim-plan(해석 계획서·sim_spec) · test-plan(시험 계획서) · build-plan(구축 계획서) · risk-review(리스크 심사 보고서·risk_spec, 기준선 옹호 지정석 자동) · default(자유 의사결정문). modifiers[] 로 얹을 층(직교·다중) — voi(교착 정산/VoI) · premortem(사전부검) · toulmin(논증 엄밀) · eliminative(완결 기준) · anon1r(익명 1R). 시뮬 2단(메커니즘→해석 설계)은 hwax-sim-deliberate, 무엇을 먼저 측정할지는 hwax-test-plan 을 쓴다. ⚠ 이름으로는 못 부른다(내장 워크플로만 이름 해석) — Workflow 의 scriptPath 에 정본 경로 <리포루트>/infra/pipeline/hwax-deliberate.js 를 준다. 사본(.claude/workflows/)에서 부르면 자식 워크플로를 못 찾는다.',
   phases: [
     { title: '초기입장', detail: '페르소나별 초기 의견(또는 이어하기 개시) — 병렬' },
     { title: '심화라운드', detail: '상호 반박·수치 심화 (가변 회차, 병렬)' },
@@ -550,6 +558,76 @@ const R3_SCHEMA = {
   required: ['persona', 'final_position', 'vote'],
 }
 
+// ── T7 판정 불가 과반 → 측정 계획(args.undecided) ─────────────────────────────────────────────
+// 엔진(HWAXAgentServer deliberation.py 의 DELIB_UNDECIDED · 요청 손잡이 undecided)과 같은 규칙이다. 켜면 수렴 라운드 좌석이 근거가 모자랄 때
+// stance 를 '판정 불가' 로, next_measurement 에 다음에 잴 것을 낼 수 있고, **앉은 좌석**의 과반이 그러면 의장이 결론부를 측정 계획으로 쓰고
+// 코드가 결정문 머리에 표지를 찍는다. 기본 꺼짐 — 꺼져 있으면 좌석 · 의장 프롬프트와 스키마 · 결과가 종전과 바이트까지 같다.
+// ⚠ 같은 규칙이 두 곳에 있다 — 여기 · 엔진의 _UNDECIDED_RE · _UNDECIDED_TEMPLATES_OFF · _undecided_ask · _undecided_majority ·
+//   _undecided_chair_note · _undecided_mark. 포털 시험(backend/tests/test_delib_undecided_js.py)이 같은 입력표에 둘이 같은 답을 내는지
+//   맞댄다. 고치면 둘을 같이 고친다.
+// 켜고 끄는 값은 엔진(_ONOFF_KEYS)처럼 받는다 — 참 · 정수(0 이 아니면 켬) · 정수 글 · 낱말 on|true|yes / off|false|no. 못 읽는 값은 꺼진 채로
+// 돌고 inputNotices 에 남긴다(엔진의 '요청 값 해석 불가' 와 같은 낱말).
+const UNDECIDED_WORDS = new Map([['off', false], ['false', false], ['no', false], ['on', true], ['true', true], ['yes', true]])
+const UNDECIDED_REQ = (() => {
+  const v = A.undecided
+  if (v === undefined || v === null || v === '') return false
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.trunc(v) !== 0
+  if (typeof v === 'string') {
+    const w = v.trim().toLowerCase()
+    if (UNDECIDED_WORDS.has(w)) return UNDECIDED_WORDS.get(w)
+    if (/^[+-]?\d+$/.test(w)) return Number(w) !== 0
+  }
+  const shown = clipNote(typeof v === 'string' ? v : (JSON.stringify(v) ?? String(v)), 40)
+  INPUT_NOTICES.push({ source: '요청 값 해석 불가', count: 1,
+    text: `요청에 실린 값을 읽지 못해 기본값으로 돈다 — undecided=${shown}(대신 0 로 돈다). 켜고 끄는 값은 1|0(on|off 도 받는다)으로 보낸다.` })
+  log(`⚠ undecided 해석 불가(${shown}) — 꺼진 채로 돈다(반환값 inputNotices 에 남긴다)`)
+  return false
+})()
+// 계획서를 내는 틀(해석 · 시험 · 구축)은 판정문이 아니고, 리스크 심사는 제 보고서 꼴과 '판정 불가는 그대로 두라' 는 계약이 따로 있다 — 붙지 않는다.
+// 리스크 심사 계열은 이 파일의 다른 거름(주제 · 과제 인사이트 근거)과 같은 /^risk-review/i 로도 막는다(닫힌 쪽).
+// 다단 워크플로의 1단(mechanism)은 틀 이름으로 끄지 않는다 — 부모(hwax-sim-deliberate.js)가 이 칸을 자식에 넘기지 않는다(엔진이 1단을 세우는
+// 자리에서 opts_a.undecided = 0 으로 끄는 것과 같다 — 단독 mechanism 심의는 켤 수 있다).
+const UNDECIDED_TEMPLATES_OFF = ['risk-review', 'sim-plan', 'test-plan', 'build-plan']
+const UNDECIDED_ON = UNDECIDED_REQ && !UNDECIDED_TEMPLATES_OFF.includes(CHAIR_TEMPLATE) && !/^risk-review/i.test(CHAIR_TEMPLATE)
+if (UNDECIDED_REQ && !UNDECIDED_ON) log(`undecided 를 받았지만 이 틀(${CHAIR_TEMPLATE})에는 붙지 않는다(리스크 심사 · 계획서 틀) — 종전대로 돈다`)
+// '판정 불가' 는 stance 또는 vote 의 **머리**에 올 때만 센다. 머리에 와도 부정('판정 불가는 아니다' · '판정 불가능하지 않다') · 지난 일('판정 불가였으나')
+// · 다른 낱말('판정 불가피')은 세지 않는다. 엔진의 식과 글자가 다른 곳은 둘 — 파이썬의 \W · \b 는 유니코드 낱말 글자로 가르고 JS 의 \W · \b 는
+// ASCII 로만 가른다. 그대로 옮기면 '조건부 동의 — 판정 불가' 의 앞 한글을 \W 가 삼키고 'undecided한' 의 끝을 \b 가 경계로 본다 — 둘 다 낱말 글자
+// 집합([\p{L}\p{N}_])으로 바꿨다(u 플래그).
+const UNDECIDED_RE = /^[^\p{L}\p{N}_]*(?:(?:판정|판단)\s*불가(?!피|결|능하지|\s*(?:는|은|가|도)?\s*아니|\s*(?:는|은|가|도)?\s*아님|였|했)|undecided(?![\p{L}\p{N}_])|cannot\s+(?:be\s+)?(?:decided?|judged?)(?![\p{L}\p{N}_]))/iu
+const isUndecided = o => !!o && typeof o === 'object' && !Array.isArray(o) &&
+  ['stance', 'vote'].some(k => UNDECIDED_RE.test(String(o[k] || '')))
+// 수렴 라운드 좌석 지시에 덧붙이는 글(엔진 _undecided_ask 와 같은 글자) — 꺼져 있으면 빈 글.
+const UNDECIDED_ASK = !UNDECIDED_ON ? '' :
+  " 근거가 부족해 어느 쪽으로도 판정할 수 없으면 억지로 고르지 말고 stance 를 '판정 불가' 로 적고, next_measurement 에 " +
+  '무엇을 어떻게 재면 판정할 수 있는지(대상 · 방법 · 어느 값이면 어느 쪽인지)를 적어라.'
+// 켰을 때만 수렴 라운드 스키마에 두 칸을 연다 — 구조화 출력은 선언하지 않은 칸을 받지 않는다(additionalProperties:false).
+const R3_SCHEMA_RUN = !UNDECIDED_ON ? R3_SCHEMA : {
+  ...R3_SCHEMA,
+  properties: {
+    ...R3_SCHEMA.properties,
+    stance: { type: 'string', description: "형성된 다수 의견에 대한 스탠스(동의/조건부 동의/반대). 근거가 부족해 판정할 수 없으면 '판정 불가'" },
+    next_measurement: { type: 'string', description: '판정 불가일 때 — 무엇을 어떻게 재면 판정할 수 있는지(대상 · 방법 · 어느 값이면 어느 쪽인지)' },
+  },
+}
+// [판정 불가 좌석 수, 앉은 좌석 수] — 켜져 있고 **앉은 좌석**의 과반일 때만, 아니면 null. 분모는 응답자가 아니라 앉은 좌석이다(좌석 유실이 과반을
+// 만들지 않게 — 엔진 집계의 분모와 같은 까닭). 앉은 좌석에는 자동으로 앉는 지정 반대석도 든다(엔진의 personas 와 같다).
+const undecidedMajority = (last, seated) => {
+  if (!UNDECIDED_ON) return null
+  const n = (last || []).filter(isUndecided).length
+  return seated && n * 2 > seated ? [n, seated] : null
+}
+// 의장에게 주는 전제와 결정문 머리 표지 — 엔진 _undecided_chair_note · _undecided_mark 와 같은 글자.
+const undecidedChairNote = um =>
+  `[판정 불가 과반 — 수렴 라운드에서 앉은 ${um[1]}석 가운데 ${um[0]}석이 근거 부족으로 '판정 불가' 를 밝혔다. 결론부(결정 · 권고에 ` +
+  '해당하는 항목)는 판정이 아니라 **측정 계획**으로 쓴다 — 무엇을 재는지 · 어떤 방법 · 도구로 재는지 · 어느 값이면 어느 쪽으로 ' +
+  '판정하는지 · 어느 도메인이 맡는지 · 순서. 좌석이 적은 next_measurement 를 합치고 겹치는 것은 묶어라. 판정을 지어내지 말고, ' +
+  '판정을 낸 소수 좌석의 입장은 소수의견으로 남겨라. 이 줄은 결정문 머리에 따로 찍힌다]\n'
+const undecidedMark = um =>
+  `■ 판정 불가 과반 — 앉은 ${um[1]}석 가운데 ${um[0]}석이 근거 부족으로 판정하지 않았다. 이 결정문의 결론부는 판정이 아니라 ` +
+  '다음에 잴 것(측정 계획)이다.'
+
 // 라운드별 요약 — idx=0 초기, idx=마지막 수렴, 그 사이는 전부 심화.
 // 프롬프트 컨텍스트용(compact — 한 줄 대괄호)과 기록용(readable — 문단 개행)을 구분한다:
 // 웹 대화·RA 회의록에서 발언이 개행 없이 한 덩어리로 보이던 문제의 기록측 수정.
@@ -674,8 +752,11 @@ const readable = (isFirst, isLast, o) => {
     return parts.filter(Boolean).join('\n\n')
   }
   if (isLast) {
+    // 다음에 잴 것 — T7 을 켠 심의에서만 좌석이 내는 칸이다(R3_SCHEMA_RUN). 엔진의 기록용 발언(_say_of full)과 같은 줄 — 의장에게만 가면
+    // 측정 계획이 어느 좌석의 무엇에서 나왔는지 회의록(RA · 대화)으로 되짚을 수 없다.
     return [o.final_position, o.non_negotiable ? `양보 불가 — ${o.non_negotiable}` : '',
-            o.vote ? `최종 권장 — ${o.vote}` : ''].filter(Boolean).join('\n\n')
+            o.vote ? `최종 권장 — ${o.vote}` : '',
+            o.next_measurement ? `다음에 잴 것 — ${o.next_measurement}` : ''].filter(Boolean).join('\n\n')
   }
   const parts = []
   if ((o.concede || []).length) parts.push(`그 지적은 받아들입니다.\n- ${join(o.concede)}`)
@@ -830,11 +911,17 @@ const rFinal = await parallel(pk.map(k => () => agent(
   (HAS_CHOICES
     ? `(3) 위 [후보/선택지] 중 최종 권장 하나와 이유. 근거가 부족해 고를 수 없으면 "판정 불가 — 다음에 측정할 것"과 그 측정 항목을 쓰라.`
     : `(3) 형성된 다수 의견에 대한 당신의 스탠스(동의/조건부 동의/반대)와 이유. 상호 배타적 선택지가 제시되지 않았으므로 표결이 아니라 입장 표명이다 — 선택지를 지어내 투표하지 마라.`) +
-  ` 결정 가능하도록 구체적으로.`,
-  { label: `r${finalRoundNo}:${k}`, phase: '수렴', schema: R3_SCHEMA }).then(withKey(k))))
+  ` 결정 가능하도록 구체적으로.` + UNDECIDED_ASK,
+  { label: `r${finalRoundNo}:${k}`, phase: '수렴', schema: R3_SCHEMA_RUN }).then(withKey(k))))
 roundsData.push(rFinal)
 roundLabels.push(`${finalRoundNo}라운드 — 수렴·최종 입장`)
 reportSeats(`${finalRoundNo}라운드`, pk, rFinal)
+// T7 — 앉은 좌석(pk — 지정 반대석 포함)의 과반이 '판정 불가' 면 결론부를 측정 계획으로. 꺼져 있으면 null 이고 아래 글이 비어 종전과 같다.
+const UM = undecidedMajority(rFinal.filter(Boolean), pk.length)
+if (UM) {
+  log(`⚠ 수렴 라운드에서 앉은 ${UM[1]}석 가운데 ${UM[0]}석이 근거 부족으로 '판정 불가' 를 밝혔다 — 결정문의 결론부는 판정이 아니라 ` +
+      '측정 계획으로 쓴다(반환값 undecidedMajority).')
+}
 
 phase('Decision')
 const allRoundsText = roundsData.map((rd, idx) => {
@@ -927,6 +1014,8 @@ const decision = await agent(
   (seatLoss.length ? `[좌석 유실 — 아래 좌석은 그 라운드에서 API 오류로 발언하지 못했다. `
     + `(0) 커버리지에 이 사실을 그대로 적고, 그 도메인 판단이 빠진 채 수렴했음을 밝혀라]\n`
     + seatLoss.map(x => `· ${x.round}: ${x.lost.join(', ')}`).join('\n') + '\n\n' : '') +
+  // T7 판정 불가 과반 — 의장이 전제를 알고 결론부를 측정 계획으로 쓰게 한다. 표지 줄은 아래에서 코드가 결정문 머리에 따로 찍는다.
+  (UM ? `${undecidedChairNote(UM)}\n` : '') +
   `산출: ## ${CHAIR_TEMPLATE === 'sim-plan' ? '해석 계획서' : CHAIR_TEMPLATE === 'test-plan' ? '시험 계획서' : CHAIR_TEMPLATE === 'build-plan' ? '구축 계획서' : CHAIR_TEMPLATE === 'risk-review' ? '리스크 심사 보고서' : CHAIR_TEMPLATE === 'diagnosis' ? '원인 규명 결정문' : CHAIR_TEMPLATE === 'option-select' ? '안 선택 결정문' : CHAIR_TEMPLATE === 'credibility' ? '신뢰 판정문' : '의사결정문'} — (0) 참여 도메인과 커버리지 한계 — 위 좌석 구성을 한 문단으로 기록하고, 이 문제에 관련되나 착석하지 않은 인접 도메인이 있으면 명시하라(없으면 없다고 쓰라), ` +
   // 종전엔 "라운드별 입장 심화·수렴 과정을 반드시 드러내라"를 무조건 요구했다. 그러면 과정
   // 서술이 분량을 먹고 종합을 밀어낸다 — 읽는 사람이 먼저 알아야 할 건 결론의 그림이다.
@@ -962,6 +1051,8 @@ if (!decText) {
     decision: null, decisionFailed: true, decisionTruncated: false, seatLoss,
     plain: null, report: null, conversation: null, nextRoundOffset: finalRoundNo,
     evidenceOmitted: EV_OMITTED, inputNotices: INPUT_NOTICES,
+    // 과반은 의장을 부르기 전에 정해진다(엔진은 그때 경고를 낸다) — 결정문이 없으니 표지는 찍지 않는다.
+    ...(UM ? { undecidedMajority: { undecided: UM[0], seated: UM[1] } } : {}),
   }
 }
 // 절단 감지 — 양방향. (a) 머리: 여러 턴에 나눠 쓰면 마지막 턴만 반환돼 제목 없이 시작한다.
@@ -1014,6 +1105,10 @@ if (_unmatchedNums.length) {
 } else if (_decNums.length) {
   log(`근거 대조 — 결정문 수치 ${_decNums.length}건 전부 근거·발언 원문에서 확인됨`)
 }
+// T7 판정 불가 과반 표지 — 코드가 찍는다(의장이 빠뜨리면 판정을 낸 결정문과 똑같이 생긴다). 자리는 엔진과 같다 — 의장 글의 수치 대조 뒤(표지의
+// 좌석 수는 의장의 수치가 아니다), 쉬운 설명 앞(설명이 결론부가 측정 계획임을 안다). 의장이 결정문을 못 냈으면 위에서 이미 돌아갔다(decisionFailed)
+// — 표지가 찍히지 않는다.
+if (UM) decText = `${undecidedMark(UM)}\n\n${decText}`
 
 // 쉬운 설명 — 챗 파이프라인(deliberation.py)과 동일한 정식 심의 절차. 의결 뒤에 붙는다.
 // 여기 없으면 MCP 경로 결정문만 비전문가용 정리가 빠져 두 경로가 어긋난다.
@@ -1307,4 +1402,7 @@ return {
   // 심의 주제 · 의장 틀 — infra/scripts/save-delib-conversation.py 가 대화를 REST 로 저장할 때 같이 싣는다(리스크 심사면 주제는 null)
   subject: SUBJECT_SAVE,
   chairTemplate: CHAIR_TEMPLATE,
+  // T7 — 앉은 좌석의 과반이 '판정 불가' 였다({undecided, seated}). 이때 결정문 머리에 '■ 판정 불가 과반' 표지가 있고 결론부는 측정 계획이다.
+  // 과반이 아니거나 꺼져 있으면 칸이 없다.
+  ...(UM ? { undecidedMajority: { undecided: UM[0], seated: UM[1] } } : {}),
 }
