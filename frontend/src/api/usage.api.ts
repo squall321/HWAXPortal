@@ -109,7 +109,15 @@ export interface UsageSections {
     first_day?: string | null;
     totals?: Totals;
   };
-  mcp_via: Section<McpCount & { via: string; people: number; anon_calls: number }> & {
+  mcp_via: Section<
+    McpCount & {
+      via: string;
+      people: number;
+      anon_calls: number;
+      for_calls: number;
+      people_for: number;
+    }
+  > & {
     via_since?: string | null;
   };
   mcp_apps: Section<
@@ -164,6 +172,45 @@ export interface UsageSections {
     pats_issued: Num;
   }> & { days?: number };
   conversations_kept: Section<{ kind: string; source: string; n: number }>;
+  /** 에이전트 서버의 LLM 토큰 — 종류 × 모델(사람을 뺀 합). daily 는 날마다 입력 + 출력(적기 시작한 날 전은 null) — OD-53 */
+  llm_tokens: Section<LlmTokens & { kind: string; model: string }> & {
+    daily?: Num[];
+    since?: string | null;
+    totals?: LlmTokens & { people: number };
+  };
+  /** 사람별 이용 — 관리자 화면에서 이메일이 나오는 유일한 칸(사용자 결정 2026-11-22 · OD-55) */
+  people: Section<PersonRow> & { total?: number; truncated?: boolean };
+}
+
+export interface LlmTokens {
+  calls: number;
+  /** 사용량이 오지 않은 호출(흘려 받는 호출 · 외부 응답자) — 토큰을 모른다 */
+  unknown: number;
+  tokens_in: number;
+  tokens_out: number;
+  cache_read: number;
+}
+
+export interface PersonRow {
+  email: string;
+  affiliation: string;
+  affiliation_label: string;
+  login: number;
+  chat: number;
+  tile: number;
+  mcp: number;
+  engine: number;
+  ra: number;
+  delib: number;
+  nginx: number;
+  active_days: number;
+  first_day: string | null;
+  last_day: string | null;
+  llm_calls: number;
+  llm_unknown: number;
+  llm_tokens_in: number;
+  llm_tokens_out: number;
+  llm_cache_read: number;
 }
 
 /** 접기 상태 — 원천(포털 원장 · 지금 상태 · 정문 로그 · 게이트웨이 · 에이전트 서버)마다 접은 범위와 마지막 접기의 실패 까닭 */
@@ -187,6 +234,8 @@ export interface ActiveDay {
   chat: Num;
   tile: Num;
   mcp: Num;
+  /** 호출자가 빈 엔진 호출을 '누구의 일' 감사 머리로 이은 사람(검증하지 않은 주장 — OD-52) */
+  engine: Num;
   delib: Num;
   nginx: Num;
 }

@@ -33,7 +33,7 @@ for (const rel of ['lib/usageChart.ts', 'components/usage/UsageCharts.tsx', 'com
 }
 const { renderToStaticMarkup } = require('react-dom/server'); const { createElement } = require('react');
 const lib = require('./lib/usageChart.js');
-const { FoldCards, FoldStatusCard, FoldErrors } = require('./components/usage/UsageFoldCards.js');
+const { FoldCards, FoldStatusCard, FoldErrors, PeopleCard } = require('./components/usage/UsageFoldCards.js');
 const req = JSON.parse(fs.readFileSync(0, 'utf8'));
 const out = { ms: req.ms.map(lib.msText), span: req.span.map(([a, b]) => lib.spanText(a, b)), months: lib.monthlyRows(req.months), pages: {} };
 for (const [name, rep] of Object.entries(req.reports)) {
@@ -42,6 +42,7 @@ for (const [name, rep] of Object.entries(req.reports)) {
     cards: renderToStaticMarkup(createElement(FoldCards, { s, axis: rep.range.axis })),
     status: renderToStaticMarkup(createElement(FoldStatusCard, { s })),
     errors: renderToStaticMarkup(createElement(FoldErrors, { s })),
+    people: renderToStaticMarkup(createElement(PeopleCard, { s })),
   };
 }
 process.stdout.write(JSON.stringify(out));
@@ -109,3 +110,12 @@ def test_접은_적이_없으면_카드마다_그렇다고_말하고_빈_그림�
     text = _text(page["cards"])
     assert text.count("아직 접은 적이 없다") >= 10 and "<svg" not in page["cards"] and "<table" not in page["cards"]
     assert "아직 접은 적이 없다" in _text(page["status"]) and page["errors"] == "" and "undefined" not in text
+
+
+def test_사람별_표만_이메일을_그리고_접은_적이_없으면_그렇다고_말한다(screen):
+    page = screen["pages"]["folded"]
+    text = _text(page["people"])
+    for want in ("사람별 이용", A, B, C, "엔진(그 사람의 일)", "LLM 입력"):
+        assert want in text, want
+    assert "undefined" not in text and "NaN" not in text
+    assert "아직 접은 적이 없다" in _text(screen["pages"]["pending"]["people"])

@@ -6,13 +6,16 @@
   · usage_daily(day, source, metric, dims, value) — 날 × 원천 × 지표 × 칸(JSON, 열쇠 정렬)마다 수. 사람(이메일)은 싣지 않는다.
   · usage_actor_daily(day, email, source, n, affiliation) — 날 × 사람 × 갈래마다 수와 그때의 소속. 관리자만 읽는다 · 400일 뒤 지운다(OD-4).
   · usage_fold(day, source, folded_at, final, ex, note) — 접은 기록. day='*' 는 그 원천의 마지막 시도(note 가 실패 까닭)다.
+  · usage_llm_daily(day, email, kind, model, calls, unknown, tokens_in, tokens_out, cache_read, affiliation) — 에이전트 서버가 센 사람별 LLM 토큰(사용자
+    결정 2026-11-22 · OD-53). 관리자만 읽는다 · 400일 뒤 지운다. 이메일 칸이 빈 줄은 사람이 없는 일(시스템)이다.
 
 원천(source).
   · portal — 접속 · 감사 원장의 사람 줄(login · chat · tile)과 사라지는 수(날마다 새 대화 · 낸 PAT).
   · snapshot — 오늘의 '지금 상태'(살아 있는 PAT · 외부 연결 · 계정 · 개별 허가). 오늘 날에만 적는다 — 지난 날은 다시 셀 수 없다.
   · nginx — 정문 접근 로그의 서비스별 요청 · 사람(로그인 연결 ID 로 잇는다 — 귀속이지 증명이 아니다).
-  · gateway — 게이트웨이 창구 POST /usage-rollup(MCP 도구 호출 · 인증 실패 · 사람별 호출 수 · RA 초안).
-  · agent — 에이전트 서버 창구 POST /usage-rollup(MCP 심의 잡).
+  · gateway — 게이트웨이 창구 POST /usage-rollup(MCP 도구 호출 · 인증 실패 · 사람별 호출 수 · RA 초안). 호출자가 빈 엔진 호출의 '누구의 일'(감사 전용
+    머리 — 검증하지 않은 주장, OD-52)은 사람 줄의 갈래 mcp-for-<via> · ra-for 로 따로 잇는다.
+  · agent — 에이전트 서버 창구 POST /usage-rollup(MCP 심의 잡 · 사람별 LLM 토큰).
 
 언제.
   · 오늘은 돌 때마다 다시 접는다(아직 안 끝난 날 — final 0). 끝난 날은 사흘 동안 날마다 한 번 다시 접고(끝난 날 + 앞 이틀 — 늦게 끝난 잡 · 실행이
@@ -83,13 +86,17 @@ SCHEMA = (
     " affiliation TEXT NOT NULL DEFAULT '', PRIMARY KEY (day, email, source)) WITHOUT ROWID",
     "CREATE TABLE IF NOT EXISTS usage_fold (day TEXT NOT NULL, source TEXT NOT NULL, folded_at INTEGER NOT NULL, final INTEGER NOT NULL,"
     " ex TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', PRIMARY KEY (day, source)) WITHOUT ROWID",
+    "CREATE TABLE IF NOT EXISTS usage_llm_daily (day TEXT NOT NULL, email TEXT NOT NULL, kind TEXT NOT NULL, model TEXT NOT NULL,"
+    " calls INTEGER NOT NULL, unknown INTEGER NOT NULL, tokens_in INTEGER NOT NULL, tokens_out INTEGER NOT NULL, cache_read INTEGER NOT NULL,"
+    " affiliation TEXT NOT NULL DEFAULT '', PRIMARY KEY (day, email, kind, model)) WITHOUT ROWID",
 )
+LLM_KINDS = ("chat", "think", "delib", "routine", "card_review", "other")     # 에이전트 서버 usage_tokens.KINDS
 # 원천이 쓰는 사람 줄의 갈래 — 그 원천의 날을 다시 접을 때 이 갈래만 지운다
 _ACTOR_WHERE = {
     "portal": "source IN ('login', 'chat', 'tile')",
     "snapshot": "0",
     "nginx": "source = 'nginx'",
-    "gateway": "(source = 'ra' OR source = 'mcp' OR source LIKE 'mcp-%')",
+    "gateway": "(source = 'ra' OR source = 'ra-for' OR source = 'mcp' OR source LIKE 'mcp-%')",
     "agent": "source = 'delib'",
 }
 _REFOLD_ON_EX = {"gateway", "agent"}        # 원장이 무기한이라 뺄 계정 목록이 바뀌면 닫힌 날도 다시 접는다
@@ -111,6 +118,7 @@ class DayFold:
     """한 날 · 한 원천의 접은 줄 — rows 는 (지표, 칸, 값), actors 는 (이메일, 갈래, 수, 그때의 소속)."""
     rows: list[tuple[str, dict, float]] = field(default_factory=list)
     actors: list[tuple[str, str, int, str]] = field(default_factory=list)
+    llm: list[tuple] = field(default_factory=list)    # (이메일, 종류, 모델, 호출, 모름, 입력, 출력, 캐시 읽기, 소속) — 에이전트 서버 원천만
     note: str = ""
 
 
@@ -170,6 +178,16 @@ def write_day(conn: sqlite3.Connection, source: str, day: str, fold: DayFold, *,
         conn.execute(f"DELETE FROM usage_actor_daily WHERE day = ? AND {_ACTOR_WHERE[source]}", (day,))  # noqa: S608 — 고정 글자
         conn.executemany("INSERT OR REPLACE INTO usage_actor_daily VALUES (?, ?, ?, ?, ?)",
                          [(day, e, k, n, aff[:80]) for (e, k), (n, aff) in actors.items() if n > 0])
+        if source == "agent":
+            llm: dict[tuple, list] = {}
+            for email, kind, model, *nums, aff in fold.llm:
+                cur = llm.setdefault((email, kind, model), [0, 0, 0, 0, 0, ""])
+                for i, v in enumerate(nums):
+                    cur[i] += v
+                cur[5] = aff or cur[5]
+            conn.execute("DELETE FROM usage_llm_daily WHERE day = ?", (day,))
+            conn.executemany("INSERT INTO usage_llm_daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             [(day, *k, *v[:5], v[5][:80]) for k, v in llm.items() if v[0] > 0])
         conn.execute("INSERT OR REPLACE INTO usage_fold VALUES (?, ?, ?, ?, ?, ?)", (day, source, int(now), final, fp, fold.note[:200]))
         conn.execute("COMMIT")
     except BaseException:
@@ -377,6 +395,17 @@ def gateway_days(resp: dict, days: list[str], aff: dict[str, str]) -> dict[str, 
             e = _email(r["caller"])
             if r["day"] in out and e and r["tool"] == RA_DRAFT_TOOL:
                 out[r["day"]].actors.append((e, "ra", int(r["n"]), aff.get(e, "")))
+        # 누구의 일(감사 전용 머리 — 검증하지 않은 주장, OD-52) — 호출자가 빈 엔진 호출을 그 일의 사람에게 따로 잇는다. 옛 게이트웨이는 칸이 없다.
+        for r in resp.get("actors_for") or []:
+            e = _email(r["user"])
+            if r["day"] in out and e:
+                via = str(r["via"])
+                out[r["day"]].actors.append((e, f"mcp-for-{via}" if via else "mcp-for", int(r["n"]), aff.get(e, "")))
+                out[r["day"]].rows.append(("for_calls", {"via": via}, int(r["n"])))
+        for r in resp.get("actor_tools_for") or []:
+            e = _email(r["user"])
+            if r["day"] in out and e and r["tool"] == RA_DRAFT_TOOL:
+                out[r["day"]].actors.append((e, "ra-for", int(r["n"]), aff.get(e, "")))
         return out
     except (KeyError, TypeError, ValueError) as exc:
         raise FoldError(f"게이트웨이 답의 꼴이 다르다({type(exc).__name__})") from exc
@@ -401,6 +430,21 @@ def agent_days(resp: dict, days: list[str], aff: dict[str, str]) -> dict[str, Da
             e = _email(r["user"])
             if r["day"] in out and e:
                 out[r["day"]].actors.append((e, "delib", int(r["n"]), str(r.get("aff") or "") or aff.get(e, "")))
+        # 사람별 LLM 토큰(OD-53) — 사람 × 종류 × 모델은 usage_llm_daily(관리자만 · 400일), 사람을 뺀 합은 usage_daily(종류 × 모델)에 둔다. 옛 에이전트 서버는
+        # 칸이 없다(그동안 토큰 카드는 '적기 전' 이다). 적기 시작한 날(llm_since)은 그 날의 표지 줄로 남긴다 — 그 전 날은 0 이 아니라 기록 전이다.
+        if resp.get("llm_since") in out:
+            out[resp["llm_since"]].rows.append(("llm_since", {}, 1))
+        for r in resp.get("llm") or []:
+            f = out.get(r["day"])
+            if f is None:
+                continue
+            kind = str(r["kind"]) if r["kind"] in LLM_KINDS else "other"
+            model = str(r["model"])[:80] or "(unknown)"
+            nums = [int(r[k]) for k in ("calls", "unknown", "tokens_in", "tokens_out", "cache_read")]
+            e = _email(r.get("user"))
+            f.llm.append((e, kind, model, *nums, aff.get(e, "") if e else ""))
+            dims = {"kind": kind, "model": model}
+            f.rows += [(f"llm_{k}", dims, v) for k, v in zip(("calls", "unknown", "in", "out", "cache"), nums, strict=True)]
         return out
     except (KeyError, TypeError, ValueError) as exc:
         raise FoldError(f"에이전트 서버 답의 꼴이 다르다({type(exc).__name__})") from exc
@@ -506,7 +550,10 @@ async def _fold_remote(settings: Settings, source: str, now: float, ex: list[str
             behind = str(resp.get("scanned_through") or "")[:16].replace("T", " ")
             continue
         if days is None:
-            first_known = ((resp.get("audit") or {}) if gateway else (resp.get("ledger") or {})).get("first_day")
+            # 그쪽 원장의 첫 날 — 에이전트 서버는 잡 원장과 토큰 기록 가운데 이른 쪽이다(잡이 하나도 없어도 토큰은 있을 수 있다)
+            marks = ([(resp.get("audit") or {}).get("first_day")] if gateway
+                     else [(resp.get("ledger") or {}).get("first_day"), resp.get("llm_since")])
+            first_known = min((m for m in marks if isinstance(m, str) and m), default=None)
             if not first_known:                         # 그쪽 원장이 비어 있다 — 접을 날이 없다(되면 됐다고 적는다)
                 return written + await asyncio.to_thread(_write_many, settings, source, {}, today=today, fp=fp, now=now)
             continue
@@ -523,7 +570,8 @@ async def _fold_remote(settings: Settings, source: str, now: float, ex: list[str
 def _prune(settings: Settings, now: float) -> int:
     cut = (datetime.fromtimestamp(now, KST).date() - timedelta(days=RETAIN_ACTOR_DAYS - 1)).isoformat()     # 오늘까지 400일을 둔다
     with closing(connect(settings)) as conn:
-        return conn.execute("DELETE FROM usage_actor_daily WHERE day < ?", (cut,)).rowcount
+        gone = conn.execute("DELETE FROM usage_actor_daily WHERE day < ?", (cut,)).rowcount
+        return gone + conn.execute("DELETE FROM usage_llm_daily WHERE day < ?", (cut,)).rowcount
 
 
 def _mark_error(settings: Settings, source: str, now: float, error: str) -> None:

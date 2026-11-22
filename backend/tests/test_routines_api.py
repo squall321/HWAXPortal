@@ -901,19 +901,24 @@ def test_읽기_목록을_주는_게이트웨이면_읽기로_확인된_도구�
     spec["steps"] = [
         {"id": "risk_any", "title": "리스크", "backends": ["heax-hwax_risk"], "goal": "리스크를 읽는다"},
         {"id": "risk_named", "title": "리스크 둘", "backends": ["heax-hwax_risk"], "goal": "읽는다",
-         "tools": ["risk_job_action", "risk_get_report"]},
+         "tools": ["risk_repersist_panel", "risk_get_report"]},
         {"id": "sim_any", "title": "해석", "backends": ["smart-twin-mcp"], "goal": "지난 잡을 본다"},
         {"id": "sim_named", "title": "낙하", "backends": ["smart-twin-mcp"], "goal": "낙하", "tools": ["single_drop_simulation"]},
         {"id": "doc", "title": "변환", "backends": ["heax-doc_forge"], "goal": "변환"},
         {"id": "voc", "title": "VOC", "backends": ["signalforge"], "goal": "VOC"},
     ]
+    # risk_job_action 은 11-22 부터 절차 관문(MUST_GATE)이라 이름 꼴로도 쓰기다 — 단계에 적으면 저장에서 거절한다(사용자 결정 · W-118 후속)
+    bad = copy.deepcopy(spec)
+    bad["steps"][1]["tools"] = ["risk_job_action", "risk_get_report"]
+    r = c.post(f"{PREFIX}/routines", json={"spec": bad}, headers=h)
+    assert r.status_code == 422 and "risk_job_action" in r.json()["detail"], r.text
     rid = _create(c, h, spec)["id"]
     plan = c.get(f"{PREFIX}/routines/{rid}/plan").json()
     assert plan["write_class"] == "gateway_read"
     by = {s["id"]: s for s in plan["steps"]}
     assert by["risk_any"]["allowed"] == {"heax-hwax_risk": ["risk_get_report"]}, "모르는 이름(risk_job_action · risk_next_step …)은 읽기가 아니다"
     assert (by["risk_named"]["allowed"], by["risk_named"]["dropped_write"]) == (
-        {"heax-hwax_risk": ["risk_get_report"]}, ["heax-hwax_risk:risk_job_action"]), "적은 도구도 읽기로 확인된 것만 — 뺀 것은 남긴다"
+        {"heax-hwax_risk": ["risk_get_report"]}, ["heax-hwax_risk:risk_repersist_panel"]), "적은 도구도 읽기로 확인된 것만 — 뺀 것은 남긴다"
     assert by["sim_any"]["allowed"] == {"smart-twin-mcp": ["list_recent_jobs"]}, "잡 제출(single · fullangle) · 후처리 다시 돌리기는 빠진다"
     assert (by["sim_named"]["allowed"], by["sim_named"]["dropped_write"]) == (
         {"smart-twin-mcp": []}, ["smart-twin-mcp:single_drop_simulation"])
@@ -921,7 +926,7 @@ def test_읽기_목록을_주는_게이트웨이면_읽기로_확인된_도구�
     assert by["voc"]["allowed"] == {"signalforge": ["defect_profile", "search_voc"]}, "읽기 목록에 있어도 이름 꼴(ingest_)이 쓰기면 뺀다"
     ready = {s["step"]: s for s in c.get(f"{PREFIX}/routines/{rid}/readiness").json()["steps"]}
     assert ready["risk_named"]["state"] == "allowed", ready["risk_named"]
-    assert "heax-hwax_risk:risk_job_action 는 읽기로 확인되지 않았다" in ready["risk_named"]["reason"] and \
+    assert "heax-hwax_risk:risk_repersist_panel 는 읽기로 확인되지 않았다" in ready["risk_named"]["reason"] and \
         "남은 도구로 돈다" in ready["risk_named"]["reason"], ready["risk_named"]
     assert ready["sim_named"]["state"] == "unavailable" and "읽기로 확인되지 않았다" in ready["sim_named"]["reason"] and \
         "smart-twin-mcp:single_drop_simulation" in ready["sim_named"]["reason"], ready["sim_named"]
@@ -937,14 +942,15 @@ def test_읽기_목록을_주는_게이트웨이면_읽기로_확인된_도구�
     st = {s["id"]: s for s in v["steps"]}
     assert v["write_class"] == "gateway_read" and st["risk_named"]["state"] == "pending"
     assert (st["sim_named"]["state"], st["doc"]["state"]) == ("unavailable", "unavailable"), "준비도가 말한 대로 닫혀 시작한다"
-    r = _call(c, v["run"]["id"], step="risk_named", backend="heax-hwax_risk", tool="risk_job_action", h=h)
+    r = _call(c, v["run"]["id"], step="risk_named", backend="heax-hwax_risk", tool="risk_repersist_panel", h=h)
     assert r.status_code == 409 and "울타리 밖" in r.json()["detail"], "뺀 도구는 원장도 받지 않는다"
     assert _call(c, v["run"]["id"], step="risk_named", backend="heax-hwax_risk", tool="risk_get_report", h=h).status_code == 201
     # 읽기 목록을 안 주는 게이트웨이(옛 판)는 종전 판정 그대로다 — 같은 루틴이 write · 이름 꼴로 묶인다
     _use_gateway(tools, {k: x for k, x in tmap.items() if k != "routine_read"})
     plan = c.get(f"{PREFIX}/routines/{rid}/plan").json()
     by = {s["id"]: s for s in plan["steps"]}
-    assert plan["write_class"] == "gateway" and by["risk_any"]["allowed"] == {"heax-hwax_risk": sorted(risk)}
+    # 종전 판정은 이름 꼴 — risk_job_action 은 이제 관문 목록이라 그 길에서도 쓰기다
+    assert plan["write_class"] == "gateway" and by["risk_any"]["allowed"] == {"heax-hwax_risk": sorted(n for n in risk if n != "risk_job_action")}
     assert by["risk_named"]["dropped_write"] == [] and by["sim_named"]["allowed"] == {"smart-twin-mcp": ["single_drop_simulation"]}
 
 

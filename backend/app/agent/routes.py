@@ -1293,7 +1293,7 @@ async def catalog_agent(
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/agent", timeout=_unary_timeout(settings),
-                              json={"key": body.key, "groups": principal.groups})
+                              json={"key": body.key, "groups": principal.groups, "user_email": principal.email})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}"}
     except httpx.HTTPError as exc:
         return _unary_fail(exc, settings, "catalog/agent")
@@ -1318,7 +1318,7 @@ async def catalog_agent_records(
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/agent/records", timeout=_unary_timeout(settings),
-                              json={**body.model_dump(), "groups": principal.groups})
+                              json={**body.model_dump(), "groups": principal.groups, "user_email": principal.email})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "total": 0, "items": []}
     except httpx.HTTPError as exc:
         return {"total": 0, "items": [], **_unary_fail(exc, settings, "catalog/agent/records")}
@@ -1343,7 +1343,7 @@ async def catalog_record(
     client = _agent_client(request)
     try:
         r = await client.post(f"{settings.agent_server_url}/catalog/record", timeout=_unary_timeout(settings),
-                              json={**body.model_dump(), "groups": principal.groups})
+                              json={**body.model_dump(), "groups": principal.groups, "user_email": principal.email})
         return r.json() if r.status_code == 200 else {"error": f"agent_{r.status_code}", "id": body.id}
     except httpx.HTTPError as exc:
         return {"id": body.id, **_unary_fail(exc, settings, "catalog/record")}
@@ -2679,7 +2679,10 @@ async def deliberate_experts(
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups, "light": body.light,
                # ⚠ 이 줄이 없으면 프론트가 대화를 보내도 여기서 버려져 축이 안 나온다.
-               "history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history]}
+               "history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history],
+               # 누구의 일인가 — 에이전트 서버가 이 창구의 LLM 토큰 · 서비스 자격 게이트웨이 호출을 이 사람의 것으로 센다(docs/ops-dashboard OD-52 · OD-53).
+               # 검증된 주체에서 채운다(브라우저가 보낸 값이 아니다) · 권한에 쓰이지 않는다.
+               "user_email": principal.email}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/experts", json=payload,
                               timeout=_unary_timeout(settings))
@@ -2707,7 +2710,8 @@ async def deliberate_clarify(
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"message": body.message, "job": body.job,
-               "history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history]}
+               "history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history],
+               "user_email": principal.email}     # 누구의 일인가(OD-52 · OD-53) — 이용 통계만 읽는다
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/clarify", json=payload,
                               timeout=_unary_timeout(settings))
@@ -2742,7 +2746,8 @@ async def deliberate_topic(
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"history": [m.model_dump(exclude={"evidence", "images"}) for m in body.history],
-               "fallback": body.fallback, "job": body.job}
+               "fallback": body.fallback, "job": body.job,
+               "user_email": principal.email}     # 누구의 일인가(OD-52 · OD-53) — 이용 통계만 읽는다
     fail = {"topic": body.fallback, "why": "", "options": []}
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/topic", json=payload,
@@ -2767,7 +2772,8 @@ async def deliberate_voc(
     ensure(principal, "feat:deliberation")
     client = _agent_client(request)
     payload = {"message": body.message, "groups": principal.groups,
-               "keywords": [k.strip()[:40] for k in body.keywords if k and k.strip()]}
+               "keywords": [k.strip()[:40] for k in body.keywords if k and k.strip()],
+               "user_email": principal.email}     # 누구의 일인가(OD-52 · OD-53) — 이용 통계만 읽는다
     try:
         r = await client.post(f"{settings.agent_server_url}/deliberate/voc-preview", json=payload,
                               timeout=_unary_timeout(settings))
