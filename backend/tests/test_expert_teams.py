@@ -117,8 +117,10 @@ def test_나만은_주인만_같은_소속은_소속끼리_관리자는_전부_�
     assert not row["mine"] and not row["editable"] and not row["deletable"] and row["owner_email"] == "me@example.com"
     assert c.patch(f"{P}/{t['id']}", json={"expected_version": 2, "name": "남의 팀"}, headers=h).status_code == 403
     assert c.delete(f"{P}/{t['id']}", headers=h).status_code == 403
-    _login(c, "out@example.com")
+    h = _login(c, "out@example.com")
     assert t["id"] not in _ids(c), "다른(없는) 소속은 같은 소속 공유를 못 본다"
+    assert c.get(f"{P}/{t['id']}/resolve").json()["team"] is None, "목록만이 아니라 사본 · 고치기도 같은 시야"
+    assert c.patch(f"{P}/{t['id']}", json={"expected_version": 2, "name": "x"}, headers=h).status_code == 404
     _login(c, "boss@example.com")
     row = next(x for x in c.get(P).json()["teams"] if x["id"] == t["id"])
     assert row["editable"] and row["deletable"] and not row["mine"], "관리자는 다 보고 고친다"
