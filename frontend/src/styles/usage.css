@@ -64,6 +64,10 @@
   border-radius: var(--r-lg);
   background: var(--surface-1);
 }
+/* 칸이 많은 표를 담는 카드 — 격자의 한 줄을 다 쓴다(반 폭에서는 머리글 · 수가 글자마다 꺾인다) */
+.uc-card.is-wide {
+  grid-column: 1 / -1;
+}
 .uc-card > h2 {
   margin: 0 0 var(--sp-2);
   font-size: var(--fs-18);

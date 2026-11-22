@@ -82,6 +82,21 @@ def _uid() -> str:
     return uuid.uuid4().hex
 
 
+class BatchTaken(Exception):
+    """이 배치에서 이미 펼친 대상이 있다(W-113) — `values` 는 겹친 대상들(요청에 온 차례)이다. 아무것도 만들지 않았다."""
+
+    def __init__(self, values: list) -> None:
+        super().__init__(f"이미 펼친 대상: {values}")
+        self.values = values
+
+
+def batch_key(mode: str, value) -> str:
+    """펼친 실행 하나의 열쇠 — (모드, 대상). 같은 배치에서 같은 열쇠는 한 번만 생긴다(`ux_runs_batch_key`).
+    대상은 JSON 값이라(글 · 수 · 객체) 키 차례를 맞춘 글의 지문으로 적는다."""
+    blob = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return f"{mode}:{hashlib.sha256(blob.encode('utf-8')).hexdigest()[:32]}"
+
+
 class ProceduresStore:
     def __init__(self, settings: Settings) -> None:
         raw = getattr(settings, "procedures_store_path", None) or "data/procedures.sqlite"
@@ -98,7 +113,12 @@ class ProceduresStore:
     #    코드가 운영에서만 터진다. 더하는 칼럼은 여기 한 줄씩 적는다(멱등).
     _ADD_COLUMNS = (("procedures", "from_seed", "TEXT"),
                     ("runs", "batch_id", "TEXT"),
-                    ("run_gate_acks", "used_at", "INTEGER"))
+                    ("run_gate_acks", "used_at", "INTEGER"),
+                    ("runs", "batch_key", "TEXT"))
+    # 더한 칼럼에 거는 색인 — 칼럼이 붙은 **뒤에** 만든다(`_DDL` 은 이관보다 먼저 돈다).
+    # 펼친 실행은 (배치, 모드 · 대상)마다 하나다(W-113). 열쇠가 없는 행(펼치지 않은 실행 · 옛 판이 만든 배치)은 걸리지 않는다.
+    _ADD_INDEXES = ("CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_batch_key ON runs (batch_id, batch_key)"
+                    " WHERE batch_key IS NOT NULL",)
 
     @classmethod
     def _migrate(cls, c: sqlite3.Connection) -> None:
@@ -106,6 +126,8 @@ class ProceduresStore:
             have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
             if col not in have:
                 c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        for stmt in cls._ADD_INDEXES:
+            c.execute(stmt)
 
     # ── 연결 ──────────────────────────────────────────────────────────────
     def _conn(self) -> sqlite3.Connection:
@@ -227,15 +249,30 @@ class ProceduresStore:
             (v["procedure_id"], sub)).fetchone()
         return v if row else None
 
-    def list_procedures(self, *, owner_sub: str, limit: int = 100) -> list[dict]:
+    def list_procedures(self, *, owner_sub: str, limit: int = 100, q: str | None = None) -> list[dict]:
         """`visibility='all'` 이면 남의 것도 보인다 — 절차는 공유 자산이다(PLAN §1).
 
-        실행은 따라가지 않는다. 실행 결과에는 그 사람 시야의 데이터가 담긴다.
+        실행은 따라가지 않는다. 실행 결과에는 그 사람 시야의 데이터가 담긴다. `q` 를 주면 제목에 그 글이 든 것만(글자 그대로 —
+        `%` · `_` 는 무늬가 아니다) — 상한보다 **먼저** 거른다(뒤에 거르면 상한 밖의 절차는 제목을 정확히 대도 안 보인다).
         """
+        where, args = self._visible(owner_sub, q)
         rows = self._conn().execute(
-            "SELECT * FROM procedures WHERE visibility='all' OR owner_sub=?"
-            " ORDER BY updated_at DESC LIMIT ?", (owner_sub, limit)).fetchall()
+            f"SELECT * FROM procedures WHERE {where} ORDER BY updated_at DESC LIMIT ?", (*args, limit)).fetchall()
         return [dict(r) for r in rows]
+
+    def count_procedures(self, *, owner_sub: str, q: str | None = None) -> int:
+        """그 사람이 볼 수 있는 절차의 수(같은 시야 · 같은 거름) — 목록이 상한에서 끊겼는지를 말하는 데 쓴다."""
+        where, args = self._visible(owner_sub, q)
+        return int(self._conn().execute(f"SELECT COUNT(*) FROM procedures WHERE {where}", args).fetchone()[0])
+
+    @staticmethod
+    def _visible(owner_sub: str, q: str | None) -> tuple[str, tuple]:
+        where, args = "(visibility='all' OR owner_sub=?)", [owner_sub]
+        if q:
+            esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            where += " AND title LIKE ? ESCAPE '\\'"
+            args.append(f"%{esc}%")
+        return where, tuple(args)
 
     # ── 실행 ────────────────────────────────────────────────────────────────
     def create_run(self, *, owner_sub: str, run_by: str | None = None,
@@ -255,6 +292,35 @@ class ProceduresStore:
                  trigger_kind, trigger_ref, batch_id),
             )
         return run_id
+
+    def create_batch_runs(self, *, owner_sub: str, procedure_version_id: str, batch_id: str, mode: str,
+                          items: list[tuple], run_by: str | None = None) -> list[str]:
+        """펼치기 — 대상마다 실행 하나를 **한 트랜잭션**으로 만든다. `items` 는 (대상, 입력, 제목)들이다.
+
+        같은 배치에서 같은 (모드, 대상)이 이미 있으면 `BatchTaken` 이고 아무것도 만들지 않는다 — 확인과 쓰기가 한 문장이다(유일 색인
+        `ux_runs_batch_key` 가 넣기를 거절한다, W-113). 따로 읽고 넣으면 같은 요청 둘이 둘 다 '없다' 로 읽고 실행을 두 벌 만든다
+        (승인 · 재개 · 고르기를 `only_from` 으로 잡은 것과 같은 꼴 — W-110).
+        """
+        ids, now = [], _now()
+        c = self._conn()
+        try:
+            with c:
+                for value, inputs, title in items:
+                    run_id = _uid()
+                    c.execute(
+                        "INSERT INTO runs (id, owner_sub, run_by, procedure_version_id, title, inputs_json, origin, mode,"
+                        " state, started_at, batch_id, batch_key) VALUES (?,?,?,?,?,?,'batch',?,'queued',?,?,?)",
+                        (run_id, owner_sub, run_by or owner_sub, procedure_version_id, title,
+                         json.dumps(inputs or {}, ensure_ascii=False), mode, now, batch_id, batch_key(mode, value)))
+                    ids.append(run_id)
+        except sqlite3.IntegrityError:
+            keys = {r["batch_key"] for r in c.execute(
+                "SELECT batch_key FROM runs WHERE batch_id=? AND batch_key IS NOT NULL", (batch_id,))}
+            taken = [v for v, _i, _t in items if batch_key(mode, v) in keys]
+            if not taken:
+                raise          # 다른 제약이다 — 이미 펼친 대상으로 읽지 않는다
+            raise BatchTaken(taken) from None
+        return ids
 
     def merge_inputs(self, run_id: str, extra: dict) -> None:
         """빈 실행에서 한 단계씩 돌 때, 뽑은 값을 다음 단계가 쓸 수 있게 합친다."""

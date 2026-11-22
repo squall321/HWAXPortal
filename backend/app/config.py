@@ -375,6 +375,11 @@ class Settings(BaseSettings):
     # 관리자 이용 통계(/admin/usage, docs/ops-dashboard M1)가 모든 칸에서 뺄 계정 — 시험 · 서비스 계정을 쉼표로(대소문자 무시). 비면(기본) 아무도
     # 빼지 않는다. 이메일과 주체(subject)로 견준다 — 이 포털은 로컬 · SSO 모두 주체가 이메일이다. 화면이 뺀 계정을 그대로 보인다.
     usage_exclude_accounts: str = ""
+    # 이용 통계의 날마다 접기(docs/ops-dashboard M2 — app/usage_fold.py) — 포털 백그라운드 작업이 이 간격(초)마다 포털 원장 · 정문 로그 · 게이트웨이 ·
+    # 에이전트 서버의 공유 비밀 창구(POST /usage-rollup)를 KST 날로 접어 감사 원장 파일 안의 표(usage_daily · usage_actor_daily)에 둔다. 오늘은 돌 때마다,
+    # 끝난 날은 사흘 동안 날마다 한 번 다시 접고 닫는다. 0 은 끔(접어 둔 표는 그대로 읽히고 새 날이 채워지지 않는다). 비밀은 gateway_shared_token 이다 —
+    # 비면 그 두 원천만 못 접고 까닭이 화면에 뜬다. 접기가 실패해도 포털 기동 · 요청은 그대로다.
+    usage_fold_s: int = 3600
     # 대화 의미검색용 임베더. AIDataHub 가 이미 같은 모델을 /api/embed 로 서비스한다 —
     # 두 벌을 두면 임베딩 공간이 갈라져 코사인이 의미를 잃는다. 그래서 새로 안 띄우고 빌린다.
     embed_base_url: str = "http://127.0.0.1:8001"

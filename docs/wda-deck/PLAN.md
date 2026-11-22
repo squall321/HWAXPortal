@@ -8,6 +8,9 @@
 > 11-01 밤 적대 검토 두 차례(High 없음)의 고침 스물다섯을 이 가지에 더했다 — 결정은 context-notes WD-D44 ~ D68, 목록은 체크리스트.
 > 이어 2차 적대 검토의 고침 열둘(사용자 결정 둘 — 중계의 있던 결함은 고치고, 쿠키 위험은 §8 에 기록만)을 더했다 — WD-D69 ~ D80. WDA 는 W-1 ~ W-15 · W-22 와 `delib-16x9` active 를 로컬 판으로 지었다(push 전 — 요청서 §10 의 6, 보존은 끈 채로 둔다).
 > 줄 번호는 2026-11-01 판 기준이다 — 포털 `7aef6141` · WDA `9dabf86` · 게이트웨이 `63fbc4f` · HEAXHub `7b9a8ed` · 에이전트 서버 `63ad54b`.
+> **11-21 M2 를 지었다**(가지 `wt1121/deck` — 올리지 않음, 사용자 결정 L21-10 ④) — 분석 루틴 RA 초안 자리 · 다시 시도 · 지우기 · PDF 미리보기(포털),
+> 주인 있는 실행의 서비스 자격 건너뛰기 · 지우기 W-17 · MCP 쪽 주인 W-18(WDA), 게이트웨이는 설정 예시만. §12 의 M2 줄 · 결정 WD-D89 ~ D95.
+> 남은 것 — RA 그림 함께 보내기(W-16) · 박스에서 켜기(사람) · 실물 심의 보고서를 WDA 가 받지 못하는 것(WD-D94 ①).
 
 ## 1. 무엇을 · 왜
 
@@ -160,6 +163,9 @@ WDA(WebDesignAgents) 세션이 포털에 '발표자료' 행선지를 청했다 �
 
 포털 쪽 라우트(`/agent/deck/…`) — `GET status` · `POST jobs` · `GET jobs` · `GET jobs/{job}` · `POST jobs/{job}/advance` · `GET jobs/{job}/files/{kind}` ·
 `POST jobs/{job}/dismiss`. 모두 `principal_pat_or_session`(POST 는 CSRF) · 잡은 주인만(아니면 404).
+M2(11-21) — `POST jobs/{job}/retry`(실패한 잡의 WDA 실행을 다시 돌린다 — WDA `POST /api/runs/{id}/resume` 또는 렌더 다시, 새 포털 잡) ·
+`DELETE jobs/{job}`(WDA `DELETE /api/runs/{id}` — W-17) · `GET jobs/{job}/preview`(PDF 를 inline 으로 — 머리 `Content-Security-Policy: sandbox;
+frame-ancestors 'self'`). 같은 규칙이다 — 주인만 · 쓰기 둘은 세션(CSRF)이나 write 범위 PAT · 스위치가 꺼지면 없는 창구.
 
 ## 5. 화면 자리
 
@@ -287,10 +293,11 @@ job_id 는 포털이 짓는 32자 16진 무작위다. 칸 — `owner_sub` · `ow
 ## 10. 범위 밖(이번에 하지 않는 것)
 
 - 영상 기본 — 고를 수는 있다(오래 걸린다고 적는다). 내레이션은 끈다.
-- HTML 끼워 보기 · PDF 미리보기 — 내려받기만(WD-D14).
+- HTML 끼워 보기 · PDF 미리보기 — 내려받기만(WD-D14). → PDF 미리보기는 11-21 M2 에서 지었다(WD-D91). HTML 은 여전히 끼우지 않는다.
 - 리스크 심사 · 결정 매트릭스 같은 새 장르 · 장면 꼴(`short-9x16` 등) 고르기 — WDA 의 기본 꼴(wide-16x9) 그대로.
 - RA 보고서의 그림 싣기 — M2(포털이 그 사람 명의로 RA 파일을 받아 함께 넘기는 WDA 계약이 먼저다). M1 은 그림 수를 알림에 말한다.
-- 분석 루틴 RA 초안 자리 · 다시 시도(WDA resume) · WDA 쪽 지우기 · MCP 로 내 발표자료 보기(per_user_sso) — M2.
+- 분석 루틴 RA 초안 자리 · 다시 시도(WDA resume) · WDA 쪽 지우기 · MCP 로 내 발표자료 보기(per_user_sso) — M2. → 11-21 지었다(§12 · WD-D89 ~ D93).
+  MCP 로 내 발표자료 보기는 WDA 쪽과 게이트웨이 설정 예시까지다 — 박스에서 켜는 것은 사람이다(기본 꺼짐).
 - 챗 LLM 이 WDA 도구로 발표자료를 만드는 길(운영자 페르소나) — 막지 않되 단추로 안내하도록 페르소나 글만 고친다(WD-D20).
 
 ## 11. 시험
@@ -328,6 +335,7 @@ job_id 는 포털이 짓는 32자 16진 무작위다. 칸 — `owner_sub` · `ow
 | **M0 전제** | §13 결정 · WDA push(방법은 사용자 결정) → 허브 SIF 재빌드(dev) · WDA 요청 W-1 ~ W-12 · 능력 `owner` 확인 · (결정되면) 매니페스트 `portal_auth` | 사람 · WDA 세션 · HEAXHub 세션 |
 | **M1 포털(dev)** | 모듈 `wda_deck.py` · 라우트 · 설정 · 단추 셋 · 서버 사본 보존(delib_outcome · ra_report) · 입력창 위 줄 · 시험 · 에이전트 서버 `ra_report` 칸 · 페르소나 글 · 변경 이력 | 포털 세션(+ 에이전트 서버 한 칸) |
 | **M2** | 루틴 RA 초안 자리 · RA 그림 함께 보내기 · 다시 시도(resume) · WDA 지우기 · PDF 미리보기(sandbox) · MCP 쪽 주인(per_user_sso) | 포털 · WDA |
+| ↳ 11-21 | 지음(가지 `wt1121/deck` — 올리지 않음) — 루틴 자리 · 다시 시도 · 지우기 · 미리보기 · MCP 쪽 주인의 WDA 쪽과 게이트웨이 설정 예시. **남음** — RA 그림 함께 보내기(W-16 의 꼴이 먼저) · MCP 쪽 주인 켜기(사람) · 실물 심의 보고서 ingest(WD-D94 ①) | 포털 · WDA 세션 · 사람 |
 | **M3 cae00** | 박스 스위치 · WDA SIF · 허브 계정 · 확인(server-setup 은 M1 끝에 쓴다) | 사람 |
 
 M1 은 스위치를 꺼 둔 채 올린다 — M0 이 끝나지 않은 박스에서는 아무 일도 일어나지 않는다.

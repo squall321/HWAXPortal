@@ -57,6 +57,9 @@ from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
 from app.insights import cards as _insight_cards
 from app.insights import intake as _insight_intake
+from app.insights import lineage as _insight_lineage
+from app.insights import reuse as _insight_reuse
+from app.procedures import handoff as _procedure_handoff
 from app.agent import panel as _panel
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
@@ -308,6 +311,10 @@ class DelibOpts(BaseModel):
     # 심의 주제(docs/project-insight-graph M1) — 심의 시작의 주제 고르기 · 이어하기가 싣는다. 에이전트 서버가 엔진 앞에서 다시 풀고 확인한 주제를
     # delib 사건(kind=subject)으로 내면 중계가 그것만 답 meta.subject 로 남긴다(브라우저가 보낸 값은 남기지 않는다). 엔진에는 가지 않는다.
     subject: DelibSubject | None = None
+    # 절차 실행 → 심의 다리(docs/procedures W-114) — 실행 상세의 '심의로 넘기기' 가 실행 id 만 싣는다. 근거는 중계가 그 사람의 실행 원장에서 지어
+    # evidence 앞에 싣고(_attach_procedure_run — 40건 · 결과 150,000자 · 인자 1,200자) 이 칸은 비운다. 엔진에는 가지 않는다. 리스크 심사 계열
+    # 의장과 함께 오면 422 다(사용자 결정 11-22 — 리스크 심사의 입구는 리스크 앱 하나다).
+    procedure_run: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{32}$")] | None = None
 
     @field_validator("as_of")
     @classmethod
@@ -901,6 +908,58 @@ def _parse_sse_frame(frame: str) -> tuple[str, dict] | None:
         return None
 
 
+# ── 끝난 턴의 종류 · 답한 모델(docs/ops-dashboard M3 가) ──────────────────────────────────────────────────────────────────────────
+# 이용 통계가 챗 턴을 챗 · 띵킹 · 심의 · 루틴으로 가르고 답한 모델을 세게, 중계가 넘기는 바이트에서 사건 이름(think · delib)과 끝의 meta 프레임
+# (models — 에이전트 서버가 턴 끝에 낸다)만 읽어 chat_done 감사 줄에 싣는다. 본문은 건드리지 않고(바이트 그대로 넘긴다) 글 · 질의는 싣지 않는다.
+_TURN_MODELS_MAX = 8
+_TURN_MODEL_OK = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}")
+
+
+class _TurnProbe:
+    """중계 바이트의 프레임 머리만 본다. 읽다 실패해도 예외를 내지 않는다 — 통계 칸 때문에 답을 끊지 않는다."""
+    MAX_BUF = 4 * 1024 * 1024       # 끝 표지 없이 이보다 길어진 프레임은 버린다(다음 끝 표지까지 건너뛴다) — 중계가 본문을 쌓아 두지 않게
+
+    def __init__(self) -> None:
+        self.buf = b""
+        self.skip = False
+        self.seen: set[str] = set()
+        self.models: list[str] = []
+
+    def feed(self, chunk: bytes) -> None:
+        try:
+            self.buf += chunk
+            while True:
+                i = self.buf.find(b"\n\n")
+                if i < 0:
+                    if len(self.buf) > self.MAX_BUF:
+                        self.buf, self.skip = self.buf[-1:], True      # 끝 글자 하나는 둔다 — 끝 표지가 두 청크에 걸칠 수 있다
+                    return
+                frame, self.buf = self.buf[:i], self.buf[i + 2:]
+                if self.skip:
+                    self.skip = False
+                    continue
+                self._frame(frame)
+        except Exception:  # noqa: BLE001
+            self.buf, self.skip = b"", False
+
+    def _frame(self, frame: bytes) -> None:
+        head, _, rest = frame.partition(b"\n")
+        if not head.startswith(b"event:"):
+            return
+        evt = head[6:].strip()
+        if evt in (b"think", b"delib"):
+            self.seen.add(evt.decode())
+        elif evt == b"meta" and rest.startswith(b"data:"):
+            models = json.loads(rest[5:].decode("utf-8", "replace")).get("models")
+            if isinstance(models, dict):
+                self.models = sorted(m for m in models if isinstance(m, str) and _TURN_MODEL_OK.fullmatch(m))[:_TURN_MODELS_MAX]
+
+    def meta(self, routine: bool) -> dict:
+        """chat_done 감사 줄의 meta — kind(루틴 턴이면 routine, 심의 사건이 흘렀으면 delib, 띵킹 사건이면 think, 아니면 chat)와 models."""
+        kind = "routine" if routine else "delib" if "delib" in self.seen else "think" if "think" in self.seen else "chat"
+        return {"kind": kind, **({"models": self.models} if self.models else {})}
+
+
 def _audit(request: Request) -> AuditLog:
     return request.app.state.agent_audit
 
@@ -969,6 +1028,39 @@ async def _engine_takes_as_of(client: httpx.AsyncClient, settings: Settings) -> 
         return None
 
 
+async def _attach_procedure_run(request: Request, body: "ChatRequest", principal: Principal) -> None:
+    """절차 실행 → 심의 다리(docs/procedures W-114). 실행의 단계 기록을 `[{source, tool, args, result}]` 로 바꿔 사전 근거 앞에 싣는다.
+
+    브라우저는 실행 id 만 보낸다 — 근거를 브라우저가 지어 보내면 원장에서 가려진 값(확인 토큰)이 풀리거나 실패 · 실행 여부 모름 표지가
+    빠져도 서버가 모른다. 그래서 여기서 그 사람의 원장(주인만)을 읽어 짓는다. **일반 심의로만 넘긴다** — 유형은 사람이 고르되 리스크 심사 계열은
+    거절한다(리스크 심사의 입구는 리스크 앱 하나다 — 10-31 A17 · D-18, 사용자 결정 11-22). 화면이 그 유형을 안 보여도 요청은 직접 올 수 있다.
+    거절은 에이전트 서버를 부르기 전이고 대화에 아무것도 남기지 않는다.
+    """
+    do = body.delib_opts
+    ensure(principal, "feat:procedures")
+    # 리스크 심사가 낳은 심의 — 의장 틀 risk-review* 와 리스크 앱이 띄운 패널(started_by=app). 에이전트 서버의 risk_family 와 같은 판정이다
+    # (app/insights/cards.py) — 의장만 보면 다른 의장의 앱 패널(쟁점 패널)로 실행 기록이 들어간다.
+    if _insight_cards.risk_family(do.chair_template, do.started_by):
+        raise AuthError("절차 실행은 리스크 심사로 넘기지 않습니다 — 리스크 심사의 입구는 리스크 앱(/risk) 하나입니다. 다른 심의 유형을 고르세요",
+                        status_code=422)
+    if not _is_delib_message(body.message):
+        raise AuthError("절차 실행의 단계 기록은 심의를 여는 발화에만 싣습니다(/심의 …) — 일반 챗 턴은 이 근거를 읽지 않습니다", status_code=422)
+    store = getattr(request.app.state, "procedures_store", None)
+    if store is None:
+        raise AuthError("절차 저장소가 열리지 않았습니다", status_code=503)
+    run = await asyncio.to_thread(store.get_run, do.procedure_run, owner_sub=principal.subject)
+    if run is None:
+        raise AuthError("실행을 찾을 수 없습니다", status_code=404)     # 없는 것과 남의 것은 같은 404 다
+    got = await asyncio.to_thread(_procedure_handoff.evidence_or_refuse, store, run)
+    merged = got["evidence"] + list(do.evidence or [])
+    cap = DelibOpts.model_fields["evidence"].metadata[0].max_length
+    if len(merged) > cap:
+        raise AuthError(f"근거가 {len(merged)}건이라 상한({cap}건)을 넘습니다 — 함께 실은 근거를 줄여 보내세요"
+                        f"(절차 실행의 단계 기록이 {len(got['evidence'])}건입니다)", status_code=422)
+    do.evidence = merged
+    do.procedure_run = None
+
+
 def _relay_ui_host(request: Request, body: "ChatRequest", principal: Principal, settings: Settings) -> bool:
     """에이전트 서버에 패널 표지(ui_host)를 실을까(HA-20) — 박스 손잡이 MCP_APPS_HOST 가 켜져 있고, feat:panels 가 있고, 화면이 정확한 글자를 보냈고,
     세션 쿠키 요청일 때만. PAT(스크립트 · 개인 Claude)로 온 챗은 패널을 그릴 화면이 없다 — 싣지 않는다(패널 창구도 세션만 받는다)."""
@@ -979,7 +1071,7 @@ def _relay_ui_host(request: Request, body: "ChatRequest", principal: Principal, 
 async def _relay_stream(
     body: "ChatRequest", principal: Principal, audit: AuditLog,
     settings: Settings, client: httpx.AsyncClient, user_pat: str | None = None, affiliation: str = "",
-    ui_host: bool = False,
+    ui_host: bool = False, insights: dict | None = None,
 ) -> AsyncIterator[bytes]:
     """Relay the remote Agent Server's SSE stream byte-for-byte to the browser.
 
@@ -1062,6 +1154,38 @@ async def _relay_stream(
                                                  "에이전트 서버를 이 판으로 다시 띄운 뒤 보내거나, 심의 옵션의 기준일을 비우고 보낸다."})
             yield sse_event("done", {})
             return
+    # 과제 인사이트 다시 쓰기(docs/project-insight-graph PLAN §7.1 · M3) — 과제를 단 일반 심의의 시작에 같은 (과제, 차수)의 앞선 인사이트를 근거 항목으로
+    # 깐다(app.insights.reuse). 주제가 없거나 · 확인되지 않았거나 · 볼 수 있는 카드가 없으면 payload 는 위에서 지은 그대로다(바이트까지). 실패 · 기한 넘김도
+    # 깔지 않고 심의를 연다 — 깔기가 심의를 막지 않는다. 리스크 심사 계열은 대상이 아니다(D-18 — subject_key 가 가른다, 엔진도 한 번 더 뺀다).
+    _ins_key = (_insight_reuse.subject_key(insights["viewer"], user_pat, payload["delib_opts"])
+                if insights is not None and delib and "delib_opts" in payload else "")
+    if _ins_key:
+        _laid = None
+        try:
+            _tasks = _insight_cards.visible_tasks(
+                await asyncio.to_thread(insights["store"].task_scopes, viewer=insights["viewer"].email), insights["viewer"])
+        except Exception:  # noqa: BLE001
+            logger.warning("과제 인사이트 — 깔 후보를 읽지 못했다(깔지 않고 심의를 연다)", exc_info=True)
+            _tasks = set()
+        if _tasks:
+            yield sse_event("status", {"step": f"과제 「{_ins_key[:80]}」 의 앞선 인사이트를 찾는 중", "tool": None})
+            try:
+                # 상한을 넘기면 취소만 걸고 뒤처리(게이트웨이 세션 닫기)는 기다리지 않는다 — 기다리면 상한이 호출 기한만큼 늘어난다(lineage.bounded)
+                _laid = await _insight_lineage.bounded(_insight_reuse.lay(
+                    store=insights["store"], settings=settings, principal=principal, viewer=insights["viewer"], pat=user_pat,
+                    opts=payload["delib_opts"], tasks=_tasks, ra_kind=insights["ra_kind"],
+                    conversation_id=body.conversation_id), _insight_reuse.LAY_TIMEOUT_S)
+            except Exception as exc:  # noqa: BLE001 — 기한 넘김(TimeoutError) 포함
+                logger.warning("과제 인사이트 — 앞선 인사이트를 깔지 못했다(%s) — 깔지 않고 심의를 연다 sub=%s", type(exc).__name__,
+                               principal.subject, exc_info=not isinstance(exc, TimeoutError))
+        if _laid is not None:
+            if _laid.evidence:
+                payload["delib_opts"] = {**payload["delib_opts"],
+                                         "evidence": [*(payload["delib_opts"].get("evidence") or []), *_laid.evidence]}
+            # 무엇을 어느 심의에 깔았는지 남긴다 — 깐 근거는 그 심의의 산출물로 다시 퍼지고 거둔 뒤에도 거기 남는다(PLAN §6.5)
+            audit.record(principal=principal.subject, event="insight_laid", chat_id=chat_id, status="ok",
+                         meta={"conversation_id": body.conversation_id, "sp_task": _ins_key[:200], "ids": _laid.ids, **_laid.counts})
+            yield sse_event("status", {"step": _laid.notice, "tool": None})
     if delib or routine:
         stream_kw: dict = {}
         idle, knob = client.timeout.read, "AGENT_STREAM_IDLE_TIMEOUT_S"
@@ -1069,6 +1193,7 @@ async def _relay_stream(
         _t = settings.agent_chat_idle_timeout_s
         stream_kw = {"timeout": httpx.Timeout(settings.agent_request_timeout, read=_t if _t > 0 else None)}
         idle, knob = stream_kw["timeout"].read, "AGENT_CHAT_IDLE_TIMEOUT_S"
+    probe = _TurnProbe()
     try:
         async with client.stream(
             "POST", f"{settings.agent_server_url}/chat", json=payload, **stream_kw
@@ -1087,6 +1212,7 @@ async def _relay_stream(
                 return
             async for chunk in r.aiter_raw():
                 if chunk:
+                    probe.feed(chunk)
                     yield chunk
     except httpx.ReadTimeout:
         # 침묵 한도(AGENT_STREAM_IDLE_TIMEOUT_S) — 연결은 살아 있는데 에이전트 서버가 그 시간 동안 한 바이트도 안 냈다.
@@ -1119,7 +1245,7 @@ async def _relay_stream(
                                   "message": "agent server unreachable"})
         yield sse_event("done", {})
         return
-    audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok")
+    audit.record(principal=principal.subject, event="chat_done", chat_id=chat_id, status="ok", meta=probe.meta(routine))
 
 
 @router.get("/artifacts/{name}")
@@ -3042,6 +3168,30 @@ class _ReleasingStream(StreamingResponse):
                     await _close()
 
 
+def _insight_ctx(request: Request, principal: Principal, affiliation: str, settings: Settings) -> dict | None:
+    """심의 시작의 과제 인사이트 깔기(app.insights.reuse)가 쓸 것 — 원장 · 읽는 사람(메일 · 요청마다 원장으로 센 소속 · 지금 권한 그룹, 관리자
+    표지는 주지 않는다 — 범위 밖 읽기로는 깔지 않는다) · 새 보고서가 저장될 RA 작업 공간의 종류를 읽는 함수. 원장이 없으면 None(깔지 않는다)."""
+    store = getattr(request.app.state, "insight_store", None)
+    if store is None:
+        return None
+    email = (principal.email or "").strip().lower()
+
+    async def _ra_kind() -> str | None:
+        """이 사람의 새 심의 보고서가 갈 수 있는 RA 작업 공간의 종류(personal · org(부서) · tf · system · virtual) — 못 알아내면 None(깔기는 조직으로
+        친다). RA 에 그 사람 토큰으로 묻고(/api/me 의 멤버십 · 홈 부서) 셈은 reuse.ra_workspace_kind 가 한다 — 연결에 저장한 공간과 RA 가 고르는 기본
+        공간을, 위임 박스(RA_SSO_SECRET)면 둘 다 본다."""
+        from app.auth.routes.connections import _ra_profile     # 지연 import — 연결 창구는 이 모듈을 부르지 않는다
+        try:
+            token, _via, conn = await _ra_user_token(request, settings, principal)
+            me = await _ra_profile(settings, token)
+        except Exception:  # noqa: BLE001 — 연결 없음 · 위임 실패 · RA 불통 — 모른다(조직으로 친다)
+            return None
+        return _insight_reuse.ra_workspace_kind(me, str((conn or {}).get("workspace") or ""), sso=bool(settings.ra_sso_secret))
+
+    return {"store": store, "ra_kind": _ra_kind,
+            "viewer": _insight_cards.Viewer(email=email, sub=principal.subject, aff=affiliation, groups=frozenset(principal.groups))}
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
@@ -3057,6 +3207,9 @@ async def chat(
     routine_turn = body.routine is not None
     if routine_turn:
         ensure(principal, "feat:routines")
+    # 절차 실행 → 심의 다리 — 그 사람의 실행 원장에서 근거를 지어 싣는다. 거절(리스크 심사 · 남의 실행 · 도는 실행)은 퍼밋을 잡기 전이다.
+    if body.delib_opts is not None and body.delib_opts.procedure_run:
+        await _attach_procedure_run(request, body, principal)
     relay_ui = _relay_ui_host(request, body, principal, settings)    # 패널 표지를 실을까(HA-20) — 서버 사본의 포인터도 이 턴만 모은다
     sem = _sem(request)
     audit = _audit(request)
@@ -3103,9 +3256,10 @@ async def chat(
         if mode == "echo":
             source = _echo_stream(body.message, principal, audit)
         else:
+            _aff = _wiki.known_affiliation(request)
             source = _relay_stream(body, principal, audit, settings, _agent_client(request),
                                    _chat_user_pat(request.app.state.keystore, settings, principal),
-                                   _wiki.known_affiliation(request), ui_host=relay_ui)
+                                   _aff, ui_host=relay_ui, insights=_insight_ctx(request, principal, _aff, settings))
 
         # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
         # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).

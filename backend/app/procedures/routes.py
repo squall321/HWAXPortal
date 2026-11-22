@@ -17,21 +17,24 @@ import asyncio
 import logging
 import os
 import re
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
 import httpx
+import jwt
 import yaml
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from app.access.policy import ADMIN_GROUP
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import BACKEND_DIR, Settings, get_settings
-from app.deps import ensure, get_current_principal, require_csrf
+from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
+from app.procedures import handoff as _handoff
 from app.procedures import judge as J
 from app.procedures.models import (
     MUST_GATE,
@@ -43,10 +46,12 @@ from app.procedures.models import (
     normalized,
     publish_token_vars,
     schema_fingerprint,
+    ungated_writes,
     validate_spec,
 )
 from app.procedures.runner import STEP_MAX as _STEP_MAX
 from app.procedures.runner import RunnerError
+from app.procedures.store import BatchTaken
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/procedures-api", tags=["procedures"])
@@ -73,6 +78,56 @@ def _runner(request: Request):
 def _me(principal: Principal = Depends(get_current_principal)) -> Principal:
     ensure(principal, FEAT)
     return principal
+
+
+def _me_any(principal: Principal = Depends(principal_pat_or_session)) -> Principal:
+    """세션 또는 PAT — 게이트웨이의 절차 도구(procedure_list · procedure_get · procedure_run_start · procedure_run_status)가 호출자 PAT 를
+    그대로 넘긴다(분석 루틴과 같은 길, W-116). 세션의 POST 는 `principal_pat_or_session` 이 CSRF 를 본다.
+
+    ⚠ 이 의존성을 다는 라우트가 곧 **도구로 닿는 길**이다. 승인 · 고르기 · 재개 · 펼치기 · 단계 붙이기 · 저장 · 넘기기에는 달지 않는다 —
+    사람 확인을 도구로 넘길 수 있게 된다. 열린 길의 전수는 시험이 고정한다(`test_PAT_로_열리는_길은_다섯뿐이다`)."""
+    ensure(principal, FEAT)
+    return principal
+
+
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    return auth[7:].strip() if auth[:7].lower() == "bearer " else ""
+
+
+def _me_start(request: Request, principal: Principal = Depends(_me_any)) -> Principal:
+    """실행 시작 — `_me_any` 에 더해 읽기 전용 PAT 와 용도가 박힌 PAT 는 받지 않는다. 서명 · 청중 · 만료 · 폐기는 앞 의존성이 같은 요청의
+    같은 머리로 이미 봤다 — 여기서는 칸만 읽는다.
+
+    용도가 박힌 PAT 는 사람이 만든 것이 아니다(`purpose` 는 코드만 넣는다 — pat.py). 절차 실행기의 PAT(purpose=procedure)로 실행을 시작하게
+    두면 절차의 단계가 게이트웨이의 실행 시작 도구를 불러(단계의 별칭 `<백엔드>_<도구>` 가 그 이름이 되게 적으면 닿는다) 절차가 절차를 끝없이
+    시작한다. 게이트웨이도 같은 호출을 거절한다 — 여기는 포털로 바로 오는 길을 막는다."""
+    tok = _bearer(request)
+    if tok:
+        from app.procedures.routine_routes import _read_only_pat   # 늦게 — 그 모듈이 이 모듈을 import 한다
+
+        if _read_only_pat(tok):
+            raise AuthError("읽기 전용 토큰은 절차를 실행하지 못한다(실행 원장에 쓴다)", status_code=403)
+        if jwt.decode(tok, options={"verify_signature": False}).get("purpose"):
+            raise AuthError("절차 실행기 · 패널 같은 용도 토큰으로는 절차 실행을 시작하지 못한다 — 사람의 토큰으로만 시작한다",
+                            status_code=403)
+    return principal
+
+
+def _human_gates(spec: dict) -> list:
+    """이 절차가 **실제로** 사람을 기다리는 단계의 도구들 — 선언(`gate: human`)과 되돌리기 어려운 도구(MUST_GATE). 실행기 `_gate_of` 와 같은
+    판정이다. 선언만 보면 MUST_GATE 가 나중에 늘었을 때 옛 판본의 계약이 '안 멈춘다' 고 말하는데 실행은 멈춘다."""
+    return [st.get("tool") for st in (spec.get("steps") or [])
+            if st.get("gate") == "human" or st.get("tool") in MUST_GATE]
+
+
+def _ungated(spec: dict) -> list:
+    """사람 확인 없이 도는 쓰기 · 잡 단계의 도구들 — 저장 검증의 경고와 같은 판정이다(`models.ungated_write`). 꼴이 깨진 옛 판본은 모른다 —
+    빈 목록으로 읽지 않고 그렇다고 적는다(live 를 여는 판정은 `start_run` 이 판본을 다시 읽어 한다)."""
+    try:
+        return ungated_writes(ProcedureSpec.model_validate(spec))
+    except ValidationError:
+        return ["(판본을 읽지 못했다)"]
 
 
 def _owned(request: Request, principal: Principal, run_id: str) -> dict:
@@ -404,6 +459,34 @@ def list_procedures(request: Request, principal: Principal = Depends(_me)) -> di
     return {"procedures": _store(request).list_procedures(owner_sub=principal.subject)}
 
 
+# 목록 한 번에 싣는 절차 수 — 넘치면 말한다(total · truncated). 제목 거름(q)은 저장소가 이 상한보다 먼저 건다.
+CATALOG_MAX = 100
+
+
+@router.get("/catalog")
+def catalog(request: Request, q: str = Query("", max_length=200), principal: Principal = Depends(_me_any)) -> dict:
+    """내가 볼 수 있는 절차를 **도구 계약의 머리**로 — 게이트웨이 `procedure_list` 가 읽는다(W-116). 시야는 화면의 절차 목록과 같다
+    (내 것 + 공개한 것 — `list_procedures`). 남의 절차는 `mine: false` 로만 말하고 주인의 주소는 싣지 않는다. 입력 스키마 전부는
+    `/procedures/{id}/tool` 이 낸다. 최근에 고친 것부터 `CATALOG_MAX` 건까지이고 넘쳤으면 `truncated` 다 — `q`(제목에 든 글)로 좁힌다."""
+    store = _store(request)
+    want = q.strip() or None
+    total = store.count_procedures(owner_sub=principal.subject, q=want)
+    rows = []
+    for p in store.list_procedures(owner_sub=principal.subject, limit=CATALOG_MAX, q=want):
+        v = store.latest_version_of(p["id"])
+        if v is None:
+            continue
+        spec = v["spec"]
+        rows.append({
+            "procedure_id": p["id"], "title": p["title"], "version_no": v["version_no"],
+            "mine": p["owner_sub"] == principal.subject, "updated_at": p["updated_at"],
+            "vars": [{"key": x.get("key"), "label": x.get("label") or x.get("key"), "type": x.get("type") or "string",
+                      "required": x.get("required", True) is not False} for x in (spec.get("vars") or [])],
+            "steps": len(spec.get("steps") or []), "human_gates": _human_gates(spec),
+            "ungated_writes": _ungated(spec)})
+    return {"count": len(rows), "total": total, "truncated": total > len(rows), "procedures": rows}
+
+
 @router.post("/procedures", status_code=201, dependencies=[Depends(require_csrf)])
 async def create_procedure(request: Request, body: ProcedureIn,
                   principal: Principal = Depends(_me)) -> dict:
@@ -443,6 +526,9 @@ async def add_version(request: Request, procedure_id: str, body: ProcedureIn,
 class RunIn(BaseModel):
     procedure_id: str | None = None
     version_id: str | None = None
+    # 계약을 본 판 — 주면 지금 돌릴 판과 같을 때만 시작한다(게이트웨이 procedure_get → procedure_run_start 사이에 주인이 새 판을 올렸으면
+    # 본 계약(입력 · 사람 확인 자리 · 확인 없이 도는 쓰기)과 도는 것이 다르다). 비우면 종전대로 최신 판이다.
+    version_no: int | None = Field(default=None, ge=1)
     vars: dict = Field(default_factory=dict)
     mode: str = Field(default="plan", pattern="^(plan|live)$")
     title: str | None = None
@@ -520,12 +606,18 @@ def _conn_precheck(request: Request, spec: ProcedureSpec, principal: Principal) 
     return out
 
 
-@router.post("/runs", status_code=202, dependencies=[Depends(require_csrf)])
+@router.post("/runs", status_code=202)
 async def start_run(request: Request, body: RunIn,
-                    principal: Principal = Depends(_me),
+                    principal: Principal = Depends(_me_start),
                     settings: Settings = Depends(get_settings)) -> dict:
-    """`procedure_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다."""
+    """`procedure_id` 가 없으면 **빈 실행** — 도구를 한 단계씩 돌리는 절차다.
+
+    세션(+ CSRF — `principal_pat_or_session` 이 본다) 또는 그 사람의 PAT(게이트웨이 `procedure_run_start`, W-116). PAT 로는 저장된 절차만
+    시작한다. 기본은 계획 모드이고, live 로 시작해도 사람 확인 단계(gate: human · MUST_GATE)에서 멈춘다 — 승인은 화면만 받는다."""
     store, runner = _store(request), _runner(request)
+    if _bearer(request) and not (body.version_id or body.procedure_id):
+        # 빈 실행은 화면에서 한 단계씩 붙이는 자리다 — 단계 붙이기는 PAT 를 받지 않아 도구로 만든 빈 실행은 아무도 못 쓴다
+        raise AuthError("procedure_id 를 준다 — 토큰으로는 저장된 절차만 시작한다(빈 실행은 화면에서 만든다)", status_code=422)
     version = None
     if body.version_id or body.procedure_id:
         version = store.readable_version(
@@ -538,6 +630,19 @@ async def start_run(request: Request, body: RunIn,
     # 여기서 안 풀면 적층 정의가 문자열인 채 도구로 가고, 필수 변수가 비면 그 변수를 쓰는
     # 단계에 가서야 터진다 — 그때는 앞 단계가 이미 게이트웨이를 부르고 난 뒤다.
     spec = ProcedureSpec.model_validate(version["spec"]) if version else None
+    if version is not None and body.version_no is not None and body.version_no != version["version_no"]:
+        raise AuthError(f"판이 바뀌었습니다 — 계약을 본 판은 {body.version_no}, 지금 판은 {version['version_no']} 입니다. 계약을 다시 본 뒤 "
+                        "시작하세요", status_code=409)
+    loose = ungated_writes(spec) if spec is not None else []
+    if _bearer(request) and body.mode == "live" and loose:
+        # 승인 창구가 세션만 받는 것은 gate 가 있는 단계만 지킨다. 저장 검증이 경고로만 두는 쓰기 · 잡 부류는 gate 없이 저장돼, 토큰으로 연
+        # live 실행은 그 단계를 사람 확인 없이 끝까지 돈다(반대 검토 M4). 닫힌 쪽으로 — 그런 단계가 하나라도 있으면 토큰으로는 live 를 열지
+        # 않는다. 화면(세션)에서 사람이 '재생' 을 누르는 길은 그대로다. 실행을 만들기 전이라 원장에 남는 것이 없다.
+        names = list(dict.fromkeys(loose))
+        raise AuthError(
+            f"이 절차에는 사람 확인 없이 도는 쓰기 · 잡 단계가 {len(loose)}개 있습니다({', '.join(names[:8])}{' …' if len(names) > 8 else ''}) — "
+            "토큰으로는 live 로 시작하지 않습니다. 사람이 포털 절차 화면에서 시작하거나, plan(계획 모드)으로 무엇을 부를지만 보세요",
+            status_code=409)
     inputs = dict(body.vars)
     if spec is not None:
         try:
@@ -558,7 +663,9 @@ async def start_run(request: Request, body: RunIn,
     _spawn(runner.run(run_id=run_id, spec=spec, principal=principal), f"run {run_id}",
            store=store, run_id=run_id)
     return {"run_id": run_id, "state": "queued", "poll": f"/procedures-api/runs/{run_id}",
-            **({"warnings": notes} if notes else {})}
+            **({"warnings": notes} if notes else {}),
+            # 토큰으로 시작한 쪽(게이트웨이 도구)에는 live 로 못 여는 까닭을 같이 싣는다 — 세션 답의 꼴은 그대로다
+            **({"ungated_writes": loose} if loose and _bearer(request) else {})}
 
 
 class StepIn(BaseModel):
@@ -683,16 +790,21 @@ async def replay_run(request: Request, run_id: str, body: ReplayIn,
 
 
 @router.get("/runs/{run_id}")
-def get_run(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
+def get_run(request: Request, run_id: str, principal: Principal = Depends(_me_any)) -> dict:
     run = _owned(request, principal, run_id)
+    pat = bool(_bearer(request))
     for s in run["steps"]:
         s.pop("result_sha256", None)  # 화면은 본문을 따로 받는다
+        if pat:
+            # 게이트웨이 상태 도구가 옮기는 경고 표식 — 정본은 judge 의 아홉 칸이다(warnings 만 보면 합성 데이터 표식 mock_note 가 빠진다).
+            # 세션 보기의 꼴은 그대로다(화면은 notes 를 직접 읽는다).
+            s["warn_labels"] = J.warn_labels(s.get("notes"))
     return run
 
 
 @router.get("/runs/{run_id}/steps/{ix}/result")
 def step_result(request: Request, run_id: str, ix: int,
-                principal: Principal = Depends(_me)) -> dict:
+                principal: Principal = Depends(_me_any)) -> dict:
     _owned(request, principal, run_id)
     body = _store(request).step_result(run_id, ix)
     if body is None:
@@ -833,6 +945,9 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
     bad = [v for v in want if v not in allowed]
     if bad:
         raise AuthError(f"보여 준 후보 밖입니다: {bad[:3]}", status_code=422)
+    # 요청 값이 아니라 **맞은 후보의 값**으로 돈다 — 7 과 7.0 은 같은 후보에 맞지만(파이썬은 같다고 본다) 글로 적으면 달라, 요청 값으로 열쇠를
+    # 지으면 같은 대상에 실행이 둘 생긴다(W-113 의 열쇠). 실행의 입력도 후보의 값이다.
+    want = [allowed[allowed.index(v)] for v in want]
 
     version = store.get_version(run["procedure_version_id"])
     if version is None:
@@ -851,13 +966,21 @@ async def fan_out(request: Request, run_id: str, ix: int, body: FanOutIn,
     base = {k: v for k, v in (run.get("inputs") or {}).items() if k in declared}
 
     batch_id = f"b-{run_id}-{ix}"
-    made = []
-    for val in want:
-        new_id = store.create_run(
+    # 대상마다 실행 하나 — 원장이 (배치, 모드, 대상)을 한 문장으로 잡는다(W-113). 같은 펼치기가 두 번 오면(두 번 누름 · 다시 보냄) 둘째는
+    # 409 이고 아무것도 만들거나 띄우지 않는다 — 종전엔 같은 배치 id 로 실행이 두 벌 생겨 live 면 대상마다 바깥 호출이 두 번 나갔다.
+    # 계획으로 본 뒤 live 로 다시 펼치는 것은 모드가 달라 한 번 더 된다.
+    try:
+        ids = store.create_batch_runs(
             owner_sub=principal.subject, run_by=principal.subject,
-            procedure_version_id=run["procedure_version_id"],
-            inputs={**base, into: val}, origin="batch", mode=body.mode,
-            title=f"{run.get('title') or spec.title} — {val}", batch_id=batch_id)
+            procedure_version_id=run["procedure_version_id"], batch_id=batch_id, mode=body.mode,
+            items=[(val, {**base, into: val}, f"{run.get('title') or spec.title} — {val}") for val in want])
+    except BatchTaken as exc:
+        raise AuthError(
+            f"이미 펼친 대상입니다({body.mode}): {exc.values[:5]}{' …' if len(exc.values) > 5 else ''} — 같은 대상을 두 번 돌리지 "
+            f"않습니다. 배치 표 {batch_id} 에서 그 실행을 보고, 다시 돌리려면 그 실행의 '재개' · '이 값으로 다시 돌리기' 를 쓰세요"
+            "(안 겹치는 대상만 골라 다시 보내면 그것은 펼칩니다)", status_code=409) from None
+    made = []
+    for val, new_id in zip(want, ids):
         # 고른 값이 이미 범위에 있으니 **그 선택 단계 다음부터** 돈다.
         _spawn(runner.run(run_id=new_id, spec=spec, principal=principal, start_at=ix + 1),
                f"batch {new_id}",
@@ -995,6 +1118,47 @@ def cancel(request: Request, run_id: str, principal: Principal = Depends(_me)) -
     return {"cancelled": True}
 
 
+# ── 실행을 심의 · 챗으로 넘긴다(W-114 · W-115) ───────────────────────────────────────────────────
+# 심의로 넘기기는 실행 id 만 싣는다 — 근거는 챗 중계가 원장에서 지어 싣는다(app/agent/routes.py `_attach_procedure_run`). 아래 미리보기는
+# 화면이 넘기기 전에 '무엇이 실리나' 를 보이는 자리이고 결과 본문은 내지 않는다. 둘 다 주인만이고 세션만 받는다(도구로 닿지 않는다).
+# 챗으로 가져간 대화의 종류는 'chat' 이다 — 화면의 대화 목록은 종류로 거르므로(chat · deliberation) 다른 종류로 만들면 어느 탭에도 안 보인다
+# (docs/leftovers-1017 LO-D2 · 사용자 결정 10-31 A15 (B)). 어디서 왔는지는 답의 meta.procedure_run 이 말한다.
+CHAT_KIND = "chat"
+
+
+@router.get("/runs/{run_id}/handoff")
+def run_handoff(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
+    """심의로 넘기면 무엇이 실리나 — 근거 수 · 단계마다의 상태 · 부르지 않은 단계 · 상한. 넘길 수 없는 실행(도는 실행 · 부른 단계 없음)은
+    중계와 같은 판정으로 거절한다."""
+    run = _owned(request, principal, run_id)
+    got = _handoff.evidence_or_refuse(_store(request), run)
+    return {"run_id": run_id, "title": run.get("title"), "state": run["state"], "mode": run["mode"],
+            "evidence_count": len(got["evidence"]), "called": got["called"], "dropped": got["dropped"],
+            "items": got["brief"], "not_called": got["not_called"],
+            "limits": {"items": _handoff.EVID_ITEMS, "result_chars": _handoff.EVID_RESULT_MAX,
+                       "args_chars": _handoff.EVID_ARGS_MAX}}
+
+
+@router.post("/runs/{run_id}/chat", status_code=201, dependencies=[Depends(require_csrf)])
+def run_to_chat(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
+    """실행을 챗 대화로 가져간다 — 사람 한 줄 + 단계 요약이고, 요약의 조회 근거(meta.activity)로 다음 물음이 그 값을 읽는다. 주인만.
+
+    ⚠ `def` 다 — 대화 저장소는 동기 sqlite 라 이벤트 루프 위에서 부르지 않는다(app/agent/routes.py 의 같은 경고)."""
+    run = _owned(request, principal, run_id)
+    _handoff.refuse_unfinished(run)
+    title, msgs = _handoff.chat_messages(_store(request), run)
+    if not msgs[-1]["meta"]["activity"]:
+        raise AuthError("가져갈 기록이 없습니다 — 이 실행은 부른 단계가 없습니다(계획 모드이거나 첫 단계 전에 멈췄습니다)", status_code=422)
+    conv = getattr(request.app.state, "conv_store", None)
+    if conv is None:
+        raise AuthError("대화 저장소가 열리지 않았습니다", status_code=503)
+    try:
+        cid = conv.create_with_messages(owner_sub=principal.subject, title=title, kind=CHAT_KIND, source="web", messages=msgs)
+    except sqlite3.OperationalError as exc:
+        raise AuthError(f"대화 저장소에 쓰지 못했습니다 — {exc}. 잠시 뒤 다시 시도하세요", status_code=503) from None
+    return {"conversation_id": cid, "title": title}
+
+
 class SaveAsIn(BaseModel):
     title: str
     vars: list[dict] = Field(default_factory=list)
@@ -1057,7 +1221,7 @@ async def _draft_of(request: Request, principal: Principal,
 
 @router.get("/procedures/{procedure_id}/tool")
 def procedure_as_tool(request: Request, procedure_id: str,
-                      principal: Principal = Depends(_me)) -> dict:
+                      principal: Principal = Depends(_me_any)) -> dict:
     """이 절차를 **도구 계약**으로 낸다 — 이름·설명·입력 스키마(PLAN §9).
 
     절차는 사실상 도구다. 계약을 도구와 같은 모양으로 내면 챗·심의가 절차를 부르는 것과
@@ -1070,13 +1234,15 @@ def procedure_as_tool(request: Request, procedure_id: str,
     if v is None:
         raise AuthError("절차를 찾을 수 없습니다", status_code=404)
     spec = v["spec"]
-    gates = [st.get("tool") for st in (spec.get("steps") or []) if st.get("gate") == "human"]
+    gates = _human_gates(spec)
     return {
         "name": f"procedure_{procedure_id}",
         "title": spec.get("title") or "",
         "description": _tool_desc(spec, gates),
         "inputSchema": _d.to_input_schema(spec),
         "version_no": v.get("version_no"),
+        # 사람 확인 없이 도는 쓰기 · 잡 단계 — 하나라도 있으면 토큰(게이트웨이 도구)으로는 live 로 시작하지 못한다(`start_run`)
+        "ungated_writes": _ungated(spec),
         # ⚠ 사람 확인이 걸린 단계는 **계약에 적는다.** 도구처럼 부르는 쪽이 이것을 모르면
         # "왜 안 끝나지" 가 된다 — 멈추는 것이 정상이라는 사실이 계약의 일부다.
         "human_gates": gates,

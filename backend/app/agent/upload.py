@@ -570,12 +570,26 @@ def parse_tensile_csv(path: Path) -> dict:
             "strain_col": rows[0][si], "stress_col": rows[0][ti], "needs_manual_mapping": False}
 
 
+_TRANSPORT: _httpx.AsyncBaseTransport | None = None   # 시험 이음매 — None 이 아니면 게이트웨이로 가는 요청이 전부 이 전송을 탄다
+
+
 async def mcp_call(gateway_url: str, pat: str, tool: str, args: dict, timeout: float = 90.0) -> dict:
     """게이트웨이 MCP 도구를 사용자 PAT 로 한 번 호출한다(streamable-http: init→call).
 
     포탈은 원래 MCP 를 직접 안 부르지만, 업로드의 register(dry_run/확정)는 사용자 신원으로
     나가야 하고 감사도 사람 단위로 남아야 하므로 여기서 최소 클라이언트로 부른다.
     """
+    from app.procedures import judge as _J
+    v = await mcp_verdict(gateway_url, pat, tool, args, timeout=timeout)
+    if not v.ok:
+        raise AuthError(f"{tool}: {_J.short_error(v)}", status_code=502)
+    return v.parsed if isinstance(v.parsed, dict) else {"result": v.parsed}
+
+
+async def mcp_verdict(gateway_url: str, pat: str, tool: str, args: dict, timeout: float = 90.0):
+    """`mcp_call` 의 본체 — 같은 한 왕복을 하고 판정(`procedures.judge.Verdict`)을 그대로 돌려준다. 앱이 눕힌 오류 봉투의 낱말
+    (`parsed["error"]`)이나 게이트웨이 거절의 갈래(`kind`)를 읽어야 하는 창구가 쓴다(리스크 보고서 → RA 초안, agent/risk_report.py).
+    게이트웨이 초기화 실패 · JSON-RPC 오류는 `mcp_call` 과 같이 AuthError(502)다."""
     url = gateway_url.rstrip("/") + "/mcp"
     hdr = {"Authorization": f"Bearer {pat}", "Content-Type": "application/json",
            "Accept": "application/json, text/event-stream"}
@@ -585,7 +599,7 @@ async def mcp_call(gateway_url: str, pat: str, tool: str, args: dict, timeout: f
         lines = [ln[6:] for ln in text.splitlines() if ln.startswith("data: ")]
         return _json.loads(lines[-1]) if lines else _json.loads(text)
 
-    async with _httpx.AsyncClient(timeout=timeout) as c:
+    async with _httpx.AsyncClient(timeout=timeout, transport=_TRANSPORT) as c:
         init = await c.post(url, headers=hdr, json={
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {"protocolVersion": "2024-11-05", "capabilities": {},
@@ -622,7 +636,4 @@ async def mcp_call(gateway_url: str, pat: str, tool: str, args: dict, timeout: f
         from app.procedures import judge as _J
         res_obj = env.get("result") or {}
         text, _other = _J.join_content(res_obj.get("content") or [])
-        v = _J.judge(is_error=bool(res_obj.get("isError")), text=text)
-        if not v.ok:
-            raise AuthError(f"{tool}: {_J.short_error(v)}", status_code=502)
-        return v.parsed if isinstance(v.parsed, dict) else {"result": v.parsed}
+        return _J.judge(is_error=bool(res_obj.get("isError")), text=text)

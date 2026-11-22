@@ -3,6 +3,7 @@
 시험(tests/test_insights.py)이 형제 리포의 원본과 글자마다 견준다. 확인(SP key 다시 풀기)은 여기 없다 — 에이전트 서버 하나가 한다(PG-19)."""
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -173,6 +174,13 @@ def visible(row: dict, v: Viewer) -> tuple[bool, bool]:
     return False, False
 
 
+def visible_tasks(scopes: list[dict], v: Viewer) -> set[str]:
+    """그 사람에게 보이는 카드가 있는 과제 key 들 — store.task_scopes 의 줄을 시야 규칙(visible)으로 거른다. 관리자 표지는 보지 않는다(범위 밖
+    읽기는 과제를 모으거나 근거로 까는 데 쓰지 않는다)."""
+    plain = Viewer(email=v.email, sub=v.sub, aff=v.aff, groups=v.groups, admin=False)
+    return {str(r["sp_task"]) for r in scopes if r.get("sp_task") and visible(r, plain)[0]}
+
+
 def plat_tokens(apps: list, policy) -> list:
     """근거 앱(게이트웨이 백엔드 키) → 범위의 plat 토큰. 포털 권한표(gateway: 칸)로 풀고 plat: 키만 단다 — 표에 없는 백엔드 · 게이트웨이 자체(_gateway)는
     토큰이 없다(권한표의 '표에 없는 백엔드는 공개' 와 같다)."""
@@ -189,13 +197,120 @@ def evidence_known(row: dict) -> bool:
             and not card.get("apps_unknown") and not card.get("untracked"))
 
 
-# 앞선 인사이트를 읽는 게이트웨이 도구(insight_find · insight_get)의 머리 — 그 도구를 근거로 쓴 카드는 원래 카드들의 범위를 이어받아야 하는데(PLAN
-# §6.2 최소 범위) 어느 카드를 읽었는지 표지가 없다. 이어받는 규칙(M3)이 서기 전까지 확인은 주인만 본다(반대 검토 11-02 의 3).
+# 앞선 인사이트를 읽는 게이트웨이 도구(insight_find · insight_get)의 머리 — 그 도구를 근거로 쓴 카드는 원래 카드들의 범위를 이어받는다(PLAN §6.2
+# 최소 범위 · M3 — 아래 insight_sources · inherit_scope). 어느 카드를 읽었는지 모르면 확인해도 주인만 본다(반대 검토 11-02 의 3).
 INSIGHT_TOOL_HEAD = "insight_"
+INSIGHT_GET = "insight_get"
+CALLS_MAX = 60      # 근거 표지 수 상한 — 엔진 deliberation._INSIGHT_CALLS_MAX 와 같다(시험이 견준다). 차면 뒤 표지가 끊겼을 수 있다
+# 과제 인사이트 도구인가 — 도구 이름(낱말 경계 — insight_ 앞이 영숫자가 아니면: 맨 이름 · mcp__<서버>__<도구> · <앱>.<도구> · <앱>-<도구> · <앱>_<도구> ·
+# 괄호 · 머리의 BOM 같은 글자)과, 그 이름이 게이트웨이의 범용 실행기(invoke_tool)면 인자 글에 든 name 값으로 가린다. 영문자는 ASCII 로만 대소문자를
+# 접는다. ⚠ 같은 규칙이 세 곳에 있다 — 여기 · 엔진 deliberation._insight_evidence_tool · 워크플로 hwax-deliberate.js isInsightEvidence. 시험
+# (tests/test_insight_workflows.py)이 같은 입력에 셋이 같은 답을 내는지 맞댄다(반대 검토 11-22 M3).
+_INSIGHT_NAME_RE = re.compile(r"(?<![A-Za-z0-9])" + INSIGHT_TOOL_HEAD, re.I | re.A)
+_INVOKE_TOOL_RE = re.compile(r"(?<![A-Za-z0-9])invoke_tool(?![A-Za-z0-9])", re.I | re.A)
+_INVOKE_NAME_RE = re.compile(r"""["']name["']\s*:\s*["']([^"']*)["']""")
+# 카드 하나를 읽은 표지의 꼴 — 도구가 insight_get 으로 끝나고 인자가 카드 id 하나다. 인자는 JSON 글('{"id": "ins:…"}')과 엔진이 사전을 글로 옮긴
+# 꼴("{'id': 'ins:…'}") 둘 다 읽는다
+_INSIGHT_GET_RE = re.compile(r"(?<![A-Za-z0-9])" + INSIGHT_GET + r"\s*$", re.I | re.A)
+_INSIGHT_ID_RE = re.compile(r"""^\s*\{\s*['"]id['"]\s*:\s*(['"])(ins:(?:web|delib|wf):[^\s'"\\]{1,290})\1\s*\}\s*$""")
+INSIGHT_ID_RE = re.compile(r"ins:(?:web|delib|wf):[^\s'\"\\]{1,290}")     # 카드 id 의 꼴 — 게이트웨이 _CONV_INSIGHT_ID_RE 와 같다
+
+
+def insight_tool(name, args=None) -> bool:
+    """과제 인사이트 도구를 부른 것인가 — 이름으로, 이름이 범용 실행기(invoke_tool)면 인자 글의 name 값(어느 깊이든 — 닫힌 쪽)으로."""
+    if not isinstance(name, str):
+        return False
+    if _INSIGHT_NAME_RE.search(name):
+        return True
+    if not _INVOKE_TOOL_RE.search(name):
+        return False
+    text = args if isinstance(args, str) else "" if args is None else json.dumps(args, ensure_ascii=False, default=str)
+    return any(_INSIGHT_NAME_RE.search(m) for m in _INVOKE_NAME_RE.findall(text))
+
+
+def insight_card_id(tool, args) -> str | None:
+    """근거 항목 · 표지가 카드 하나를 읽은 꼴(insight_get + 카드 id 하나)이면 그 id, 아니면 None. 인자는 사전이거나 글(JSON · 사전을 글로 옮긴 꼴)이다.
+    범용 실행기(invoke_tool)에 사전 인자면 그 name · arguments 로 본다."""
+    if isinstance(tool, str) and _INVOKE_TOOL_RE.search(tool) and isinstance(args, dict):
+        tool, args = args.get("name"), args.get("arguments")
+    if not (isinstance(tool, str) and _INSIGHT_GET_RE.search(tool)):
+        return None
+    if isinstance(args, dict):
+        cid = args.get("id") if len(args) == 1 else None
+        return cid if isinstance(cid, str) and INSIGHT_ID_RE.fullmatch(cid) else None
+    m = _INSIGHT_ID_RE.match(args) if isinstance(args, str) else None
+    return m.group(2) if m else None
 
 
 def insight_derived(row: dict) -> bool:
     """앞선 인사이트를 근거로 썼나 — 근거 도구 · 표지에 insight_ 도구가 있다."""
     card = row.get("card") or {}
-    names = [*(card.get("tools") or ()), *(c.get("tool") for c in card.get("calls") or () if isinstance(c, dict))]
-    return any(str(n or "").startswith(INSIGHT_TOOL_HEAD) for n in names)
+    return (any(insight_tool(n) for n in card.get("tools") or ())
+            or any(insight_tool(c.get("tool"), c.get("args")) for c in card.get("calls") or () if isinstance(c, dict)))
+
+
+def insight_sources(row: dict) -> tuple[list[str] | None, str]:
+    """앞선 인사이트를 근거로 쓴 카드가 읽은 카드 id 들 — (id 목록, "") 또는 (None, 까닭). 읽은 카드를 **다** 알 때만 목록을 낸다(틀릴 거면 닫힌
+    쪽으로) — 인사이트 표지가 전부 성공한 insight_get 이고 인자가 카드 id 하나이며, 도구 이름(tools)에 든 인사이트 도구가 다 그 표지로 덮일 때다.
+    모르는 때 — 찾기 결과를 묶음째 넘겼다(insight_find) · 범용 실행기로 불러 풀리지 않은 표지다 · 실패한 표지다(그 카드를 읽었다는 증거가 아니다) ·
+    표지가 상한에서 끊겼다 · 도구 이름만 있고 표지가 없다(같은 심의의 앞 단이 넘긴 것 · 이름만 있는 insight_find 가 섞였다 — 반대 검토 11-22 L1)."""
+    card = row.get("card") or {}
+    calls = [c for c in card.get("calls") or () if isinstance(c, dict)]
+    if len(calls) >= CALLS_MAX:
+        return None, f"근거 표지가 상한({CALLS_MAX}건)에 차 읽은 카드를 다 알 수 없다"
+    ids: list[str] = []
+    marked: set = set()
+    for c in calls:
+        tool, args = c.get("tool"), c.get("args")
+        if not insight_tool(tool, args):
+            continue
+        m = _INSIGHT_ID_RE.match(str(args or ""))
+        if m is None or c.get("ok") is not True or not _INSIGHT_GET_RE.search(tool):
+            return None, "앞선 인사이트를 카드 하나씩(insight_get + 카드 id)이 아닌 꼴로 넘겼거나 그 읽기가 실패해 어느 카드를 읽었는지 알 수 없다"
+        marked.add(tool)
+        if m.group(2) not in ids:
+            ids.append(m.group(2))
+    if not ids or not {t for t in card.get("tools") or () if insight_tool(t)} <= marked:
+        return None, "앞선 인사이트를 근거로 썼다는 도구 이름만 있고 어느 카드인지 적힌 근거 표지가 없는 것이 있다"
+    return ids, ""
+
+
+def inherit_scope(base: list, sources: list[dict | None], owner_email: str) -> tuple[list, str]:
+    """앞선 인사이트를 근거로 쓴 카드의 확인 범위 — (범위 토큰, 까닭). base 는 그 카드 제 범위([aff:<주인의 지금 소속>] + 근거 앱의 plat 토큰),
+    sources 는 읽은 카드들의 원장 행이다(없는 id 는 None). PLAN §6.2 최소 범위 — 범위는 기댄 근거들의 범위 토큰을 다 담는다(org 는 그리고에서
+    아무것도 더하지 않는다). 읽은 카드가 없어졌거나 거뒀거나 아직 주인만 보는 것이면, 또는 서로 다른 소속 · 사람이 섞여 만족할 사람이 없으면 넓히지
+    못하고 주인만 본다."""
+    mine = [f"user:{owner_email}"]
+    toks: set = {str(t) for t in base or ()}
+    if not toks or any(t.startswith("user:") for t in toks):
+        return mine, ""          # 제 범위부터 주인만이다(소속 없음) — 부른 쪽이 그 까닭을 단다
+    for r in sources:
+        if r is None or r.get("status") not in SHARED:
+            return mine, "근거로 쓴 앞선 인사이트 가운데 지금은 없거나(거둠) 주인만 보는 카드가 있어 그 범위를 이어받지 못한다 — 주인만 본다"
+        got = {str(t) for t in r.get("scope") or ()}
+        if not got:
+            return mine, "근거로 쓴 앞선 인사이트의 범위를 읽지 못해 주인만 본다"
+        toks |= got
+    toks.discard("org")
+    affs = sorted(t for t in toks if t.startswith("aff:"))
+    if len(affs) != 1 or any(t.startswith("user:") for t in toks):
+        return mine, "근거로 쓴 앞선 인사이트의 범위(소속 · 사람)가 이 카드의 범위와 섞여 함께 볼 수 있는 사람이 없다 — 주인만 본다"
+    return [affs[0], *sorted(t for t in toks if not t.startswith("aff:"))], ""
+
+
+# ── 같은 결론 묶기(PLAN §8 중복) — 같은 (과제, 차수) 칸에서 정규화한 주장 글이 같은 카드. 묶어 보일 뿐 합치지 않는다 ──────────────────────────
+def claim_key(claim) -> str:
+    """주장 글의 견줄 꼴 — NFKC · 소문자 · 공백 덩어리 하나로. 빈 글은 빈 꼴(묶지 않는다)."""
+    if not isinstance(claim, str):
+        return ""
+    return " ".join(_SPACE_RE.sub(" ", unicodedata.normalize("NFKC", claim)).lower().split())
+
+
+def same_claims(rows: list[dict]) -> dict[str, list[str]]:
+    """{카드 id: 같은 결론인 다른 카드 id 들} — 받은 행들(읽는 사람이 볼 수 있는 같은 칸의 카드) 안에서만 센다. 둘 이상일 때만 싣는다."""
+    by: dict[str, list[str]] = {}
+    for r in rows:
+        k = claim_key(r.get("claim"))
+        if k:
+            by.setdefault(k, []).append(r["id"])
+    return {i: [x for x in ids if x != i] for ids in by.values() if len(ids) > 1 for i in ids}

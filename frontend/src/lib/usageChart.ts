@@ -116,3 +116,35 @@ export function perDay(rows: { day: string; n: number }[], axis: string[]): numb
   for (const r of rows) by.set(r.day, (by.get(r.day) ?? 0) + r.n);
   return axis.map((d) => by.get(d) ?? 0);
 }
+
+/** 걸린 시간 어림(ms) → '≈ 340ms' · '≈ 1.2초' · '≈ 2.5분'. 표본이 없으면(null) '—' */
+export function msText(ms: number | null | undefined): string {
+  if (ms == null) return '—';
+  if (ms < 1000) return `≈ ${Math.round(ms)}ms`;
+  if (ms < 60000) return `≈ ${(ms / 1000).toFixed(ms < 10000 ? 1 : 0).replace(/\.0$/, '')}초`;
+  return `≈ ${(ms / 60000).toFixed(1).replace(/\.0$/, '')}분`;
+}
+
+/** 접어 둔 날의 범위 — '11-17 ~ 11-20' · 접은 날이 없으면 '—' */
+export function spanText(
+  first: string | null | undefined,
+  last: string | null | undefined,
+): string {
+  if (!first || !last) return '—';
+  return first === last ? first : `${first} ~ ${last}`;
+}
+
+/** 달마다 계정 — 원장 전 달은 한 줄로 접는다(400일이면 열 달 넘게 '기록 전' 만 늘어선다) */
+export function monthlyRows(
+  rows: { month: string; accounts: number | null; partial: boolean }[],
+): (string | number)[][] {
+  const { span, rest } = foldLeading(
+    rows,
+    (r) => r.accounts == null,
+    (r) => r.month,
+  );
+  return [
+    ...(span ? [[span[0] === span[1] ? span[0] : `${span[0]} ~ ${span[1]}`, '기록 전']] : []),
+    ...rest.map((r) => [`${r.month}${r.partial ? ' (일부만)' : ''}`, r.accounts ?? '기록 전']),
+  ];
+}

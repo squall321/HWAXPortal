@@ -42,3 +42,26 @@ RA 가 있는 박스에서 한다 — dev 는 Report Archive 가 떠 있지 않�
 ## 3. 끄기
 
 `WDA_DECK_ENABLED` 를 지우고 포털을 다시 띄운다 — 창구가 404 가 되고 단추가 사라진다. 잡 기록(스테이징 `#deck-jobs`)은 7일 뒤 청소된다.
+
+## 4. M2 판(2026-11-21 — 다시 시도 · 지우기 · PDF 미리보기 · 루틴 초안 자리 · MCP 쪽 주인)을 받은 뒤
+
+포털 · WDA · 게이트웨이의 가지 `wt1121/deck` 가 main 에 들어오고 WDA SIF 가 그 판으로 바뀐 뒤의 일이다. **스위치(`WDA_DECK_ENABLED`)가 꺼진 박스에서는
+아무것도 달라지지 않는다** — 새 창구도 없는 것과 같다.
+
+1. **WDA 판 확인** — 로그인한 화면에서 `GET /agent/deck/status` 의 `delete` 가 `true` 면 WDA 가 M2 판이다(WDA `/api/health` 의 features 에 `delete`).
+   `false` 면 WDA SIF 가 옛 판이다 — '사본 지우기' 단추가 서지 않을 뿐 나머지는 종전대로 돈다(0절 1 의 `redeploy-app.sh web-design-agents`).
+2. **끝난 잡에서** — 받기 링크 아래 'PDF 미리보기' 를 누르면 그 칸 안에 PDF 가 열린다(포털이 중계한다 — 주소는 `/agent/deck/jobs/<잡>/preview`).
+   비어 보이면 브라우저 이름 · 판을 적어 알려 달라(이 기능은 dev 의 Chromium 148 에서만 재 봤다 — WD-D91). '사본 지우기' 는 확인 창 뒤에 WDA 에 남은
+   보고서 본문 · 파일을 지운다 — 그 뒤 받기 링크는 '지워졌다' 로 답한다. 대화의 알림 아래 '발표자료 관리' 에서도 같은 도구가 열린다.
+3. **실패한 잡에서** — '다시 시도' 는 같은 실행을 끊긴 단계부터 다시 돌린다(보고서를 다시 읽지 않는다). 끝나면 그 대화에 새 알림이 남는다.
+   WDA 를 재기동한 직후 끊긴 잡(`interrupted`)이 이것으로 이어지는지 한 번 본다.
+4. **분석 루틴의 RA 초안** — 루틴 칸의 'Report Archive 초안 #N' 줄 아래 '발표자료로' 가 선다. 심의 결과 카드 · `/보고서` 와 같은 문이다(WDA 의 심의 꼴이
+   active 일 때만). ⚠ **심의 템플릿 보고서는 지금 WDA 가 '보고서 읽기' 단계에서 실패한다**(WD-D94 ① — 실물 꼴을 ingest 가 못 받는다). 이 셋 자리에서
+   실패 알림이 남으면 그 탓이다 — WDA 의 고침이 들어온 판인지부터 본다. RA 보내기 알림 자리(가져온 보고서)는 된다.
+5. **(선택) MCP 쪽 주인 켜기** — 개인 Claude 로 자기 발표자료의 장면을 보게 하려는 박스에서만. 기본은 꺼짐이고 켜지 않아도 위 1 ~ 4 는 그대로다.
+   ① WDA — `../HEAXHub/var/app_data/web_design_agents/secrets.env`(0600)에 `WDA_GATEWAY_SECRET=<16자 이상 무작위>` 한 줄(재기동 없음 · health features 에
+   `mcp_owner` 가 실리면 읽힌 것이다). ② 게이트웨이 — `../HWAXMcpGateway/gateway_config.json` 의 `heax_registry.per_user_sso` 에 `web_design_agents` 항목을
+   손으로 넣고(꼴은 `../HWAXMcpGateway/README.md` 의 'WebDesignAgents — MCP 쪽 주인' — `PER_USER_SSO_APPS` 로 만들지 않는다) 게이트웨이를 다시 띄운다.
+   **차례를 지킨다** — 게이트웨이부터 켜면 발급이 실패해 신원 있는 WDA 도구 호출이 전부 거부된다(서비스 계정으로 내려가지 않는다). 비밀 값은 이 리포 ·
+   받은 편지함 어디에도 적지 않는다.
+

@@ -85,6 +85,10 @@ class Item:
     hide_unless_routed: bool = False
     # 외부 연결 선언 — 박스 파일(access.local.yaml)의 플랫폼에서만 온다(load_raw 가 추적 파일의 것을 뗀다).
     connect: ConnectSpec | None = None
+    # 이름을 적어 준 사람에게만 열린다 — 소속 grants 의 "*" 와 관리자 전권이 이 키를 펼치지 않는다. 비용 · 반출이 걸린 기능을 운영자가 몇 사람에게만
+    # 줄 때 쓴다(웹 챗 Claude 모델 — HWAXPortal docs/chat-llm-claude, 사용자 지시 2026-11-22). 열리는 길은 셋이다 — 개별 허가 · 소속 grants 나
+    # default_grants 에 키 이름을 글자로 적기. 다른 키의 implies 로는 열리지 않는다(검사가 막는다).
+    grant_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,12 +122,17 @@ class Policy:
     def item(self, key: str) -> Item | None:
         return self._by_key.get(key)
 
+    @property
+    def broad_keys(self) -> set[str]:
+        """"*" · 관리자 전권이 펼치는 키 — grant_only 를 뺀 전부."""
+        return {i.key for i in self.items if not i.grant_only}
+
     def direct(self, grants: list[str]) -> set[str]:
-        """허가 목록 → 키 집합('*' 는 전부). 표에 없는 키는 버린다(오타가 권한이 되지 않게)."""
+        """허가 목록 → 키 집합('*' 는 grant_only 를 뺀 전부). 표에 없는 키는 버린다(오타가 권한이 되지 않게)."""
         out: set[str] = set()
         for g in grants or []:
             if g == WILDCARD:
-                out |= set(self.keys)
+                out |= self.broad_keys
             elif g in self._by_key:
                 out.add(g)
         return out
@@ -461,6 +470,7 @@ def parse_policy(raw: dict) -> Policy:
                 desc=desc, implies=tuple(d.get("implies") or ()),
                 systems=tuple(d.get("systems") or ()), gateway=gateway,
                 hide_unless_routed=bool(d.get("hide_unless_routed", False)),
+                grant_only=bool(d.get("grant_only", False)),
                 connect=(_parse_connect(d, gateway=gateway, label=label, desc=desc, notes=notes, seen=seen)
                          if kind == "platform" else None)))
     keys = [i.key for i in items]
@@ -473,6 +483,9 @@ def parse_policy(raw: dict) -> Policy:
         bad = [k for k in i.implies if k not in known]
         if bad:
             raise ValueError(f"access.yaml: {i.key} implies 에 없는 키 {bad}")
+        only = [k for k in i.implies if k in known and next(x for x in items if x.key == k).grant_only]
+        if only:
+            raise ValueError(f"access.yaml: {i.key} implies 에 이름을 적어야만 열리는 키(grant_only) {only} — 함의로는 열지 않는다")
     affs: dict[str, dict] = {}
     for a in raw.get("affiliations") or []:
         grants = list(a.get("grants") or [])
@@ -668,7 +681,9 @@ def compute(policy: Policy, *, groups: list[str], row: dict | None,
                 reasons[k] = why
 
     if is_admin:
-        put(set(policy.keys), "admin")
+        put(policy.broad_keys, "admin")
+        # grant_only 키는 관리자에게도 저절로 열리지 않는다 — 관리자 자신에게도 개별 허가로 준다(비용 · 반출이 걸린 기능).
+        put(policy.direct(list((row or {}).get("grants") or [])) - policy.broad_keys, "grant")
     else:
         put(policy.direct(policy.default_grants), "default")
         if aff in policy.affiliations:

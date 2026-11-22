@@ -1,0 +1,194 @@
+{
+ "_note": "StepForge 의 실제 응답 — 3404c449 의 도구(get_project_meta · onto_object · find_plm_task)를 임시 데이터 폴더와 그 리포의 가짜 허브(tests/sp_fake_core.py)에 대고 돌려 받아 적었다(2026-11-21). get_project_meta 는 revision 칸만, find_plm_task 는 sync 칸을 뺐다.",
+ "ids": {
+  "old": "001a20029105ebe6a536bfe",
+  "latest": "001a2002910857a2dc9ac4c",
+  "undecided": "001a200291094caf096b23f"
+ },
+ "meta_old_with_next": {
+  "id": "001a20029105ebe6a536bfe",
+  "revision": {
+   "decided": true,
+   "chain_note": null,
+   "code_note": "과제 정보의 code 가 비었다 — `get_project_meta.plm_task` 는 그 칸으로 허브 과제를 찾는다(이 개정의 과제 T-ALPHA — set_project_meta(code='T-ALPHA') 로 적으면 plm_task 가 이어진다)",
+   "rev_seq": 1,
+   "project_id": "001a20029105ebe6a536bfe",
+   "project_name": "알파 기구 A1",
+   "rev_label": "A1",
+   "status": "superseded",
+   "rev_source": "manual",
+   "supersedes": null,
+   "supersedes_state": null,
+   "model_key": null,
+   "decided_by": null,
+   "decided_at": 1795299020.9667883,
+   "rev_note": null,
+   "content_changed": false,
+   "same_content": [],
+   "same_content_count": 0,
+   "task_code": "T-ALPHA",
+   "task": "T-ALPHA",
+   "task_verified": false,
+   "task_cause": "not_configured",
+   "previous": null,
+   "next": [
+    {
+     "project_id": "001a2002910857a2dc9ac4c",
+     "project_name": "알파 기구 A2",
+     "rev_label": "A2",
+     "status": "current"
+    }
+   ],
+   "chain_size": 2,
+   "candidates": 0,
+   "content_fp": "7e4a7ac4a2af1242"
+  }
+ },
+ "meta_latest": {
+  "id": "001a2002910857a2dc9ac4c",
+  "revision": {
+   "decided": true,
+   "chain_note": null,
+   "code_note": "과제 정보의 code 가 비었다 — `get_project_meta.plm_task` 는 그 칸으로 허브 과제를 찾는다(이 개정의 과제 T-ALPHA — set_project_meta(code='T-ALPHA') 로 적으면 plm_task 가 이어진다)",
+   "rev_seq": 2,
+   "project_id": "001a2002910857a2dc9ac4c",
+   "project_name": "알파 기구 A2",
+   "rev_label": "A2",
+   "status": "current",
+   "rev_source": "manual",
+   "supersedes": "001a20029105ebe6a536bfe",
+   "supersedes_state": "ok",
+   "model_key": null,
+   "decided_by": null,
+   "decided_at": 1795299020.9804165,
+   "rev_note": null,
+   "content_changed": false,
+   "same_content": [],
+   "same_content_count": 0,
+   "task_code": "T-ALPHA",
+   "task": "T-ALPHA",
+   "task_verified": false,
+   "task_cause": "not_configured",
+   "previous": {
+    "project_id": "001a20029105ebe6a536bfe",
+    "project_name": "알파 기구 A1",
+    "rev_label": "A1",
+    "status": "superseded",
+    "task_code": "T-ALPHA"
+   },
+   "next": [],
+   "chain_size": 2,
+   "candidates": 0,
+   "content_fp": "66cc800444c82750"
+  }
+ },
+ "meta_undecided": {
+  "id": "001a200291094caf096b23f",
+  "revision": {
+   "decided": false,
+   "why": "이 과제는 아직 개정으로 정하지 않았다 — set_revision(dry_run=true) 가 개정 이름 후보와 근거를 내고, 사람이 고른 이름으로 set_revision(rev_label=…) 하면 정해진다(과제코드는 task_code 또는 set_project_meta(code=…))",
+   "task_code": null,
+   "task_cause": "no_code",
+   "candidates": 0,
+   "content_fp": "b9769e114546a433",
+   "same_content": [],
+   "same_content_count": 0,
+   "candidates_why": "개정 이름 후보가 0 이다 — ① 허브 개발모델의 개정 칸(model_revision) — 과제코드가 비어 허브 과제를 못 찾았다 · ② 허브 과제명의 끝 조각 — 과제코드가 비어 허브 과제를 못 찾았다 · ③ STEP 헤더의 이름 · 설명 — STEP 1개의 헤더의 이름·설명에 개정 꼴의 조각이 없다 · ④ raw/ 파일 이름 — STEP 1개의 raw/ 파일 이름에 개정 꼴의 조각이 없다 (허브 거울: 이 과제에 과제코드(code)가 비었다 — 허브 과제의 과제코드(task_code 칸)·별칭·과제명·식별자(key) 가운데 하나를 set_project_meta(code=…) 로 적으면 이어진다(모르면 find_plm_task 로 과제코드·과제명·모델명에서 찾는다)). 이름은 사람이 정한다(set_revision(rev_label=…))"
+  }
+ },
+ "object_renamed": {
+  "node": "plm_task:알파 개발_C2",
+  "type": "plm_task",
+  "type_label": "과제",
+  "key": "알파 개발_C2",
+  "label": "알파 개발_C1",
+  "status": "active",
+  "source": "hub",
+  "degree": 1,
+  "keys": {
+   "previous_keys": [
+    "알파 개발_C1"
+   ],
+   "merged_from": [],
+   "updated_at": "2026-10-01T00:00:03.000000Z",
+   "received_at": 1795299021.135271
+  }
+ },
+ "object_plain": {
+  "node": "plm_task:알파 개발_C1",
+  "type": "plm_task",
+  "key": "알파 개발_C1",
+  "label": "알파 개발_C1",
+  "status": "active",
+  "source": "hub",
+  "keys": {
+   "previous_keys": [],
+   "merged_from": [],
+   "updated_at": "2026-10-01T00:00:02.000000Z",
+   "received_at": 1795299021.0434918
+  }
+ },
+ "object_missing_error": "ValueError: 그런 객체가 없다: plm_task:없는 과제",
+ "find_old_key": {
+  "query": "알파 개발_C1",
+  "count": 1,
+  "truncated": false,
+  "omitted": 0,
+  "tasks": [
+   {
+    "key": "알파 개발_C2",
+    "label": "알파 개발_C1",
+    "active": true,
+    "task_status": "진행",
+    "hub_status": "active",
+    "project": {
+     "key": "PJ-ALPHA",
+     "label": "알파 프로젝트",
+     "active": true
+    },
+    "models": [],
+    "models_count": 0,
+    "properties": {
+     "project": "PJ-ALPHA",
+     "task_status": "진행"
+    },
+    "hub_updated_at": "2026-10-01T00:00:03.000000Z",
+    "received_at": 1795299021.135271,
+    "matched_by": [
+     "label"
+    ]
+   }
+  ]
+ },
+ "find_new_key": {
+  "query": "알파 개발_C2",
+  "count": 1,
+  "truncated": false,
+  "omitted": 0,
+  "tasks": [
+   {
+    "key": "알파 개발_C2",
+    "label": "알파 개발_C1",
+    "active": true,
+    "task_status": "진행",
+    "hub_status": "active",
+    "project": {
+     "key": "PJ-ALPHA",
+     "label": "알파 프로젝트",
+     "active": true
+    },
+    "models": [],
+    "models_count": 0,
+    "properties": {
+     "project": "PJ-ALPHA",
+     "task_status": "진행"
+    },
+    "hub_updated_at": "2026-10-01T00:00:03.000000Z",
+    "received_at": 1795299021.135271,
+    "matched_by": [
+     "key"
+    ]
+   }
+  ]
+ }
+}

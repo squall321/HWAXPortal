@@ -85,6 +85,8 @@ _STUB = r"""
       return json({ url: window.__raOpenUrl || '/report-archive/' });
     }
     if (u === '/auth/refresh') return json({ ok: true });
+    // 분석 루틴의 실행 원장(RoutineView 가 흐르지 않는 메시지를 다시 읽는다) — __runView 가 있을 때만
+    if (u.startsWith('/routines-api/runs/')) return window.__runView ? json(window.__runView) : json({ detail: 'Not Found' }, 404);
     if (u === '/agent/deck/jobs' && method === 'POST') return json(window.__created);
     if (u === '/agent/deck/jobs' && method === 'GET') {
       if (window.__listOff) return json({ detail: 'Not Found' }, 404);
@@ -99,6 +101,9 @@ _STUB = r"""
         return json(a);
       }
       if (u.endsWith('/dismiss')) return json({ dismissed: true });
+      // M2 — 다시 시도(새 잡을 돌려준다) · 지우기(지운 잡의 보기). 거절을 흉내 낼 때는 __retryStatus · __deleteStatus
+      if (u.endsWith('/retry')) return window.__retryStatus ? json({ detail: '다시 시도할 수 없습니다' }, window.__retryStatus) : json(window.__retried);
+      if (method === 'DELETE') return window.__deleteStatus ? json({ detail: 'WDA 가 아직 만드는 중이라 지우지 못했습니다' }, window.__deleteStatus) : json(window.__deletedJob);
       if (window.__jobOff) return json({ detail: 'Not Found' }, 404);
       return json(window.__states.length > 1 ? window.__states.shift() : window.__states[0]);
     }
@@ -179,7 +184,168 @@ async function makeJob(page) {
   return opts;
 }
 
+const PREVIEW = `/agent/deck/jobs/${JOB}/preview`;
+const DONE_PDF = { ...DONE, preview: PREVIEW, can_retry: false, deleted: false };
+const FAILED = { ...base, state: 'failed', step: '장면 구성 에서 멈춤', error: "WDA 가 '장면 구성' 단계에서 실패했습니다.", progress: null, next: null,
+  elapsed_s: 6, can_retry: true, deleted: false, preview: null, noticed: true, notice: null };
+const GONE = { ...DONE, files: [], expired: true, deleted: true, preview: null, can_retry: false, notice: null };
+const STATUS_DEL = { ...STATUS(false), delete: true };
+
 const SCENARIOS = {
+  // M2 — 끝난 잡의 칸에 PDF 미리보기(포털 경로 · 틀에 sandbox 속성 없음) · 사본 지우기. 지우면 링크 · 미리보기가 걷힌다
+  async tools(browser) {
+    const page = await open(browser, { status: STATUS_DEL });
+    await page.evaluate(() => { window.confirm = (m) => { window.__confirmed = (window.__confirmed || []).concat(m); return true; }; });
+    await page.evaluate(([q, r, f, d]) => { window.__created = q; window.__states = [r, f, d]; window.__advanced = d; window.__list = [q]; },
+                        [QUEUED, RENDERING, FINISH, DONE_PDF]);
+    await page.locator('.deck-go').first().click();
+    await page.locator('.deck-panel .upl-go').click();
+    await page.getByText('발표자료 만드는 중').first().waitFor();
+    await forward(page, 3100);
+    await forward(page, 3100);
+    await page.getByText('발표자료를 만들었습니다').first().waitFor();
+    const panel = page.locator('.deck-panel').first();
+    const before = await page.evaluate(() => document.querySelectorAll('iframe.deck-preview').length);
+    const g0 = (await calls(page, '/agent/deck/jobs/')).filter((c) => c.method === 'GET').length;
+    await panel.getByRole('button', { name: 'PDF 미리보기' }).click();
+    await page.locator('iframe.deck-preview').waitFor({ state: 'attached' });
+    const frame = await page.evaluate(() => { const f = document.querySelector('iframe.deck-preview');
+      return { src: f.getAttribute('src'), sandbox: f.hasAttribute('sandbox'), referrer: f.getAttribute('referrerpolicy') }; });
+    const asked = (await calls(page, '/agent/deck/jobs/')).filter((c) => c.method === 'GET').length - g0;
+    await panel.getByRole('button', { name: 'PDF 미리보기 닫기' }).click();
+    const closed = await page.evaluate(() => document.querySelectorAll('iframe.deck-preview').length);
+    await page.evaluate((g) => { window.__deletedJob = g; }, GONE);
+    await panel.getByRole('button', { name: '사본 지우기' }).click();
+    await panel.getByText('사본을 지웠습니다').waitFor();
+    const del = (await calls(page, '/agent/deck/jobs/')).filter((c) => c.method === 'DELETE').map((c) => c.url);
+    const after = await panel.evaluate((el) => ({ links: el.querySelectorAll('.deck-file').length, text: el.textContent,
+      buttons: Array.from(el.querySelectorAll('button')).map((b) => b.textContent) }));
+    return { before, frame, asked, closed, del, after, confirmed: await page.evaluate(() => window.__confirmed), errors: page.__errors };
+  },
+  // WDA 가 지우기를 모르는 판(status.delete 없음)이면 사본 지우기를 내지 않는다 · 지우기를 WDA 가 거절하면 까닭을 보이고 잡은 그대로다
+  async toolsRefused(browser) {
+    const noDel = await open(browser);
+    await noDel.evaluate(([q, f, d]) => { window.__created = q; window.__states = [f, d]; window.__advanced = d; window.__list = [q]; }, [QUEUED, FINISH, DONE_PDF]);
+    await noDel.locator('.deck-go').first().click();
+    await noDel.locator('.deck-panel .upl-go').click();
+    await forward(noDel, 3100);
+    await noDel.getByText('발표자료를 만들었습니다').first().waitFor();
+    const noDelButtons = await noDel.locator('.deck-panel').first().evaluate((el) => Array.from(el.querySelectorAll('button')).map((b) => b.textContent));
+    const page = await open(browser, { status: STATUS_DEL });
+    await page.evaluate(() => { window.confirm = () => true; window.__deleteStatus = 409; });
+    await page.evaluate(([q, f, d]) => { window.__created = q; window.__states = [f, d]; window.__advanced = d; window.__list = [q]; }, [QUEUED, FINISH, DONE_PDF]);
+    await page.locator('.deck-go').first().click();
+    await page.locator('.deck-panel .upl-go').click();
+    await forward(page, 3100);
+    await page.getByText('발표자료를 만들었습니다').first().waitFor();
+    await page.locator('.deck-panel').first().getByRole('button', { name: '사본 지우기' }).click();
+    await page.locator('.deck-panel .upl-err').first().waitFor();
+    const refused = await page.locator('.deck-panel').first().evaluate((el) => ({ err: el.querySelector('.upl-err').textContent,
+      links: el.querySelectorAll('.deck-file').length }));
+    return { noDelButtons, refused, errors: [...noDel.__errors, ...page.__errors] };
+  },
+  // 실패한 잡의 칸에 '다시 시도' — 새 잡을 받아 그 잡의 진행을 잇는다(다시 만들기와 다르다 — 만들기 창구를 부르지 않는다)
+  async retry(browser) {
+    const page = await open(browser);
+    await page.evaluate(([q, f]) => { window.__created = q; window.__states = [{ ...f, next: 'finish' }]; window.__advanced = f; window.__list = [q]; },
+                        [QUEUED, FAILED]);
+    await page.locator('.deck-go').first().click();
+    await page.locator('.deck-panel .upl-go').click();
+    await forward(page, 3100);
+    await page.getByText('발표자료를 만들지 못했습니다').first().waitFor();
+    const panel = page.locator('.deck-panel').first();
+    const buttons0 = await panel.evaluate((el) => Array.from(el.querySelectorAll('button')).map((b) => b.textContent));
+    const NEW = 'e'.repeat(32);
+    await page.evaluate(([q, r]) => { window.__retried = q; window.__states = [r]; },
+                        [{ ...QUEUED, job_id: NEW, state: 'preparing', step: '다시 돌리는 중', created: true }, { ...RENDERING, job_id: NEW }]);
+    const posts0 = (await calls(page, '/agent/deck/jobs')).filter((c) => c.method === 'POST' && c.url === '/agent/deck/jobs').length;
+    await panel.getByRole('button', { name: '다시 시도' }).click();
+    await page.getByText('발표자료 만드는 중').first().waitFor();
+    await forward(page, 3100);
+    const all = await calls(page, '/agent/deck/jobs');
+    return { buttons0, retried: all.filter((c) => c.url.endsWith('/retry')).map((c) => c.url),
+             creates: all.filter((c) => c.method === 'POST' && c.url === '/agent/deck/jobs').length - posts0,
+             polled: all.some((c) => c.method === 'GET' && c.url === `/agent/deck/jobs/${NEW}`), errors: page.__errors };
+  },
+  // 대화에 남은 발표자료 알림 아래 '발표자료 관리' — 새로고침 뒤에도 미리보기 · 지우기 · 다시 시도에 닿는다. 누를 때만 잡을 읽는다
+  async noticeTools(browser) {
+    const seedNotice = () => {
+      const k = 'hwax.chat.u1@corp.example.conversations';
+      const convs = JSON.parse(localStorage.getItem(k));
+      convs[0].messages.push({ role: 'assistant', content: '보고서 41「설계 검토」로 발표자료를 만들었습니다', ts: 9, deckJob: 'f'.repeat(32),
+        activity: [{ ts: 9, step: '발표자료 만들기(사람이 맡김)', tool: 'web_design_agents', detail: '{}', result_full: '{"report_id":41}', ok: true, origin: 'upload' }] });
+      localStorage.setItem(k, JSON.stringify(convs));
+    };
+    const off = await open(browser, { status: { ...STATUS(true), enabled: false, reason: 'off' }, before: seedNotice });
+    const offButtons = await off.evaluate(() => document.querySelectorAll('.deck-notice-tools').length);
+    const page = await open(browser, { status: STATUS_DEL, before: seedNotice });
+    const early = (await calls(page, '/agent/deck/jobs/')).length;
+    await page.evaluate((d) => { window.__states = [d]; }, DONE_PDF);
+    await page.locator('.deck-notice-tools button').click();
+    const panel = page.locator('.deck-notice-tools.deck-panel');
+    await panel.waitFor();
+    const buttons1 = await panel.evaluate((el) => Array.from(el.querySelectorAll('.deck-tools button')).map((b) => b.textContent));
+    await panel.getByRole('button', { name: 'PDF 미리보기' }).click();
+    await page.locator('iframe.deck-preview').waitFor({ state: 'attached' });
+    const src = await page.evaluate(() => document.querySelector('iframe.deck-preview').getAttribute('src'));
+    // 실패 알림 — 다시 시도를 맡기면 진행은 줄이 잇는다고 말한다
+    const failedPage = await open(browser, { status: STATUS_DEL, before: seedNotice });
+    await failedPage.evaluate(([f, q]) => { window.__states = [f]; window.__retried = q; window.__list = [q]; },
+                              [FAILED, { ...QUEUED, job_id: 'e'.repeat(32) }]);
+    await failedPage.locator('.deck-notice-tools button').click();
+    const fpanel = failedPage.locator('.deck-notice-tools.deck-panel');
+    await fpanel.getByRole('button', { name: '다시 시도' }).click();
+    await fpanel.getByText('다시 시도를 맡겼습니다').waitFor();
+    const strip = await failedPage.evaluate(() => !!document.querySelector('.deck-resume'));
+    // 기록이 지워진 알림(7일) — 까닭을 말하고 묻기를 그친다
+    const gonePage = await open(browser, { status: STATUS_DEL, before: seedNotice });
+    await gonePage.evaluate(() => { window.__jobOff = true; });
+    await gonePage.locator('.deck-notice-tools button').click();
+    await gonePage.getByText('기록이 지워졌습니다').waitFor();
+    return { offButtons, early, buttons1, src, strip,
+             retried: (await calls(failedPage, '/agent/deck/jobs/')).filter((c) => c.url.endsWith('/retry')).length,
+             errors: [...off.__errors, ...page.__errors, ...failedPage.__errors, ...gonePage.__errors] };
+  },
+  // 분석 루틴의 RA 초안(M2) — 심의 보고서와 같은 문(심의 꼴이 active 일 때만), 단추는 루틴 칸 안에 하나만. 초안 번호가 원장에만 있는
+  // 메시지(끝에 묻는 루틴을 뒤에 올렸다 · 새로고침 뒤의 포인터)는 원장을 읽은 뒤 선다
+  async routine(browser) {
+    const seedRoutine = (routine) => {
+      const k = 'hwax.chat.u1@corp.example.conversations';
+      const convs = JSON.parse(localStorage.getItem(k));
+      convs[0].messages.push({ role: 'assistant', content: '루틴 보고서 글', ts: 9, routine });
+      localStorage.setItem(k, JSON.stringify(convs));
+    };
+    const WITH = { run_id: 'run-1', title: '굽힘 루틴', state: 'done', steps: [], report: { ra_upload: 'auto', ra_report_id: 91 } };
+    const hidden = await open(browser, { before: `(${seedRoutine})(${JSON.stringify(WITH)})` });
+    const without = await buttons(hidden);
+    const page = await open(browser, { status: STATUS(true), before: `(${seedRoutine})(${JSON.stringify(WITH)})` });
+    const total = await buttons(page);
+    const inRoutine = await page.evaluate(() => document.querySelectorAll('.rv .deck-go').length);
+    const inMsg = await page.evaluate(() => {
+      const rv = document.querySelector('.rv');
+      return rv ? rv.closest('.msg').querySelectorAll('.deck-go').length : -1;
+    });
+    await page.evaluate((q) => { window.__created = q; window.__states = [q]; window.__list = [q]; }, { ...QUEUED, report: { id: 91, title: '굽힘 루틴' } });
+    await page.locator('.rv .deck-go').click();
+    await page.locator('.deck-panel .upl-go').click();
+    await page.getByText('발표자료 만드는 중').first().waitFor();
+    const create = (await calls(page, '/agent/deck/jobs')).find((c) => c.method === 'POST' && c.url === '/agent/deck/jobs');
+    // 원장에만 있는 초안 번호 — 메시지에는 실행 포인터뿐이다
+    const VIEW = { run: { id: 'run-2', routine_id: 'r', version_no: 1, title: '원장 루틴', executor: 'chat', state: 'done', reason: null, calls: 0,
+                          limits: { minutes: 1, calls: 1 }, limit_reached: null, report_ready: true, ra_report_id: 92, ra_error: null },
+                   inputs: {}, purpose: '', steps: [], next_step: null, report: { title: '원장 루틴', sections: [], upload: 'ask' } };
+    const POINTER = { run_id: 'run-2', title: '원장 루틴', state: 'done', steps: [] };
+    const ledger = await open(browser, { status: STATUS(true), ents: ['feat:chat', 'feat:routines', 'plat:webdesign', 'plat:reportarchive'],
+      before: `window.__runView = ${JSON.stringify(VIEW)}; (${seedRoutine})(${JSON.stringify(POINTER)})` });
+    await ledger.waitForFunction(() => document.querySelectorAll('.rv .deck-go').length === 1);
+    await ledger.evaluate((q) => { window.__created = q; window.__states = [q]; window.__list = [q]; }, { ...QUEUED, report: { id: 92, title: '원장 루틴' } });
+    await ledger.locator('.rv .deck-go').click();
+    await ledger.locator('.deck-panel .upl-go').click();
+    await ledger.getByText('발표자료 만드는 중').first().waitFor();
+    const create2 = (await calls(ledger, '/agent/deck/jobs')).find((c) => c.method === 'POST' && c.url === '/agent/deck/jobs');
+    return { without, total, inRoutine, inMsg, create: create && create.body, create2: create2 && create2.body,
+             errors: [...hidden.__errors, ...page.__errors, ...ledger.__errors] };
+  },
   // 심의 꼴이 없는 WDA — '/보고서'(deliberation)는 숨고 RA 보내기 알림은 선다. 꼴이 서면 둘 다
   async spots(browser) {
     const page = await open(browser);
@@ -513,6 +679,50 @@ def test_심의_꼴이_없으면_보고서_저장_답은_숨고_RA_보내기_알
     s = seen("spots")
     assert s["without"] == 1 and "보고서 초안을 만들었습니다" in s["titles"][0], "사용자 결정 U-6 — 심의 형식이 설 때까지 숨긴다"
     assert s["withFormat"] == 2
+
+
+def test_분석_루틴의_RA_초안에도_단추가_서고_심의_보고서와_같은_문에_걸린다(seen):
+    """M2(체크리스트 184행) — 루틴 RA 초안은 deliberation 템플릿이다. 심의 꼴이 active 가 아니면 숨고(U-6 · U-7), 서면 루틴 칸 안에 하나만.
+    초안 번호가 원장에만 있어도(끝에 묻는 루틴 · 새로고침 뒤의 포인터) 원장을 읽은 뒤 선다."""
+    s = seen("routine")
+    assert s["without"] == 1, "심의 꼴이 없으면 루틴 초안의 단추도 숨는다(RA 보내기 알림만 선다)"
+    assert s["total"] == 3 and s["inRoutine"] == 1 and s["inMsg"] == 1, "'/보고서' · RA 알림 · 루틴 — 루틴 메시지에는 단추가 하나뿐이다"
+    assert s["create"] == {"report_id": 91, "conversation_id": "srv-A", "targets": ["pptx", "pdf"], "doc_style": "report"}
+    assert s["create2"]["report_id"] == 92, "원장이 준 초안 번호로 맡긴다"
+
+
+def test_끝난_잡의_칸에서_PDF_를_미리보고_사본을_지운다(seen):
+    """M2(체크리스트 186행) — 미리보기는 포털 경로를 틀에 싣는다(WDA 주소가 아니다). 틀에는 sandbox 속성이 없다 — 속성이 있으면 Chromium 의
+    PDF 보기가 서지 않고, 격리는 포털의 응답 머리(CSP sandbox)가 한다. 누른 뒤 포털에 한 번 물어(세션을 되살린다) 받은 주소만 싣는다."""
+    s = seen("tools")
+    assert s["before"] == 0, "누르기 전에는 틀이 없다(PDF 를 미리 받지 않는다)"
+    assert s["frame"] == {"src": f"/agent/deck/jobs/{'f' * 32}/preview", "sandbox": False, "referrer": "no-referrer"}
+    assert s["asked"] == 1 and s["closed"] == 0
+    assert s["del"] == [f"/agent/deck/jobs/{'f' * 32}"] and len(s["confirmed"]) == 1 and "되돌릴 수 없" in s["confirmed"][0]
+    assert s["after"]["links"] == 0 and "사본을 지웠습니다" in s["after"]["text"]
+    assert "PDF 미리보기" not in s["after"]["buttons"] and "사본 지우기" not in s["after"]["buttons"] and "다시 만들기" in s["after"]["buttons"]
+
+
+def test_지우기가_없는_WDA_면_단추가_없고_거절은_까닭을_보인다(seen):
+    s = seen("toolsRefused")
+    assert "사본 지우기" not in s["noDelButtons"] and "PDF 미리보기" in s["noDelButtons"]
+    assert "만드는 중" in s["refused"]["err"] and s["refused"]["links"] == 2, "WDA 가 거절하면 잡은 그대로다"
+
+
+def test_실패한_잡의_다시_시도는_새_잡의_진행을_잇는다(seen):
+    s = seen("retry")
+    assert "다시 시도" in s["buttons0"] and "다시 만들기" in s["buttons0"]
+    assert s["retried"] == [f"/agent/deck/jobs/{'f' * 32}/retry"] and s["creates"] == 0, "다시 시도는 만들기 창구를 부르지 않는다"
+    assert s["polled"] is True, "돌려받은 새 잡의 진행을 묻는다"
+
+
+def test_대화에_남은_알림_아래에서도_미리보기_지우기_다시_시도에_닿는다(seen):
+    s = seen("noticeTools")
+    assert s["offButtons"] == 0, "스위치가 꺼진 박스에서는 알림 아래에 아무것도 서지 않는다"
+    assert s["early"] == 0, "누르기 전에는 잡을 묻지 않는다(알림마다 묻지 않는다)"
+    assert s["buttons1"] == ["PDF 미리보기", "사본 지우기"]
+    assert s["src"] == f"/agent/deck/jobs/{'f' * 32}/preview"
+    assert s["retried"] == 1 and s["strip"] is True, "다시 시도한 잡의 진행은 입력창 위 줄이 잇는다"
 
 
 def test_권한이나_스위치가_없으면_단추가_없다(seen):

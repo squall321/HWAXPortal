@@ -148,7 +148,11 @@ function StepCard({
                   const b = await fanOut(run.id, step.ix, 'plan');
                   nav(`/procedures/batches/${encodeURIComponent(b.batch_id)}`);
                 } catch (e) {
-                  setErr((e as Error).message);
+                  // 이미 펼친 대상이면(서버 409 — 같은 대상을 두 번 돌리지 않는다, W-113) 그 배치의 표로 간다. 글에 배치 id 가 있다.
+                  const msg = (e as Error).message;
+                  const done = msg.includes('이미 펼친') ? /b-[0-9a-f]{32}-\d+/.exec(msg) : null;
+                  if (done) nav(`/procedures/batches/${encodeURIComponent(done[0])}`);
+                  else setErr(msg);
                 } finally {
                   setBusy(false);
                 }

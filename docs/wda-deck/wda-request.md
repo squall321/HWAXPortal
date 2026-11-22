@@ -301,7 +301,7 @@ heading 의 `props.default_text` 는 대신 쓰지 않는다. `content` 에 항�
 | W-22 | `Authorization` 머리를 쓰지도 남기지도 않는다(허브가 포털 토큰을 WDA 까지 넘긴다 — 12) | 권장 |
 | W-23 | `/api/health` 에 도는 실행 · 렌더 수(또는 줄 길이)를 싣는다 — 포털의 박스 상한이 WDA 의 실제 일감으로 센다(12) | 권장 |
 | W-21 | 심의 보고서 꼴 `delib-16x9` — features 의 `format:delib-16x9` · `formats` 의 상태 · 만들기의 `format` 칸 · 모르는 꼴 400(11-01 저녁 지음 · draft · 허브 SIF 전 → 11-01 밤 `active` — 로컬 판, 10의 6) | 심의 자리 단추의 전제 — 포털은 `active` 일 때만 연다(사용자 결정 11-01 — draft 는 숨김) |
-| W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 |
+| W-16 ~ W-18 · W-20 | 그림 · 지우기 · MCP 위임 · 취소 | M2 — **W-17 · W-18 은 11-21 지었다**(WDA `wt1121/deck` `7664a70` · `28d7c69` — 13), W-16 · W-20 은 남는다 |
 | W-19 | 슬라이드 PDF | 청하지 않는다(사용자 결정 11-01) |
 | P-1 | main push → 허브 SIF 재빌드 | **사용자가 손으로 push**(결정 11-01) — WDA 세션은 커밋까지, push 하지 않는다 → 11-01 밤 뒤집힘 — 사용자가 WDA 세션에 직접 맡겼고 그 세션이 SSH 로 올렸다(`6d6abb6..df446ae`, 역사 그대로 · WD-D85) |
 | P-2 | 매니페스트 `launch.portal_auth: true` | 반영됨 — HEAXHub `385783f`(WDA 할 일 없음) |
@@ -331,4 +331,28 @@ WDA 의 셋째 답(10의 6)과 맞춰 본 것 — 아래 가운데 202 의 `owne
 - **W-23 `/api/health` 에 지금 도는 일의 수를 실어 달라** — 예 `"load": {"runs_running": n, "renders_running": n, "renders_queued": n}`. 포털은 박스 상한을
   자기 잡 기록으로 세는데, 남의 잡은 그 사람 이름으로 묻지 않기로 해(2차 적대 검토 — 남의 이름으로 허브 토큰을 찍지 않는다, 포털 WD-D74) 끝났는지 모른다.
   지금은 '갓 맡겼거나(15분) 그 주인의 화면이 최근에 물었으면(5분) 센다' 로 어림한다. WDA 가 제 일감을 알려 주면 그 어림을 걷는다(W-14 의 줄과 짝).
+
+## 13. M2 — WDA 가 지은 것과 포털이 기대는 꼴(2026-11-21, WDA 가지 `wt1121/deck` — 병합 · 배치 전)
+
+사용자가 직접 시킨 일이다(포털 `docs/leftovers-1121` L21-10 ④). 아래는 포털의 중계(`backend/app/agent/wda_deck.py`)가 기대는 꼴이다 — 바꾸면 포털이 깨진다.
+
+- **그림(6의 '그림' 줄)** — 주인 있는 run 은 `WDA_RA_*` 로 RA 를 읽지 않는다(로그인도 없다). 건너뛴 것은 원장에
+  `assets: {service_fetch: false, total, resolved, skipped: [{file_id, reason}], skipped_count}` 와 `warnings: [..]` 로 드러난다(주인 있는 run 에만 —
+  주인 없는 run 의 원장 꼴은 그대로다). 포털은 지금 이 칸을 읽지 않는다(W-16 때 견준다).
+- **W-17 지우기 — `DELETE {WDA}/api/runs/{run_id}`(주인만).** 200 `{success, data: {run_id, deleted: true, already, removed[], left[], kept_shared[]}}`.
+  남 · 신원 없음 404 `NOT_FOUND`(없는 것과 같다) · 주인 없는 run 403(code 없음) · 도는 중(파이프라인 queued · running, 렌더 queued · building ·
+  rendering) 409 `BUSY` · 못 지운 조각이 있으면 500 `INTERNAL`(실행은 이미 닫혔다 — 다시 부르면 마저 치운다). 지운 뒤 그 run 의 다른 창구는 410
+  `NOT_FOUND` 이고 목록에서 빠진다. 다시 부른 DELETE 는 200(`already: true`)이다. 지우기가 없는 판은 405 다(봉투 · code 없음) — 포털은 health features 의
+  `delete` 로 단추를 가린다. 포털은 봉투의 404 · 410 을 '이미 없다' 로, 봉투가 아닌 404(허브)를 '모른다' 로 읽는다.
+- **재개 — `POST {WDA}/api/runs/{run_id}/resume`(주인만, 10-24 부터 있다).** 202 `{run_id, resumed: true, start_from}` 또는 `{resumed: false, note}`
+  (다시 돌릴 단계가 없다). 도는 중 · 원본 없음은 409 다(둘이 같은 code — 포털은 다시 물어 가른다). **11-21 — 202 를 주는 자리에서 원장이 running 이 된다**
+  (`19dc123`). 만들기의 `render` 칸은 재개에도 이어진다(W-8). 포털의 '다시 시도' 는 실패한 run 에 이것을, 렌더만 실패한 run 에 4.3 을 부른다.
+- **W-18 MCP 쪽 주인 — `POST {WDA}/api/auth/sso`(게이트웨이 전용).** 머리 `X-Heax-Gateway-Secret`(WDA `secrets.env` 의 `WDA_GATEWAY_SECRET` 과 같은 값) ·
+  `X-Hwax-Delegate-Email`(게이트웨이가 확인한 호출자). 200 `{success, data: {access_token: "wdsso_…", token_type, expires_in: 3600}}`. 비밀이 없는 박스
+  404 · 비밀 불일치 401 · 위임 머리 없음 400 `INVALID`(`X-Heax-User-Email` 로 내려가지 않는다). 그 단언을 `X-Heax-Sso-Assertion` 으로 실은 MCP 호출은
+  W-4 의 도구가 **그 사람이 주인인 run** 에 닿는다(남 · 지운 run 은 여전히 `NOT_FOUND`). health features 의 `mcp_owner` 는 비밀이 있는 박스에만 실린다.
+  게이트웨이 설정은 HWAXMcpGateway README 'WebDesignAgents — MCP 쪽 주인'.
+- **WDA 에 남기는 물음 둘**(포털 context-notes WD-D94) — ① 실물 꼴의 `deliberation` 보고서(쪽의 `content` 에 템플릿 블록 id 만 · `extra_blocks` 빈 것)가
+  ingest 에서 블록 0개로 거절된다(4.6-2 의 그 물음 — 11-21 재현). ② W-4 가 덮지 않는 길(`meeting_start` · `report_ingest` · 주인 없는 회의 · 콘솔의
+  심의 → 시나리오).
 

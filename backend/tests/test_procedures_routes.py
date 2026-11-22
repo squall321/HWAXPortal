@@ -1924,3 +1924,539 @@ def test_즉석_단계는_사람_확인이_필요한_단계를_받지_않는다(
         assert r.status_code == 422, (body, r.status_code, r.text)
         assert "즉석으로 돌릴 수 없습니다" in r.json()["detail"], r.json()
     assert app.state.procedures_store.list_steps(rid) == [], "거른 단계는 기록도 안 남긴다"
+
+
+# ── 펼치기를 두 번 보내도 한 벌만(W-113, 사용자 결정 11-22) ───────────────────────────────────────
+# 펼치기는 새 실행을 만드는 창구라 기다리는 실행을 잡는 `_take`(W-110 · W-112)가 맞지 않았다. 같은 요청이 두 번 가면 같은 배치 id 로 실행이
+# 두 벌 생겼고, live 로 펼치면 대상마다 바깥 호출이 두 번 나갔다. 이제 (배치, 모드, 대상) 열쇠를 원장이 한 문장으로 잡는다 — 둘째는 409 다.
+def test_펼치기를_두_번_보내도_실행은_한_벌이고_바깥_호출은_대상마다_한_번이다(user):
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "t", "vars": [], "steps": [
+        {"backend": "ra", "tool": "find_parts", "args": {}, "select": {"from": "parts", "save": "name", "as": "part"}},
+        {"backend": "ra", "tool": "register_part", "args": {"part": "{{part}}"}}]}
+    vid = st.create_procedure(owner_sub=me, spec=spec, title="t")["version_id"]
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=vid, inputs={}, origin="replay", mode="live")
+    st.begin_step(rid, 0, backend="ra", tool="find_parts", args={}, mode="live")
+    st.finish_step(rid, 0, ok=False, state="pending", stage="select:ask", error=None,
+                   notes={"pick_into": "part", "candidates": [{"i": 0, "label": "P1", "value": "PANEL_1"},
+                                                              {"i": 1, "label": "P2", "value": "PANEL_2"}]})
+    st.set_run_state(rid, "gated", stage="step:0")
+    gw = _HeldGateway(["ra_register_part", "ra_find_parts"])
+    started, finished = gw.install(c)
+    first = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "live"}, headers=h)
+    second = c.post(f"{PREFIX}/runs/{rid}/steps/0/fan-out", json={"mode": "live"}, headers=h)
+    gw.release.set()
+    _until(lambda: started and len(finished) == len(started), "펼친 실행들이 끝나기")
+    assert first.status_code == 202 and first.json()["count"] == 2, first.text
+    assert second.status_code == 409, (second.status_code, second.text[:300])
+    detail = second.json()["detail"]
+    assert "이미 펼친" in detail and first.json()["batch_id"] in detail and "PANEL_1" in detail, detail
+    assert len(started) == 2, f"펼친 실행기가 {len(started)}개 떴다(대상은 둘이다)"
+    sent = sorted(a["part"] for n, a in gw.calls if n == "ra_register_part")
+    assert sent == ["PANEL_1", "PANEL_2"], f"바깥 호출이 대상마다 한 번이 아니다: {sent}"
+    rows = st.list_runs(owner_sub=me, batch_id=first.json()["batch_id"])
+    assert sorted(r["inputs"]["part"] for r in rows) == ["PANEL_1", "PANEL_2"], [r["inputs"] for r in rows]
+
+
+def test_펼치기_둘째_요청은_겹치는_대상이_하나라도_있으면_아무것도_만들지_않는다(user):
+    """일부만 겹쳐도 통째로 거절한다 — 새 대상만 골라 만들면 요청 하나가 반만 된 채 202 로 읽힌다. 겹치지 않는 대상만 다시 보내면 된다."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    url = f"{PREFIX}/runs/{rid}/steps/0/fan-out"
+    assert c.post(url, json={"values": ["PANEL_1"], "mode": "plan"}, headers=h).status_code == 202
+    n = len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"])
+    r = c.post(url, json={"mode": "plan"}, headers=h)          # 전부 — PANEL_1 이 겹친다
+    assert r.status_code == 409 and "PANEL_1" in r.json()["detail"] and "PANEL_2" not in r.json()["detail"], r.text
+    assert len(c.get(f"{PREFIX}/runs", headers=h).json()["runs"]) == n, "거절한 요청이 실행을 남겼다"
+    ok = c.post(url, json={"values": ["PANEL_2"], "mode": "plan"}, headers=h)   # 안 겹치는 대상은 그대로 된다
+    assert ok.status_code == 202 and ok.json()["count"] == 1, ok.text
+
+
+def test_계획으로_펼친_뒤_live_로_한_번_더_펼칠_수_있다(user):
+    """기본이 계획 모드다 — 사람이 계획을 보고 live 로 다시 펼친다. 모드가 다르면 다른 요청이다(같은 모드는 한 번)."""
+    c, h = user
+    rid = _gated_pick_run(c, h)
+    url = f"{PREFIX}/runs/{rid}/steps/0/fan-out"
+    assert c.post(url, json={"mode": "plan"}, headers=h).status_code == 202
+    live = c.post(url, json={"mode": "live"}, headers=h)
+    assert live.status_code == 202 and live.json()["count"] == 2, live.text
+    assert c.post(url, json={"mode": "live"}, headers=h).status_code == 409
+
+
+def test_옛_원장에_펼치기_열쇠_칸이_붙고_옛_배치_실행은_그대로다(tmp_path):
+    """돌던 원장 — `batch_key` 칸은 이관으로 붙고(없던 행은 NULL), 옛 판이 만든 배치 실행은 열쇠가 없어 새 펼치기를 막지 않는다."""
+    import sqlite3
+
+    s = Settings(procedures_store_path=str(tmp_path / "old.sqlite"))
+    old = ProceduresStore(s)
+    old.close()
+    con = sqlite3.connect(str(tmp_path / "old.sqlite"))
+    con.execute("DROP INDEX IF EXISTS ux_runs_batch_key")
+    con.execute("ALTER TABLE runs DROP COLUMN batch_key")
+    con.execute("INSERT INTO runs (id, owner_sub, run_by, inputs_json, origin, mode, state, started_at, batch_id)"
+                " VALUES ('old1','u','u','{}','batch','plan','done',1,'b-x-0')")
+    con.commit()
+    con.close()
+    st = ProceduresStore(s)
+    assert st.get_run("old1")["batch_id"] == "b-x-0"
+    made = st.create_batch_runs(owner_sub="u", procedure_version_id="v", batch_id="b-x-0", mode="plan",
+                                items=[("A", {"part": "A"}, "t — A")])
+    assert len(made) == 1
+    from app.procedures.store import BatchTaken
+
+    with pytest.raises(BatchTaken) as ei:
+        st.create_batch_runs(owner_sub="u", procedure_version_id="v", batch_id="b-x-0", mode="plan",
+                             items=[("B", {"part": "B"}, "t — B"), ("A", {"part": "A"}, "t — A")])
+    assert ei.value.values == ["A"], ei.value.values
+    assert len(st.list_runs(owner_sub="u", batch_id="b-x-0")) == 2, "거절한 묶음의 앞 대상(B)이 남았다 — 한 트랜잭션이 아니다"
+
+
+# ── 실행을 심의 · 챗으로 넘기는 창구(W-114 · W-115) ─────────────────────────────────────────────
+def _finished_run(c, h, *, state="done"):
+    """단계 둘(성공 · 실행 여부 모름)과 확인 카드에서 멈춘 단계 하나가 있는 실행."""
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = st.create_run(owner_sub=me, run_by=me, inputs={}, origin="replay", mode="live", title="열충격 SED 판정")
+    st.begin_step(rid, 0, backend="odb-hub", tool="odb_list_components", args={"job_id": "J1"}, mode="live")
+    st.finish_step(rid, 0, ok=True, result_text='{"ap": {"x": 50.1}}')
+    st.begin_step(rid, 1, backend="ts", tool="predict_sed", args={"sample": {"ap_cx": 50.1}}, mode="live")
+    st.finish_step(rid, 1, ok=False, state="unknown", stage="timeout", error="30초 안에 응답이 없다")
+    st.begin_step(rid, 2, backend="reportarchive", tool="add_report_tags", args={"report_id": 3}, mode="live")
+    st.finish_step(rid, 2, ok=False, state="pending", stage="gate")
+    st.set_run_state(rid, state, stage="step:2", ended=state in ("done", "failed"))
+    return rid
+
+
+def test_넘기기_미리보기는_근거_수와_실패_모름_부르지_않은_단계를_말한다(user):
+    c, h = user
+    rid = _finished_run(c, h, state="gated")
+    got = c.get(f"{PREFIX}/runs/{rid}/handoff", headers=h)
+    assert got.status_code == 200, got.text
+    d = got.json()
+    assert (d["run_id"], d["title"], d["state"], d["evidence_count"], d["dropped"]) == (rid, "열충격 SED 판정", "gated", 2, 0)
+    assert [(i["tool"], i["state"]) for i in d["items"]] == [("odb_list_components", "done"), ("predict_sed", "unknown")]
+    assert d["not_called"] == [{"ix": 2, "tool": "add_report_tags", "state": "pending", "stage": "gate"}]
+    assert d["limits"] == {"items": 40, "result_chars": 150000, "args_chars": 1200}
+    assert "result" not in json.dumps(d["items"]), "미리보기는 결과 본문을 싣지 않는다 — 근거는 서버가 싣는다"
+    boss = _login(c, "boss@corp.com")
+    assert c.get(f"{PREFIX}/runs/{rid}/handoff", headers=boss).status_code == 404, "남의 실행은 없는 것과 같다"
+
+
+def test_챗으로_가져가면_내_챗_대화가_생긴다(user):
+    c, h = user
+    rid = _finished_run(c, h)
+    r = c.post(f"{PREFIX}/runs/{rid}/chat", headers=h)
+    assert r.status_code == 201, r.text
+    cid = r.json()["conversation_id"]
+    conv = c.get(f"/agent/conversations/{cid}", headers=h).json()
+    assert conv["kind"] == "chat" and conv["source"] == "web" and conv["title"] == "절차 실행 — 열충격 SED 판정"
+    assert [m["role"] for m in conv["messages"]] == ["user", "assistant"]
+    meta = conv["messages"][1]["meta"]
+    assert meta["procedure_run"]["run_id"] == rid
+    assert [a["tool"] for a in meta["activity"]] == ["odb_list_components", "predict_sed"]
+    assert meta["activity"][1]["result_preview"].startswith("[실행 여부를 모르는 단계")
+    # 챗 화면의 목록 거름(kind === 'chat')에 걸린다 — 다른 종류로 만들면 어느 탭에도 안 보인다(LO-D2)
+    assert cid in [x["id"] for x in c.get("/agent/conversations", headers=h).json()["conversations"] if x["kind"] == "chat"]
+
+
+def test_챗으로_가져가기는_주인만_하고_도는_실행은_안_된다(user):
+    c, h = user
+    rid = _finished_run(c, h)
+    running = _finished_run(c, h, state="running")
+    assert c.post(f"{PREFIX}/runs/{running}/chat", headers=h).status_code == 409
+    assert c.post(f"{PREFIX}/runs/{rid}/chat").status_code == 403, "CSRF 없이는 안 된다(세션 쓰기)"
+    boss = _login(c, "boss@corp.com")
+    # 대화 저장소는 시험 묶음이 함께 쓴다(conftest 의 임시 원장) — 비었는지가 아니라 늘지 않았는지를 본다
+    before = c.get("/agent/conversations", headers=boss).json()["total"]
+    r = c.post(f"{PREFIX}/runs/{rid}/chat", headers=boss)
+    assert r.status_code == 404, (r.status_code, r.text[:200])
+    assert c.get("/agent/conversations", headers=boss).json()["total"] == before, "거절한 요청이 대화를 남겼다"
+
+
+# ── 게이트웨이의 절차 도구가 타는 길(W-116) — 세션 또는 그 사람의 PAT ──────────────────────────────
+# 게이트웨이 procedure_list · procedure_get · procedure_run_start · procedure_run_status 가 호출자 PAT 를 그대로 넘긴다(분석 루틴과 같은 길).
+# PAT 로 열리는 길은 아래 다섯뿐이다 — 사람 확인(승인) · 고르기 · 재개 · 단계 붙이기 · 저장 · 넘기기는 화면(세션 + CSRF)만 받는다.
+_PAT_ROUTES = {("GET", f"{PREFIX}/catalog"), ("GET", f"{PREFIX}/procedures/{{procedure_id}}/tool"), ("POST", f"{PREFIX}/runs"),
+               ("GET", f"{PREFIX}/runs/{{run_id}}"), ("GET", f"{PREFIX}/runs/{{run_id}}/steps/{{ix}}/result")}
+_GATED_SPEC = {"title": "보고서 태그", "vars": [{"key": "report_id", "label": "보고서", "type": "number"}],
+               "steps": [{"backend": "reportarchive", "tool": "find_reports", "args": {"q": "x"}},
+                         {"backend": "reportarchive", "tool": "add_report_tags", "gate": "human",
+                          "args": {"report_id": "{{report_id}}", "tags": ["a"]}}]}
+
+
+@pytest.fixture()
+def pat_user(client):
+    """절차 권한과 토큰 권한이 있는 사용자 — (client, 세션 CSRF 머리, 읽기 · 쓰기 PAT 머리, 읽기 전용 PAT 머리). 쿠키는 지운 채로 돌려준다."""
+    _users(client, grants=["feat:procedures", "feat:api-token"])
+    h = _login(client, "user@corp.com")
+    rw = client.post("/auth/pat", json={"name": "claude"}, headers=h)
+    ro = client.post("/auth/pat", json={"name": "ro", "scopes": ["read"]}, headers=h)
+    assert rw.status_code == 200 and ro.status_code == 200, (rw.text, ro.text)
+    return (client, h, {"Authorization": f"Bearer {rw.json()['token']}"}, {"Authorization": f"Bearer {ro.json()['token']}"})
+
+
+def _as_pat(c):
+    c.cookies.clear()
+
+
+def test_PAT_로_열리는_길은_다섯뿐이다(pat_user):
+    """전수다 — 나중에 단 라우트가 PAT 로 조용히 열리지 않게. 승인(ack) · 고르기 · 재개 · 펼치기 · 단계 붙이기 · 저장 · 넘기기가 PAT 로 열리면
+    사람 확인을 도구로 넘길 수 있게 된다(게이트웨이가 호출자 PAT 를 포털로 넘긴다)."""
+    c, h, rw, _ro = pat_user
+    _as_pat(c)
+    opened = set()
+    for method, path in _routes():
+        if path.endswith("/health"):
+            continue
+        r = c.request(method, _fill(path), json={}, headers=rw)
+        if r.status_code not in (401, 403):
+            opened.add((method, path))
+    assert opened == _PAT_ROUTES, f"PAT 로 열린 길이 다르다 — 더 열림 {sorted(opened - _PAT_ROUTES)} · 안 열림 {sorted(_PAT_ROUTES - opened)}"
+
+
+def test_PAT_로_목록_계약_계획_실행_상태를_탄다(pat_user):
+    c, h, rw, _ro = pat_user
+    pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
+    _as_pat(c)
+    cat = c.get(f"{PREFIX}/catalog", headers=rw).json()
+    assert cat["count"] == 1
+    row = cat["procedures"][0]
+    assert (row["procedure_id"], row["title"], row["version_no"], row["mine"], row["steps"]) == (pid, "보고서 태그", 1, True, 2)
+    assert row["human_gates"] == ["add_report_tags"] and [v["key"] for v in row["vars"]] == ["report_id"]
+    assert "owner_sub" not in row and "created_by" not in row, "남의 주소가 딸려 나갈 이유가 없다"
+    tool = c.get(f"{PREFIX}/procedures/{pid}/tool", headers=rw).json()
+    assert set(tool) >= {"name", "title", "description", "inputSchema", "human_gates"} and tool["human_gates"] == ["add_report_tags"]
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}}, headers=rw)
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    _until(lambda: c.get(f"{PREFIX}/runs/{rid}", headers=rw).json()["state"] == "done", "계획 실행이 끝나기")
+    run = c.get(f"{PREFIX}/runs/{rid}", headers=rw).json()
+    assert run["mode"] == "plan", "PAT 로 시작한 실행도 기본은 계획 모드다(게이트웨이를 부르지 않는다)"
+    assert [(s["tool"], s["state"]) for s in run["steps"]] == [("find_reports", "skipped"), ("add_report_tags", "skipped")]
+    assert c.get(f"{PREFIX}/runs/{rid}/steps/0/result", headers=rw).status_code == 404, "계획 모드는 결과가 없다"
+
+
+def test_PAT_실행은_절차_없이_시작하지_않는다(pat_user):
+    """빈 실행은 화면에서 한 단계씩 붙이는 자리다 — 단계 붙이기는 PAT 를 받지 않으므로 도구로 만든 빈 실행은 아무도 못 쓴다."""
+    c, h, rw, _ro = pat_user
+    _as_pat(c)
+    r = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers=rw)
+    assert r.status_code == 422 and "procedure_id" in r.json()["detail"], (r.status_code, r.text[:200])
+
+
+def test_읽기_전용_PAT_는_실행을_시작하지_못하고_읽기는_된다(pat_user):
+    c, h, rw, ro = pat_user
+    pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
+    _as_pat(c)
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}}, headers=ro)
+    assert r.status_code == 403 and "읽기 전용" in r.json()["detail"], (r.status_code, r.text[:200])
+    assert c.get(f"{PREFIX}/catalog", headers=ro).json()["count"] == 1
+    assert c.get(f"{PREFIX}/procedures/{pid}/tool", headers=ro).status_code == 200
+    assert c.app.state.procedures_store.list_runs(owner_sub=c.get("/auth/me", headers=_login(c, "user@corp.com")).json()["subject"]) == []
+
+
+def test_절차_실행기의_PAT_로는_실행을_시작하지_못한다(pat_user):
+    """절차의 단계가 게이트웨이의 실행 시작 도구를 부르면(별칭 `<백엔드>_<도구>` 가 그 이름이 되게 적으면 닿는다) 절차가 절차를 끝없이 시작한다.
+    실행기의 PAT(purpose=procedure)는 이 창구에서 받지 않는다 — 게이트웨이도 같은 호출을 거절한다."""
+    from types import SimpleNamespace
+
+    from app.procedures import pat as P
+    from app.procedures.models import ProcedureSpec, Step, validate_spec
+
+    # 닿는 길이 실제로 있다 — 단계의 별칭이 그 도구 이름이 되고 저장 검증도 지난다(백엔드를 게이트웨이의 앱 키와 대조하지 않는다)
+    loop = Step(backend="procedure", tool="run_start", args={"procedure_id": "x", "mode": "live"})
+    assert loop.alias == "procedure_run_start" and validate_spec(ProcedureSpec(title="t", steps=[loop])) == []
+
+    c, h, rw, _ro = pat_user
+    pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
+    me = c.get("/auth/me", headers=h).json()
+    tok = P.mint(c.app.state.keystore, get_settings(), SimpleNamespace(
+        subject=me["subject"], email=me["email"], display_name="U", groups=me.get("groups") or []), "r" * 32, 0)
+    _as_pat(c)
+    auth = {"Authorization": f"Bearer {tok}"}
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}}, headers=auth)
+    assert r.status_code == 403 and "절차 실행기" in r.json()["detail"], (r.status_code, r.text[:300])
+
+
+def test_PAT_로_남의_비공개_절차와_남의_실행은_안_보인다(pat_user):
+    c, h, rw, _ro = pat_user
+    boss = _login(c, "boss@corp.com")
+    private = c.post(f"{PREFIX}/procedures", json={"title": "비공개", "spec": _GATED_SPEC, "visibility": "private"}, headers=boss).json()["id"]
+    shared = c.post(f"{PREFIX}/procedures", json={"title": "공유", "spec": _GATED_SPEC}, headers=boss).json()["id"]
+    boss_run = c.post(f"{PREFIX}/runs", json={"procedure_id": shared, "vars": {"report_id": 1}}, headers=boss).json()["run_id"]
+    _as_pat(c)
+    rows = c.get(f"{PREFIX}/catalog", headers=rw).json()["procedures"]
+    assert [(r["procedure_id"], r["mine"]) for r in rows] == [(shared, False)], "공유한 절차만 보이고 내 것이 아니라고 말한다"
+    assert c.get(f"{PREFIX}/procedures/{private}/tool", headers=rw).status_code == 404
+    assert c.post(f"{PREFIX}/runs", json={"procedure_id": private, "vars": {"report_id": 1}}, headers=rw).status_code == 404
+    assert c.get(f"{PREFIX}/runs/{boss_run}", headers=rw).status_code == 404, "실행은 공유하지 않는다"
+    assert c.get(f"{PREFIX}/runs/{boss_run}/steps/0/result", headers=rw).status_code == 404
+    # 공유한 절차는 내 이름으로 돌린다 — 실행은 내 것이다
+    mine = c.post(f"{PREFIX}/runs", json={"procedure_id": shared, "vars": {"report_id": 1}}, headers=rw)
+    assert mine.status_code == 202 and c.get(f"{PREFIX}/runs/{mine.json()['run_id']}", headers=rw).status_code == 200
+
+
+def test_PAT_로_live_실행을_시작해도_사람_확인_단계에서_멈추고_PAT_로는_못_넘긴다(pat_user):
+    """승인은 화면(세션 + CSRF)만 받는다 — 도구로 시작한 실행이 도구로 승인까지 가면 사람 확인이 없는 것과 같다."""
+    c, h, rw, _ro = pat_user
+    st = c.app.state.procedures_store
+    pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
+    gw = _HeldGateway(["reportarchive_find_reports", "reportarchive_add_report_tags"])
+    started, finished = gw.install(c)
+    gw.release.set()
+    _as_pat(c)
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}, "mode": "live"}, headers=rw)
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    _until(lambda: started and len(finished) == len(started), "실행기가 멈추기")
+    run = c.get(f"{PREFIX}/runs/{rid}", headers=rw).json()
+    assert run["state"] == "gated" and run["steps"][1]["stage"] == "gate", (run["state"], run["steps"])
+    assert [n for n, _ in gw.calls] == ["reportarchive_find_reports"], f"확인 전에 쓰기가 나갔다: {gw.calls}"
+    sha = run["steps"][1]["args_sha256"]
+    for path, body in ((f"steps/1/ack", {"args_sha256": sha}), ("resume", None), ("cancel", None)):
+        got = c.post(f"{PREFIX}/runs/{rid}/{path}", json=body, headers=rw)
+        assert got.status_code in (401, 403), (path, got.status_code, got.text[:200])
+    assert st.gate_ack(rid, 1) is None and st.get_run(rid)["state"] == "gated", "PAT 요청이 승인을 적거나 실행을 움직였다"
+    assert [n for n, _ in gw.calls] == ["reportarchive_find_reports"]
+    # 사람이 화면에서 승인하면 그때 나간다
+    h2 = _login(c, "user@corp.com")
+    assert c.post(f"{PREFIX}/runs/{rid}/steps/1/ack", json={"args_sha256": sha}, headers=h2).status_code == 200
+    _until(lambda: len(finished) == len(started) and st.get_run(rid)["state"] == "done", "승인 뒤 끝나기")
+    assert [n for n, _ in gw.calls].count("reportarchive_add_report_tags") == 1
+
+
+def test_세션의_실행_시작은_여전히_CSRF_를_본다(user):
+    """실행 시작이 PAT 도 받게 되면서 CSRF 확인이 라우트의 의존성에서 `principal_pat_or_session` 안으로 옮겨 갔다 — 쿠키 세션에는 그대로다."""
+    c, h = user
+    assert c.post(f"{PREFIX}/runs", json={}).status_code == 403
+    assert c.post(f"{PREFIX}/runs", json={}, headers=h).status_code == 202
+
+
+def test_패널의_포털_쪽_거절_목록에_게이트웨이의_절차_도구_넷이_있다():
+    """패널(MCP Apps)은 게이트웨이 자체 도구를 부르지 못한다 — 게이트웨이가 패널 PAT 에서 로컬 도구를 통째로 막고(_panel_denial), 포털이 먼저
+    한 번 더 막는다(이중 막이 — app/agent/panel.py `_DENY_EXACT`). 이름은 게이트웨이 원문에서 읽는다(형제 리포가 있을 때)."""
+    import re
+
+    from app.agent import panel
+
+    names = {"procedure_list", "procedure_get", "procedure_run_start", "procedure_run_status"}
+    gw = Path(__file__).resolve().parents[2].parent / "HWAXMcpGateway" / "gateway.py"
+    if gw.exists():
+        got = set(re.findall(r'_routine_tool\(\s*"(procedure_[a-z_]+)"', gw.read_text(encoding="utf-8")))
+        assert got == names, f"게이트웨이의 절차 도구 이름이 달라졌다: {sorted(got)}"
+    assert names <= panel._DENY_EXACT, sorted(names - panel._DENY_EXACT)
+
+
+# ── 반대 검토(11-22) 고침 — 빈 실행 넘기기 · PAT live 의 확인 없는 쓰기 · 판 확인 · 경고 · 펼치기 열쇠 · 목록 상한 ───────────────────
+_WARN_SPEC = {"title": "잡 제출", "vars": [{"key": "deck", "label": "덱"}],
+              "steps": [{"backend": "ra", "tool": "find_reports", "args": {"q": "x"}},
+                        {"backend": "ra", "tool": "submit_job", "args": {"deck": "{{deck}}"}},
+                        {"backend": "ra", "tool": "run_job", "gate": "human", "args": {"deck": "{{deck}}"}},
+                        {"backend": "ra", "tool": "register_part", "args": {"deck": "{{deck}}"}}]}
+
+
+def test_성공한_빈_실행은_심의와_챗으로_넘길_수_있다(user):
+    """한 단계씩 돌린 실행은 단계 사이에 queued 로 쉰다 — 도는 실행으로 읽어 409 이던 것(반대 검토 M2)."""
+    c, h = user
+    st = c.app.state.procedures_store
+    rid = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers=h).json()["run_id"]
+    st.begin_step(rid, 0, backend="ra", tool="find_reports", args={"q": "x"}, mode="live")
+    st.finish_step(rid, 0, ok=True, result_text='{"items": [1]}')
+    assert st.get_run(rid)["state"] == "queued"
+    got = c.get(f"{PREFIX}/runs/{rid}/handoff", headers=h)
+    assert got.status_code == 200 and got.json()["evidence_count"] == 1, got.text
+    assert c.post(f"{PREFIX}/runs/{rid}/chat", headers=h).status_code == 201
+
+
+def test_부른_단계가_없는_실행은_챗으로_가져가지_않는다(user):
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    plan = st.create_run(owner_sub=me, run_by=me, inputs={}, origin="replay", mode="plan", title="t")
+    st.begin_step(plan, 0, backend="b", tool="find_reports", args={}, mode="plan")
+    st.finish_step(plan, 0, ok=True, state="skipped", stage="plan")
+    st.set_run_state(plan, "done", stage="plan", ended=True)
+    before = c.get("/agent/conversations", headers=h).json()["total"]
+    r = c.post(f"{PREFIX}/runs/{plan}/chat", headers=h)
+    assert r.status_code == 422 and "부른 단계가 없" in r.json()["detail"], (r.status_code, r.text[:200])
+    assert c.get("/agent/conversations", headers=h).json()["total"] == before
+    assert c.get(f"{PREFIX}/runs/{plan}/handoff", headers=h).status_code == 422
+
+
+def test_계약의_사람_확인_자리는_실행기와_같은_판정이다(user):
+    """선언(gate: human)만 보면 MUST_GATE 가 나중에 는 도구를 쓰는 옛 판본의 계약이 '안 멈춘다' 고 말한다 — 실행기(`_gate_of`)는 멈춘다."""
+    from app.procedures.models import ProcedureSpec
+    from app.procedures.runner import _gate_of
+
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "옛 판본", "vars": [], "steps": [
+        {"backend": "reportarchive", "tool": "find_reports", "args": {}},
+        {"backend": "reportarchive", "tool": "trash_report", "args": {"report_id": 1}},          # MUST_GATE 인데 선언이 없다(저장 검증을 거치지 않은 옛 판본)
+        {"backend": "reportarchive", "tool": "create_report_draft", "gate": "human", "args": {}}]}
+    pid = st.create_procedure(owner_sub=me, spec=spec, title="옛 판본")["id"]
+    want = [s.tool for s in ProcedureSpec.model_validate(spec).steps if _gate_of(s) == "human"]
+    assert want == ["trash_report", "create_report_draft"]
+    assert c.get(f"{PREFIX}/procedures/{pid}/tool", headers=h).json()["human_gates"] == want
+    assert [r for r in c.get(f"{PREFIX}/catalog", headers=h).json()["procedures"] if r["procedure_id"] == pid][0]["human_gates"] == want
+
+
+@pytest.mark.parametrize("scheme", ["bearer", "BEARER", "BeArEr"])
+def test_머리의_대소문자가_달라도_읽기_전용과_용도_토큰은_실행을_시작하지_못한다(pat_user, scheme):
+    """Authorization 의 Bearer 는 대소문자를 가리지 않는다(앞 의존성이 그렇게 받는다) — 뒤의 칸 검사만 대소문자를 가리면 소문자로 온 읽기 전용 ·
+    용도 토큰이 실행 시작을 지난다."""
+    from types import SimpleNamespace
+
+    from app.procedures import pat as P
+
+    c, h, rw, ro = pat_user
+    pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
+    me = c.get("/auth/me", headers=h).json()
+    runner_tok = P.mint(c.app.state.keystore, get_settings(), SimpleNamespace(
+        subject=me["subject"], email=me["email"], display_name="U", groups=me.get("groups") or []), "r" * 32, 0)
+    _as_pat(c)
+    body = {"procedure_id": pid, "vars": {"report_id": 7}}
+    ro_tok = ro["Authorization"].split(" ", 1)[1]
+    r = c.post(f"{PREFIX}/runs", json=body, headers={"Authorization": f"{scheme} {ro_tok}"})
+    assert r.status_code == 403 and "읽기 전용" in r.json()["detail"], (scheme, r.status_code, r.text[:200])
+    r = c.post(f"{PREFIX}/runs", json=body, headers={"Authorization": f"{scheme} {runner_tok}"})
+    assert r.status_code == 403 and "절차 실행기" in r.json()["detail"], (scheme, r.status_code, r.text[:200])
+    r = c.post(f"{PREFIX}/runs", json={"mode": "live"}, headers={"Authorization": f"{scheme} {rw['Authorization'].split(' ', 1)[1]}"})
+    assert r.status_code == 422 and "procedure_id" in r.json()["detail"], "빈 실행 거절도 같은 머리 판정을 쓴다"
+
+
+def test_PAT_로는_확인_없이_도는_쓰기_잡_단계가_있는_절차를_live_로_시작하지_못한다(pat_user):
+    """승인 창구가 세션만 받는 것은 gate 가 있는 단계만 지킨다. 저장 검증이 경고로만 두는 쓰기 · 잡 부류(submit_ · register_ · run_job …)는
+    gate 없이 저장되고, PAT 로 연 live 실행은 그 단계를 사람 확인 없이 끝까지 돈다(반대 검토 M4). 화면(세션) 길은 그대로다."""
+    c, h, rw, _ro = pat_user
+    st = c.app.state.procedures_store
+    made = c.post(f"{PREFIX}/procedures", json={"title": "잡 제출", "spec": _WARN_SPEC}, headers=h)
+    assert made.status_code == 201, made.text
+    pid = made.json()["id"]
+    tool = c.get(f"{PREFIX}/procedures/{pid}/tool", headers=h).json()
+    assert tool["ungated_writes"] == ["submit_job", "register_part"], "gate 를 단 run_job 은 사람이 확인한다 — 세지 않는다"
+    gw = _HeldGateway(["ra_find_reports", "ra_submit_job", "ra_run_job", "ra_register_part"])
+    started, finished = gw.install(c)
+    gw.release.set()
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    _as_pat(c)
+
+    def me_runs():
+        return st.list_runs(owner_sub=me)
+    n0 = len(me_runs())
+    r = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"deck": "a.k"}, "mode": "live"}, headers=rw)
+    assert r.status_code == 409, (r.status_code, r.text[:300])
+    d = r.json()["detail"]
+    assert "2개" in d and "submit_job" in d and "register_part" in d and "plan" in d and "절차 화면" in d, d
+    assert len(me_runs()) == n0 and started == [] and gw.calls == [], "거절한 시작이 실행을 만들거나 바깥을 불렀다"
+    # 계획 모드는 된다 — 답이 live 로는 왜 안 되는지를 같이 말한다
+    plan = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"deck": "a.k"}}, headers=rw)
+    assert plan.status_code == 202 and plan.json()["ungated_writes"] == ["submit_job", "register_part"], plan.text
+    # 화면(세션)의 live 는 종전 그대로 시작하고 답의 꼴도 그대로다
+    h2 = _login(c, "user@corp.com")
+    live = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"deck": "a.k"}, "mode": "live"}, headers=h2)
+    assert live.status_code == 202 and "ungated_writes" not in live.json(), live.text
+    _until(lambda: started and len(finished) == len(started), "세션 실행이 멈추기")
+    assert [n for n, _ in gw.calls] == ["ra_find_reports", "ra_submit_job"], "세션 실행은 gate 단계(run_job) 앞까지 돈다"
+
+
+def test_확인_없는_쓰기_판정은_저장_검증의_경고와_같다(user):
+    """새 낱말 규칙을 만들지 않는다 — 저장 검증이 '자원을 쓰거나 잡을 만든다 — 게이트를 권한다' 고 경고하는 단계가 곧 그 단계다."""
+    from app.procedures.models import ProcedureSpec, ungated_writes, validate_spec
+
+    steps = [{"backend": "b", "tool": t, "args": a, **({"gate": "human"} if g else {})} for t, a, g in (
+        ("find_reports", {}, False), ("submit_job", {}, False), ("submit_job", {}, True), ("run_job", {}, False),
+        ("train_model", {}, False), ("upload_deck", {}, False), ("ingest_report", {}, False), ("register_part", {}, True),
+        ("slurm_submit_job", {"dry_run": True}, False), ("slurm_submit_job", {"dry_run": "{{d}}"}, False), ("create_report_draft", {}, False))]
+    spec = ProcedureSpec.model_validate({"title": "t", "vars": [{"key": "d", "label": "d", "type": "boolean"}], "steps": steps})
+    warned = [e.split(":")[1].split("단계 ")[1] for e in validate_spec(spec) if "게이트를 권한다" in e]
+    assert ungated_writes(spec) == warned and warned, (ungated_writes(spec), warned)
+    assert "submit_job" in warned and "upload_deck" in warned and warned.count("slurm_submit_job") == 1 and "find_reports" not in warned
+
+
+def test_계약을_본_판과_다르면_시작하지_않는다(pat_user):
+    c, h, rw, _ro = pat_user
+    pid = c.post(f"{PREFIX}/procedures", json={"title": "보고서 태그", "spec": _GATED_SPEC}, headers=h).json()["id"]
+    v2 = {**_GATED_SPEC, "steps": [*_GATED_SPEC["steps"], {"backend": "reportarchive", "tool": "find_reports", "args": {"q": "y"}}]}
+    assert c.post(f"{PREFIX}/procedures/{pid}/versions", json={"title": "보고서 태그", "spec": v2}, headers=h).status_code == 201
+    _as_pat(c)
+    assert c.get(f"{PREFIX}/procedures/{pid}/tool", headers=rw).json()["version_no"] == 2
+    old = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}, "version_no": 1}, headers=rw)
+    assert old.status_code == 409 and "판" in old.json()["detail"] and "2" in old.json()["detail"], (old.status_code, old.text[:200])
+    ok = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}, "version_no": 2}, headers=rw)
+    assert ok.status_code == 202 and c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"report_id": 7}}, headers=rw).status_code == 202
+
+
+def test_PAT_실행_보기는_단계마다_경고_표식을_싣고_세션_보기는_그대로다(pat_user):
+    """경고의 정본은 judge `warn_labels`(아홉 칸 — 합성 데이터 표식 mock_note 포함)다. 게이트웨이의 상태 도구가 그것을 옮긴다."""
+    c, h, rw, _ro = pat_user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    rid = st.create_run(owner_sub=me, run_by=me, inputs={}, origin="replay", mode="live", title="t")
+    st.begin_step(rid, 0, backend="b", tool="pcb_warpage_surrogate", args={}, mode="live")
+    st.finish_step(rid, 0, ok=True, result_text="{}", notes={"mock_note": "합성 데이터로 학습한 데모", "quality_flags": ["W120"]})
+    st.begin_step(rid, 1, backend="b", tool="find_reports", args={}, mode="live")
+    st.finish_step(rid, 1, ok=True, result_text="{}")
+    st.set_run_state(rid, "done", ended=True)
+    assert all("warn_labels" not in s for s in c.get(f"{PREFIX}/runs/{rid}", headers=h).json()["steps"]), "세션 보기의 꼴은 그대로다"
+    _as_pat(c)
+    steps = c.get(f"{PREFIX}/runs/{rid}", headers=rw).json()["steps"]
+    assert steps[0]["warn_labels"] == ["W120", "합성 데이터로 학습한 데모"] and steps[1]["warn_labels"] == []
+
+
+def test_펼치기_열쇠는_요청_값이_아니라_맞은_후보_값으로_짓는다(user):
+    """후보 7 에 [7] 과 [7.0] 은 같은 대상이다(파이썬은 같다고 본다) — 요청 값으로 열쇠를 지으면 '7' 과 '7.0' 이 달라 실행이 둘 생긴다."""
+    c, h = user
+    st = c.app.state.procedures_store
+    me = c.get("/auth/me", headers=h).json()["subject"]
+    spec = {"title": "t", "vars": [], "steps": [{"backend": "ra", "tool": "find_parts", "args": {},
+                                                 "select": {"from": "parts", "save": "id", "as": "part"}},
+                                                {"backend": "ra", "tool": "part_info", "args": {"part": "{{part}}"}}]}
+    vid = st.create_procedure(owner_sub=me, spec=spec, title="t")["version_id"]
+    rid = st.create_run(owner_sub=me, run_by=me, procedure_version_id=vid, inputs={}, origin="replay", mode="live")
+    st.begin_step(rid, 0, backend="ra", tool="find_parts", args={}, mode="live")
+    st.finish_step(rid, 0, ok=False, state="pending", stage="select:ask", error=None,
+                   notes={"pick_into": "part", "candidates": [{"i": 0, "label": "A", "value": 7}, {"i": 1, "label": "B", "value": 8}]})
+    st.set_run_state(rid, "gated", stage="step:0")
+    url = f"{PREFIX}/runs/{rid}/steps/0/fan-out"
+    first = c.post(url, json={"values": [7.0], "mode": "plan"}, headers=h)
+    assert first.status_code == 202, first.text
+    made = st.get_run(first.json()["runs"][0]["run_id"])["inputs"]["part"]
+    assert made == 7 and isinstance(made, int), f"실행에는 후보의 값이 들어간다: {made!r}"
+    assert c.post(url, json={"values": [7], "mode": "plan"}, headers=h).status_code == 409
+    assert c.post(url, json={"values": [7.0, 7], "mode": "plan"}, headers=h).status_code == 409
+    assert len(st.list_runs(owner_sub=me, batch_id=first.json()["batch_id"])) == 1
+
+
+def test_펼치기_열쇠는_객체_값의_키_차례와_무관하다():
+    from app.procedures.store import batch_key
+
+    assert batch_key("plan", {"a": 1, "b": [2, {"y": 1, "x": 2}]}) == batch_key("plan", {"b": [2, {"x": 2, "y": 1}], "a": 1})
+    assert batch_key("plan", {"a": 1}) != batch_key("live", {"a": 1}) and batch_key("plan", {"a": 1}) != batch_key("plan", {"a": 2})
+
+
+def test_목록은_제목으로_저장소에서_거르고_넘친_수를_말한다(user, monkeypatch):
+    """100건에서 말없이 끊고 그 뒤에 제목을 거르면, 101번째부터의 절차는 제목을 정확히 대도 없는 것으로 보인다."""
+    from app.procedures import routes as R
+
+    c, h = user
+    spec = {"title": "t", "vars": [], "steps": [{"backend": "b", "tool": "find_reports", "args": {}}]}
+    for t in ("열충격 SED 판정", "적층 굴곡 수명", "낙하 100% 판정", "Drop_Check", "DropXCheck", "100 번 낙하"):
+        assert c.post(f"{PREFIX}/procedures", json={"title": t, "spec": spec}, headers=h).status_code == 201
+    monkeypatch.setattr(R, "CATALOG_MAX", 2)
+    got = c.get(f"{PREFIX}/catalog", headers=h).json()
+    assert (got["count"], got["total"], got["truncated"]) == (2, 6, True)
+    hit = c.get(f"{PREFIX}/catalog", params={"q": "열충격"}, headers=h).json()
+    assert [r["title"] for r in hit["procedures"]] == ["열충격 SED 판정"] and (hit["total"], hit["truncated"]) == (1, False), \
+        "상한 밖(가장 오래된 것)이어도 제목으로 찾는다"
+    assert c.get(f"{PREFIX}/catalog", params={"q": "판정"}, headers=h).json()["total"] == 2
+
+    def titles(q):
+        return sorted(r["title"] for r in c.get(f"{PREFIX}/catalog", params={"q": q}, headers=h).json()["procedures"])
+    # 글자 그대로 찾는다 — % · _ 는 무늬가 아니다(무늬로 읽으면 '100%' 가 '100 번 낙하' 를, 'drop_check' 가 'DropXCheck' 를 같이 집는다)
+    assert titles("100%") == ["낙하 100% 판정"] and titles("drop_check") == ["Drop_Check"]
+    assert titles("dropxcheck") == ["DropXCheck"] and titles("drop-check") == []
+    assert len(c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"]) == 6, "화면의 목록은 종전 그대로다"

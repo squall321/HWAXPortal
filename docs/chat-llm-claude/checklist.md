@@ -1,0 +1,23 @@
+# 웹 챗을 Claude API 로 — 할 일
+
+계획은 [PLAN.md](PLAN.md), 결정은 [context-notes.md](context-notes.md).
+
+## 포털
+- [x] 권한 항목 표지 `grant_only` — `"*"` · 관리자 전권이 펼치지 않는다 · 함의로 열지 않는다(검사) · 관리자도 개별 허가로
+- [x] 권한 표에 `feat:chat-claude`(웹 챗 Claude 모델)
+- [x] 시험 둘 · 변이 다섯(별표 · 관리자 전권 · 관리자 개별 허가 · 함의 검사 · 표지 읽기)
+- [ ] 업데이트 이력
+
+## 에이전트 서버
+- [ ] Claude 추가 챗 모델(`CLAUDE_CHAT_*`) · 요청마다 고르기 · 넘김 · 캐시 열쇠 · /health
+- [ ] 생각 블록을 받은 그대로 되돌림 · temperature 를 보내지 않음 · 거절 표시 · 서버 쪽 대체 모델
+- [ ] 시험(진짜 SSE 꼴 가짜 전송) · 기본 박스 바이트 동일 · 전체 회귀
+
+## dev
+- [ ] 키 파일(사용자 — `~/.config/hwax/anthropic.key`, 0600)
+- [ ] 서비스 venv 에 `requirements-anthropic.txt` 설치(사용자 확인)
+- [ ] `.env` 줄 — `CLAUDE_CHAT_MODEL` · `CLAUDE_CHAT_API_KEY_FILE` · `CLAUDE_CHAT_FOR=all`
+- [ ] 재기동(통합 재기동과 함께) · 웹 챗 한 턴 · 답한 모델 표시 확인
+
+## cae00(사람 몫 — 받은 편지함)
+- [ ] 키 파일 · 설치 · `.env` 의 `CLAUDE_CHAT_FOR=feat:chat-claude` · 사람에게 개별 허가 · 한 사람으로 한 턴

@@ -9,6 +9,15 @@
 //                       문자열이 아니면 JSON 으로 싣는다. 어디에도 본문이 없는 항목은 버린다.
 //                       key(선택, ^[A-Za-z0-9_.-]{1,24}$)를 주면 좌석이 보는 표지가 [e:N|KEY] 가 된다 — 번호 N 은 버려진
 //                       항목을 건너뛰고 매겨지므로, 결정문의 인용을 제 원장과 맞춰 보려면 키를 실어 보낸다.
+//                       앞선 과제 인사이트(docs/project-insight-graph PLAN §7.1) — 과제 심의(subject 를 단 심의)면 호출자가 게이트웨이
+//                       insight_find(sp_task, round)로 같은 (과제, 차수)의 앞선 결정 카드를 찾아 카드마다 한 항목으로 넘긴다 —
+//                       {source:'앞선 인사이트 — 검증 대상, 독립 근거 아님', tool:'insight_get', args:'{"id":"<카드 id>"}', result:
+//                       주장 · 출처 · 상태}. 범위(scope)가 소속(aff:) · 조직(org)뿐인 확인 · 반박 카드만 넘긴다 — plat: 가 붙은 카드 ·
+//                       내 초안 · 다른 차수의 카드는 넘기지 않는다(이 심의의 보고서를 읽는 사람은 플랫폼 권한으로 걸러지지 않는다).
+//                       리스크 심사(chairTemplate risk-review)는 도구 칸이 과제 인사이트(insight_* — 범용 실행기 invoke_tool 로 부른 것 포함)인
+//                       항목을 좌석에 주지 않고 evidenceOmitted 에 '과제 인사이트 근거 거름' 으로 남긴다(D-18 — 엔진과 같은 거름).
+//                       tool · args 를 그 꼴로 지키면 대화 저장이 읽은 카드 id 를 주제 안(subject.insights)에 실어 포털이 그 카드들의 보이는
+//                       범위를 이어받는다. 찾기 결과를 묶음째 넘기는 등 카드 하나씩이 아니면 "unknown" 으로 실려 그 카드는 확인해도 주인만 본다.
 //   - options         : 후보/선택지 목록(JSON 문자열 또는 배열)
 //   - personas        : [{key, role, origin?}] 참여 전문 페르소나(호출자가 recommend_agents로 발굴해 전달).
 //                       key 는 전문가 키다 — recommend_agents 가 돌려주는 agent_type 값이고, 그 이름(agent_type)으로 와도 받는다.
@@ -266,7 +275,48 @@ const EV_ITEM_MAX = roomShare(0.09, 2000)   // = 합계 몫(30%)의 30%
 const EV_MAX_ITEMS = EV_BUDGET > 11000 ? 120 : 12
 // 본문·키를 한 번 정해 둔다 — 아래 좌석 블록과 인용 후검증(_citCorpus)이 같은 값을 본다.
 // 들어온 것(_evIn)·본문 있는 것(_evValid)·건수 상한 안의 것(EV)을 따로 쥔다 — 버린 수를 사유별로 세려면 셋이 다 필요하다.
-const _evIn = Array.isArray(A.evidence) ? A.evidence : []
+// 과제 인사이트 근거인가 — 도구 칸의 이름(낱말 경계 — insight_ 앞이 영숫자가 아니면: 맨 이름 · mcp__<서버>__<도구> · <앱>.<도구> · <앱>-<도구> ·
+// <앱>_<도구> · 괄호 · 머리의 BOM 같은 글자)과, 그 이름이 게이트웨이의 범용 실행기(invoke_tool)면 인자 글에 든 name 값으로 가린다.
+// ⚠ 같은 규칙이 세 곳에 있다 — 여기 · HWAXAgentServer deliberation._insight_evidence_tool · HWAXPortal backend/app/insights/cards.py insight_tool.
+//   포털 시험(tests/test_insight_workflows.py)이 같은 입력에 셋이 같은 답을 내는지 맞댄다. 고치면 셋을 같이 고친다(trim · toLowerCase 를 쓰지 않는다 —
+//   엔진의 strip · lower 와 글자마다 갈린다).
+const INSIGHT_EV_TOOL_RE = /(?<![A-Za-z0-9])insight_/i
+const INVOKE_TOOL_RE = /(?<![A-Za-z0-9])invoke_tool(?![A-Za-z0-9])/i
+const INVOKE_NAME_RE = /["']name["']\s*:\s*["']([^"']*)["']/g
+const isInsightEvidence = (tool, args) => {
+  if (typeof tool !== 'string') return false
+  if (INSIGHT_EV_TOOL_RE.test(tool)) return true
+  if (!INVOKE_TOOL_RE.test(tool)) return false
+  const text = typeof args === 'string' ? args : args == null ? '' : (JSON.stringify(args) ?? '')
+  return [...text.matchAll(INVOKE_NAME_RE)].some(m => INSIGHT_EV_TOOL_RE.test(m[1]))
+}
+const _evAll = Array.isArray(A.evidence) ? A.evidence : []
+const _insightItems = _evAll.filter(e => e && typeof e === 'object' && !Array.isArray(e) && isInsightEvidence(e.tool, e.args))
+// 리스크 심사는 과제 인사이트(같은 과제의 앞선 심의 결론)를 호출자 근거로도 받지 않는다(D-18 — HWAXAgentServer deliberation._resolve_opts 의
+// 받침과 같은 거름). 근거 블록은 코드가 짓는다 — 좌석 도구(D18_LINE)와 달리 지시가 아니라 강제다. 글만 베껴 넣은 근거(도구 칸 없음)는 가리지 못한다.
+const _evInsight = /^risk-review/i.test(CHAIR_TEMPLATE) ? _insightItems : []
+// 읽은 과제 인사이트(contracts §10.3) — 이 심의가 근거로 읽은 카드 id 들. 대화 저장의 주제 안에 실어(SUBJECT_SAVE) 포털이 그 카드들의 보이는 범위를
+// 이어받게 한다(워크플로 카드에는 근거 표지가 없다). 카드 하나를 읽은 꼴(insight_get + {id} — 범용 실행기면 그 name · arguments)이 아닌 항목이
+// 하나라도 있거나 60장을 넘으면 "unknown" 이다 — 포털은 그 카드를 확인해도 주인만 보게 둔다(닫힌 쪽). 근거로 쓰지 않았으면 null(칸을 싣지 않는다).
+const INSIGHT_GET_RE = /(?<![A-Za-z0-9])insight_get\s*$/i
+const INSIGHT_ID_RE = /^ins:(?:web|delib|wf):[^\s'"\\]{1,290}$/
+const INSIGHTS_MAX = 60
+const insightIdOf = (tool, args) => {
+  let name = tool, a = args
+  if (INVOKE_TOOL_RE.test(tool) && a && typeof a === 'object' && !Array.isArray(a)) { name = a.name; a = a.arguments }
+  if (typeof name !== 'string' || !INSIGHT_GET_RE.test(name)) return null
+  if (typeof a === 'string') { try { a = JSON.parse(a) } catch (_) { return null } }
+  const keys = a && typeof a === 'object' && !Array.isArray(a) ? Object.keys(a) : []
+  return keys.length === 1 && keys[0] === 'id' && typeof a.id === 'string' && INSIGHT_ID_RE.test(a.id) ? a.id : null
+}
+const INSIGHT_REFS = !_insightItems.length ? null : (() => {
+  const ids = _insightItems.map(e => insightIdOf(e.tool, e.args))
+  if (ids.includes(null)) return 'unknown'
+  const uniq = [...new Set(ids)]
+  return uniq.length > INSIGHTS_MAX ? 'unknown' : uniq
+})()
+const SUBJECT_SAVE = SUBJECT && INSIGHT_REFS != null ? { ...SUBJECT, insights: INSIGHT_REFS } : SUBJECT
+const _evIn = _evInsight.length ? _evAll.filter(e => !_evInsight.includes(e)) : _evAll
 const _evValid = _evIn
   .map(e => {
     if (!e || typeof e !== 'object' || Array.isArray(e)) return null
@@ -324,6 +374,11 @@ if (EV.length) {
 // source·문구는 엔진의 제외 카드(deliberation.py '사전 근거 …')·잡 원장 evidence_omitted 와 맞춘다 — 리스크 앱이
 // 같은 낱말로 읽는다. text 는 200자 안쪽으로 쓴다(앱 원장 events[] 의 필드 상한 — HWAXRisk routes.EVENT_FIELD_MAX).
 const EV_OMITTED = []
+if (_evInsight.length) {
+  EV_OMITTED.push({ source: '과제 인사이트 근거 거름', count: _evInsight.length,
+    text: `호출자 근거 가운데 과제 인사이트(insight_find · insight_get) ${_evInsight.length}건을 좌석에 주지 않았다 — 리스크 심사 좌석은 같은 ` +
+          `과제의 앞선 심의 결론을 보지 않는다(D-18).` })
+}
 {
   const empty = _evIn.length - _evValid.length
   const over = _evValid.length - EV.length
@@ -1199,7 +1254,7 @@ if (A.saveConversation !== false) {
       conversation = await agent(
         `save_conversation 도구가 사용 가능하면 호출해 아래 심의 대화 로그를 포털 대화 저장소에 저장하라.\n` +
         `인자: title="${CONT ? '심의(이어하기) — ' : '심의 — '}${Q.slice(0, 50)}", kind="deliberation", source="mcp",\n` +
-        (SUBJECT ? `subject=${JSON.stringify(SUBJECT)}, chair_template="${CHAIR_TEMPLATE}",\n` : '') +
+        (SUBJECT ? `subject=${JSON.stringify(SUBJECT_SAVE)}, chair_template="${CHAIR_TEMPLATE}",\n` : '') +
         `messages=${JSON.stringify(msgs)}\n` +
         `- messages 값은 **한 글자도 바꾸지 말고 그대로** 인자로 넘겨라(요약·의역·생략 금지).` +
         (SUBJECT ? ` subject · chair_template 도 그대로 넘긴다.` : '') + `\n` +
@@ -1246,6 +1301,6 @@ return {
   conversation,
   nextRoundOffset: finalRoundNo,   // 다음 이어하기 호출의 continueFrom.roundsSoFar 로 그대로 전달
   // 심의 주제 · 의장 틀 — infra/scripts/save-delib-conversation.py 가 대화를 REST 로 저장할 때 같이 싣는다(리스크 심사면 주제는 null)
-  subject: SUBJECT,
+  subject: SUBJECT_SAVE,
   chairTemplate: CHAIR_TEMPLATE,
 }
