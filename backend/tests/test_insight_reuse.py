@@ -462,6 +462,11 @@ def test_RA_위임_박스는_기본_부서를_소속_안으로_본다(web, monke
     assert laid() == [], "기본 공간이 부서 · 개인이 아니면 조직으로 친다"
     web.state.ra = _ra_me(None, (("personal-7", "personal"),))          # 부서 배정을 기다리는 사람 — 개인 공간
     assert laid() == [a]
+    _workspace("dept-a")                                                # 고른 공간은 부서지만 엔진 저장이 가는 기본 공간이 시스템 공간이다
+    web.state.ra = _ra_me("sys-1")
+    assert laid() == [], "위임 박스는 고른 공간만 보지 않는다 — 기본 공간도 부서 · 개인이어야 한다"
+    monkeypatch.setattr(web.s, "ra_sso_secret", "")
+    assert laid() == [a], "등록한 토큰으로 부르는 박스라면 고른 공간(부서)으로 간다"
 
 
 def _baseline(web, who: str, body: dict) -> bytes:
@@ -710,6 +715,12 @@ def test_확인이_읽었다는_카드가_내게_안_보이면_까닭을_가르�
     assert c.patch("/auth/access/users/boss@example.com", json={"affiliation": "CAEG"}, headers=web.login("boss@example.com")).status_code == 200
     r = c.post("/insights-api/cards/ins:web:adm:r1:default/confirm", headers=web.login("boss@example.com")).json()
     assert r["scope"] == ["user:boss@example.com"] and "plat:secret" not in json.dumps(r, ensure_ascii=False)
+    near = web.confirmed("peer@example.com", "near")
+    assert st.update(near, scope=["aff:CAEG", "plat:secret"])                                # 같은 소속 · 관리자에게도 없는 플랫폼 권한
+    _relay(st, owner="boss@example.com", cid="adm2", cards=({**_derived([near])},))
+    r = c.post("/insights-api/cards/ins:web:adm2:r1:default/confirm", headers=web.login("boss@example.com")).json()
+    assert r["scope"] == ["user:boss@example.com"] and r["scope_note"] == next(iter(seen.values())), \
+        "관리자 표지로만 보이는 카드의 범위(plat 토큰)를 제 카드에 찍지 않는다"
 
 
 # ── 범위 이어받기 — 앞선 인사이트를 근거로 쓴 카드의 확인 ─────────────────────────────────────────────────────────
