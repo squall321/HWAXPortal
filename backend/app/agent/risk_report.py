@@ -84,8 +84,8 @@ REFUSALS: dict[str, tuple[int, str]] = {
                                "확인하세요."),
     "ra_forbidden": (403, "Report Archive 가 이 계정의 초안 쓰기를 받지 않았습니다(HTTP 403)."),
     "ra_rejected": (422, "Report Archive 가 받지 않았습니다 — 다시 눌러도 같으면 운영자에게 알려 주세요."),
-    "ra_error": (502, "Report Archive 오류로 멈췄습니다 — 잠시 뒤 다시 누르면 실린 다음 쪽부터 이어 보냅니다."),
-    "ra_unreachable": (502, "Report Archive 에 연결하지 못했습니다 — 잠시 뒤 다시 누르면 실린 다음 쪽부터 이어 보냅니다."),
+    "ra_error": (502, "Report Archive 오류로 멈췄습니다 — 잠시 뒤 다시 누르세요(실린 쪽이 있으면 그 다음 쪽부터 이어 보냅니다)."),
+    "ra_unreachable": (502, "Report Archive 에 연결하지 못했습니다 — 잠시 뒤 다시 누르세요(실린 쪽이 있으면 그 다음 쪽부터 이어 보냅니다)."),
     "report_locked": (409, "누가 그 초안의 편집 화면을 열어 두어 쪽을 붙이지 못했습니다 — 편집 화면을 닫은 뒤 다시 보내세요."),
     "ra_draft_gone": (409, "Report Archive 에서 그 초안(#{report_id})을 찾지 못했습니다 — 지워졌다면 이 판은 이어 보낼 수 없습니다(새 판을 만들면 "
                            "새 초안으로 보냅니다)."),
@@ -221,6 +221,13 @@ def _data(r: httpx.Response) -> dict:
     return d if isinstance(d, dict) else {}
 
 
+def _pages_on_ra(data: dict) -> int:
+    """쪽 붙이기의 답에서 그 초안의 쪽 수 — 읽지 못하면 0(실렸다고 치지 않는다)."""
+    report = data.get("report")
+    pages = report.get("pages") if isinstance(report, dict) else None
+    return len(pages) if isinstance(pages, list) else 0
+
+
 def _warnings(data: dict, page: int | None = None) -> list[str]:
     head = f"{page}쪽: " if page else ""
     return [head + str(w)[:_WARN_CHARS] for w in (data.get("warnings") or [])]
@@ -263,8 +270,10 @@ async def _send(settings: Settings, pat: str, ra: _dfd.RaSession, target_key: st
                 r = await ra.call(cli, "POST", "/api/reports/ai-draft", json={**draft, "dry_run": True})
             except httpx.HTTPError as exc:
                 raise await stop(DraftError("ra_unreachable", reason="transient", note=type(exc).__name__)) from None
-            if r.status_code >= 400:
+            if r.status_code >= 300:
                 raise await stop(_ra_fail(r, "preview", template=template))
+            if _data(r).get("dry_run") is not True:     # 200 인데 RA 의 미리보기 답이 아니다(중간 장비의 쪽 등) — 경고 없음으로 읽지 않는다
+                raise await stop(DraftError("ra_error", reason="transient", note=f"HTTP {r.status_code} 미리보기 답을 읽지 못했다"))
             dropped = _warnings(_data(r))
             if dropped:
                 raise await stop(DraftError("ra_template_mismatch", reason="template_mismatch", note=dropped[0], template=template,
@@ -294,7 +303,10 @@ async def _send(settings: Settings, pat: str, ra: _dfd.RaSession, target_key: st
         for n in range(sent + 1, total + 1):
             try:
                 r = await ra.call(cli, "PATCH", f"/api/reports/{rid}/ai-draft", json={"page": n, "blocks": pages[n - 1]})
-                fail = _ra_fail(r, "append", pages_sent=sent, created=created, **where) if r.status_code >= 400 else None
+                fail = _ra_fail(r, "append", pages_sent=sent, created=created, **where) if r.status_code >= 300 else None
+                if fail is None and _pages_on_ra(_data(r)) < n:     # 2xx 인데 그 쪽이 실렸다는 답이 아니다 — 실렸다고 치지 않는다
+                    fail = DraftError("ra_error", reason="transient", note=f"HTTP {r.status_code} {n}쪽이 실렸다는 답을 읽지 못했다",
+                                      pages_sent=sent, created=created, **where)
             except httpx.HTTPError as exc:
                 fail = DraftError("ra_unreachable", reason="transient", note=type(exc).__name__, pages_sent=sent, created=created, **where)
             if fail is not None:

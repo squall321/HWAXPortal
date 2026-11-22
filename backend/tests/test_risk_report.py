@@ -457,6 +457,35 @@ def test_붙이기가_불통이어도_partial_이고_편집_잠금은_409(box):
     assert r.status_code == 409 and r.json()["error"] == "ra_draft_gone" and box.risk.ledger["state"] == "partial"
 
 
+def test_RA_의_답이_아닌_2xx_3xx_는_성공으로_치지_않는다(box, monkeypatch):
+    """중간 장비가 로그인 쪽을 200 으로 주거나 주소가 넘겨질(302) 때 — 「경고 없음」 · 「쪽이 실렸다」 로 읽으면 실패가 성공과 같은 꼴이 된다."""
+    real = _RA.__call__
+    mode = {"step": "preview", "resp": lambda: httpx.Response(200, text="<html>login</html>")}
+
+    async def odd(self, req):
+        body = json.loads(req.content)
+        step = ("preview" if body.get("dry_run") else "create") if req.method == "POST" else f"page{body['page']}"
+        if step == mode["step"]:
+            self.calls.append(req)
+            return mode["resp"]()
+        return await real(self, req)
+
+    monkeypatch.setattr(_RA, "__call__", odd)
+    r = box.post()
+    assert r.status_code == 502 and r.json()["error"] == "ra_error"
+    assert box.ra.steps() == ["preview"] and box.ra.reports == {} and box.risk.ledger["state"] is None, "미리보기를 못 읽었으면 만들지 않는다"
+    mode["resp"] = lambda: httpx.Response(302, headers={"location": "https://ra.test/login"})
+    assert box.post().json()["error"] == "ra_error" and box.ra.reports == {}
+    for resp in (lambda: httpx.Response(200, text="<html>login</html>"), lambda: httpx.Response(302, headers={"location": "/login"}),
+                 lambda: httpx.Response(200, json={"success": True, "data": {"report": {"id": 58, "pages": [{}]}, "warnings": []}})):
+        mode.update(step="page2", resp=resp)
+        out = box.post().json()
+        assert (out["ok"], out["error"], out["pages_sent"], out["report_id"]) == (False, "ra_error", 1, 58)
+        assert (box.risk.ledger["state"], box.risk.ledger["pages_sent"]) == ("partial", 1), "실리지 않은 쪽을 실렸다고 적지 않는다"
+    mode["step"] = "none"
+    assert box.post().json()["state"] == "sent" and len(box.ra.reports[58]["pages"]) == 3
+
+
 def test_쪽을_붙인_답을_잃어도_같은_쪽을_다시_보내_쪽이_겹치지_않는다(box):
     box.ra.lose.add("page2")
     assert box.post().json()["error"] == "ra_unreachable"
