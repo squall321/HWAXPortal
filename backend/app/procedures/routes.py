@@ -387,6 +387,8 @@ async def _validated(request: Request, raw: dict, principal: Principal | None = 
     보장하는 모양이어야 화면이 없는 칸을 읽다 죽지 않는다.
     """
     spec, errs = await _checked(request, raw, principal)
+    if principal is not None and spec.team:
+        ensure(principal, "feat:expert-chat")      # 절차에 팀을 붙이는 것은 두 권한(docs/expert-teams PLAN 1)
     hard = [e for e in errs if not e.startswith("warn:")]
     if hard:
         raise AuthError("절차를 저장할 수 없습니다:\n- " + "\n- ".join(hard), status_code=422)
@@ -505,7 +507,9 @@ def get_procedure(request: Request, procedure_id: str,
         raise AuthError("절차를 찾을 수 없습니다", status_code=404)
     # `author_sub` 은 로컬 계정이면 **이메일**이다(app/auth/routes/local.py). 공유 절차를
     # 남이 읽을 때 남의 주소가 딸려 나갈 이유가 없다 — 내보내기가 이미 떼고 있다.
-    return {k: val for k, val in v.items() if k != "author_sub"}
+    # mine — 판본(팀 정하기 등)은 주인만 더한다. 화면이 주인에게만 그 단추를 보인다
+    return {**{k: val for k, val in v.items() if k != "author_sub"},
+            "mine": _store(request).owner_of(procedure_id) == principal.subject}
 
 
 @router.post("/procedures/{procedure_id}/versions", status_code=201,
@@ -1126,17 +1130,29 @@ def cancel(request: Request, run_id: str, principal: Principal = Depends(_me)) -
 CHAT_KIND = "chat"
 
 
+def _run_team(request: Request, principal: Principal, run: dict) -> dict | None:
+    """실행이 나온 절차 판본의 팀(docs/expert-teams PLAN 2-3) — {team: 그 사람의 시야로 푼 사본 | None, team_why}. 판본에 팀 칸이 없거나
+    빈 실행(판본 없음)이면 None(응답이 팀 전과 같다). 팀은 도구 단계를 바꾸지 않는다 — 넘기는 자리의 사람 · 좌석만 미리 채운다."""
+    vid = run.get("procedure_version_id")
+    tid = ((_store(request).get_version(vid) or {}).get("spec") or {}).get("team") if vid else None
+    if not tid:
+        return None
+    from app.agent.team_routes import resolve_for
+    got = resolve_for(request, principal, tid)
+    return {"team": got.team, "team_why": got.why}
+
+
 @router.get("/runs/{run_id}/handoff")
 def run_handoff(request: Request, run_id: str, principal: Principal = Depends(_me)) -> dict:
     """심의로 넘기면 무엇이 실리나 — 근거 수 · 단계마다의 상태 · 부르지 않은 단계 · 상한. 넘길 수 없는 실행(도는 실행 · 부른 단계 없음)은
-    중계와 같은 판정으로 거절한다."""
+    중계와 같은 판정으로 거절한다. 절차에 팀이 있으면 그 사본(team · team_why) — 심의 화면이 좌석으로 미리 채우고 사람이 고친다."""
     run = _owned(request, principal, run_id)
     got = _handoff.evidence_or_refuse(_store(request), run)
     return {"run_id": run_id, "title": run.get("title"), "state": run["state"], "mode": run["mode"],
             "evidence_count": len(got["evidence"]), "called": got["called"], "dropped": got["dropped"],
             "items": got["brief"], "not_called": got["not_called"],
             "limits": {"items": _handoff.EVID_ITEMS, "result_chars": _handoff.EVID_RESULT_MAX,
-                       "args_chars": _handoff.EVID_ARGS_MAX}}
+                       "args_chars": _handoff.EVID_ARGS_MAX}, **(_run_team(request, principal, run) or {})}
 
 
 @router.post("/runs/{run_id}/chat", status_code=201, dependencies=[Depends(require_csrf)])
@@ -1149,6 +1165,14 @@ def run_to_chat(request: Request, run_id: str, principal: Principal = Depends(_m
     title, msgs = _handoff.chat_messages(_store(request), run)
     if not msgs[-1]["meta"]["activity"]:
         raise AuthError("가져갈 기록이 없습니다 — 이 실행은 부른 단계가 없습니다(계획 모드이거나 첫 단계 전에 멈췄습니다)", status_code=422)
+    team = _run_team(request, principal, run)
+    snap = (team or {}).get("team")
+    if snap:
+        # 절차의 팀을 대화 지정값으로(2-1 과 같은 복사) — 사람 발화의 meta 는 챗 중계가 적는 꼴 그대로라 다른 기기에서 열어도 전문가가 산다.
+        # 앱 · 도구 · 보조 이름은 응답의 사본으로 화면이 대화에 복사한다
+        lead, helpers = snap["lead"], snap["helpers"]
+        msgs[0]["meta"] = {"pinned_agent": lead["key"], **({"pinned_agent_name": lead["name"]} if lead.get("name") else {}),
+                           **({"pinned_agents": [lead["key"], *(h["key"] for h in helpers)]} if helpers else {})}
     conv = getattr(request.app.state, "conv_store", None)
     if conv is None:
         raise AuthError("대화 저장소가 열리지 않았습니다", status_code=503)
@@ -1156,7 +1180,7 @@ def run_to_chat(request: Request, run_id: str, principal: Principal = Depends(_m
         cid = conv.create_with_messages(owner_sub=principal.subject, title=title, kind=CHAT_KIND, source="web", messages=msgs)
     except sqlite3.OperationalError as exc:
         raise AuthError(f"대화 저장소에 쓰지 못했습니다 — {exc}. 잠시 뒤 다시 시도하세요", status_code=503) from None
-    return {"conversation_id": cid, "title": title}
+    return {"conversation_id": cid, "title": title, **(team or {})}
 
 
 class SaveAsIn(BaseModel):
