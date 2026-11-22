@@ -11,9 +11,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_serializer, model_validator
 
 from app.procedures.models import GW_DENY_PREFIX, GW_DENY_SUFFIX, MUST_GATE, WARN_EXACT, WARN_PREFIX, SpecError, Var, USERINFO_URL
+from app.agent.teams import TEAM_ID_RE
 
 CONTRACT = 1
 RUN_STATES = ("queued", "running", "waiting", "done", "failed", "cancelled", "interrupted")
@@ -74,6 +75,32 @@ class DelibOpts(BaseModel):
     chair_template: str | None = Field(None, max_length=64)
 
 
+RISK_TEMPLATE = "risk-review"
+
+
+def delib_is_risk(d) -> bool:
+    """리스크 심사 계열 심의인가 — 일(job) 또는 의장 틀이 risk-review*(봉인 포함). 팀을 앉히지 않는다(D-18 · docs/expert-teams ET-5).
+    과제 인사이트(cards.risk_family)와 에이전트 서버(delib_decision.risk_family)가 의장 틀로 가르는 것과 같은 머리다."""
+    d = d.model_dump() if isinstance(d, BaseModel) else (d or {})
+    return any(str(d.get(k) or "").strip().lower().startswith(RISK_TEMPLATE) for k in ("job", "chair_template"))
+
+
+def _team_ref(v, *, blank_ok: bool):
+    """팀 칸 — None(안 적음) · 팀 id(tm_<32 hex>) · 단계만 빈 글(이 단계는 팀 없이)."""
+    if v is None or (blank_ok and v == ""):
+        return v
+    if not isinstance(v, str) or not TEAM_ID_RE.match(v):
+        raise ValueError("팀 칸은 팀 id(tm_…)" + (" 또는 빈 글(이 단계는 팀 없이)" if blank_ok else "") + "다")
+    return v
+
+
+def _drop_none_team(d):
+    """팀을 안 적은 스펙 · 단계는 칸이 없던 때와 바이트까지 같게 — 저장 · 내보내기에 `team: null` 을 남기지 않는다."""
+    if isinstance(d, dict) and "team" in d and d["team"] is None:
+        d.pop("team")
+    return d
+
+
 class Step(BaseModel):
     model_config = {"extra": "forbid"}
     id: str
@@ -88,6 +115,17 @@ class Step(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     blocked: Blocked = Field(default_factory=Blocked)
     deliberation: DelibOpts | None = None
+    # 이 단계의 팀(docs/expert-teams) — 안 적으면 루틴의 팀, 빈 글이면 이 단계는 팀 없이, 팀 id 면 그 팀으로 덮는다
+    team: str | None = None
+
+    @field_validator("team")
+    @classmethod
+    def _team(cls, v):
+        return _team_ref(v, blank_ok=True)
+
+    @model_serializer(mode="wrap")
+    def _ser(self, handler):
+        return _drop_none_team(handler(self))
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +156,8 @@ class Step(BaseModel):
                 self.deliberation = DelibOpts()
         elif self.deliberation is not None:
             raise ValueError(f"{self.id}: deliberation 칸은 심의 단계에만 쓴다")
+        if self.kind == "deliberation" and self.team and delib_is_risk(self.deliberation):
+            raise ValueError(f"{self.id}: 리스크 심사 계열 심의 단계에는 팀을 앉히지 않는다(D-18) — team 을 빼거나 빈 글로 둔다")
         bad = [t for t in self.tools if not _TOOL.match(t)]
         if bad:
             raise ValueError(f"{self.id}: 도구 이름 꼴이 아니다 — {bad}")
@@ -163,6 +203,28 @@ class RoutineSpec(BaseModel):
     report: ReportSpec = Field(default_factory=ReportSpec)
     limits: Limits = Field(default_factory=Limits)
     visibility: Literal["private", "all"] = "private"
+    # 루틴의 팀(docs/expert-teams) — 단계가 덮지 않으면 모든 단계에. 실행을 만들 때 그 사람의 시야로 푼 사본이 실행 원장에 남는다
+    team: str | None = None
+
+    @field_validator("team")
+    @classmethod
+    def _team(cls, v):
+        return _team_ref(v, blank_ok=False)
+
+    @model_serializer(mode="wrap")
+    def _ser(self, handler):
+        return _drop_none_team(handler(self))
+
+    def team_ids(self) -> list[str]:
+        """이 스펙이 가리키는 팀 id 들(루틴 · 단계, 처음 나온 차례) — 없으면 빈 목록(팀 칸을 쓰지 않는 루틴)."""
+        out: list[str] = []
+        for t in [self.team, *(s.team for s in self.steps)]:
+            if t and t not in out:
+                out.append(t)
+        return out
+
+    def uses_team(self) -> bool:
+        return self.team is not None or any(s.team is not None for s in self.steps)
 
     @model_validator(mode="after")
     def _whole(self):
