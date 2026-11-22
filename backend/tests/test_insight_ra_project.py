@@ -379,3 +379,21 @@ def test_보내는_곳과_칸이_RA_소스와_맞는다():
     mine = Path(RA.__file__).read_text(encoding="utf-8").split('"""', 2)[2]
     assert not any(w in mine for w in ("/api/ai/ontology/write", "create_object", "update_object", "link_objects", "/relations")), \
         "객체 쓰기(관리자 몫)는 부르지 않는다"
+
+
+def test_과제_key_는_확인된_주제의_것과_같을_때만이다():
+    """칸의 sp_task 와 주제의 확인이 어긋난 행(옛 원장 · 손으로 고친 행)은 확인된 과제가 아니다 — 달지 않는다."""
+    base = {"status": "confirmed", "scope": ["org"], "sp_task": KEY, "subject": dict(CONFIRMED), "card": {"report_id": 7}}
+    assert RA.why_not(base) is None
+    for subj in ({**CONFIRMED, "sp_state": "claimed"}, {**CONFIRMED, "sp_task": "다른 과제"}, {}, {**CONFIRMED, "sp_state": None}):
+        assert "확인된 과제 key 가 없다" in RA.why_not({**base, "subject": subj}), subj
+    assert "확인된 과제 key 가 없다" in RA.why_not({**base, "sp_task": None})
+
+
+def test_이미_거둔_줄을_다시_거두지_않는다(ra):
+    """처음 거둔 때 · 사람을 지킨다 — 거두기 표지는 한 번이다."""
+    ra.st.meta_set("ra:x", json.dumps({"state": RA.PROJECTED, "report_id": 7, "entity_id": EID}))
+    first = RA.mark_withdrawn(ra.st, "x", "me@example.com")
+    assert first["state"] == RA.WITHDRAWN and first["withdrawn_by"] == "me@example.com"
+    assert RA.mark_withdrawn(ra.st, "x", "boss@example.com") is None
+    assert RA.record(ra.st, "x") == first
