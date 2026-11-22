@@ -70,5 +70,6 @@ candidates:
   # 이 박스에 항목이 0건이라 **확인 못 했다**. 없다는 뜻이 아니다.
   - {backend: reportarchive, tool: create_report_from_preset, hint: list_presets,
      checked: "2026-09-15 — list_presets 0건. 프리셋이 있는 박스에서 다시 본다"}
-  - {backend: ai-data-hub, tool: run_saved_search, hint: list_saved_searches,
+  # 앱은 RA 다 — 도구가 ReportArchive mcp_server 에 있고 11-22 인구조사도 reportarchive 로 찍었다(09-15 줄은 ai-data-hub 로 잘못 적었다 · W-119).
+  - {backend: reportarchive, tool: run_saved_search, hint: list_saved_searches,
      checked: "2026-09-15 — list_saved_searches 0건. 저장된 검색이 있을 때 다시 본다"}

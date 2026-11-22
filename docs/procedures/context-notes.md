@@ -2979,7 +2979,7 @@ W-118 에서 짚은 어긋남을 고쳤다. 절차 단계는 **원래 이름**�
 - **훑어본 나머지.** 씨앗 절차 고정물 · 2단 도구 등록부(`dispatchers.yaml`)의 단계 이름은 모두 원래 이름이다. 실행기 `_gate_of` · 계약의
   `_human_gates` · `_writey` · 캐시 판정은 단계 이름을 보므로 그대로다. 고치지 않은 것 둘 — ① ste 의 `ste_job_summary` 는 원래 이름이 그대로
   `ste_job_summary` 인데 화면 규칙으로 떼면 `job_summary` 가 된다(별칭이 노출 이름과 같아 부르기는 된다 · 읽기 도구라 목록과 무관). ② 등록부
-  후보 `run_saved_search` 의 앱이 `ai-data-hub` 로 적혀 있는데 인구조사에서는 `reportarchive` 다(09-15 후보 줄 — 이름 어긋남이 아니라 앱 어긋남).
+  후보 `run_saved_search` 의 앱이 `ai-data-hub` 로 적혀 있는데 인구조사에서는 `reportarchive` 다(09-15 후보 줄 — 이름 어긋남이 아니라 앱 어긋남). → 고침(11-22 병합 때 — 도구는 ReportArchive `mcp_server/server.py` 에 있다, `dispatchers.yaml` 후보 줄의 앱을 `reportarchive` 로).
   he-team.json 의 `writes` · `confirm` 은 에이전트 서버가 노출 · 별칭 이름으로 맞추는 다른 관문이라 손대지 않았다.
 - **시험이 안 물던 것.** 인구조사 대조를 단계 이름으로 바꾼 것 · `orig` 싣기 · 앱별 dry_run · 초안의 접두 떼기 · 카나리의 접두 이름에
   시험을 붙였다. 변이 열하나가 모두 붉어졌다(사본에서) — 노출 이름 줄로 되돌리기 · 맨 이름으로 열기 · `has_dry_run` 의 앱 칸 빼기 · 미리보기
