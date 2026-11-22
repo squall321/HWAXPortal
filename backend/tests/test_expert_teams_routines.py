@@ -204,8 +204,8 @@ _R_SECTIONS = {"voc": "VOC 요약 [voc.c1]", "insight": "인사이트 [voc.c1]"}
 _R_GOLDEN = "{\"blocks\": {\"background\": [\"루틴 「VOC → 심의」 판 2 — S26 의 불량\", \"입력 — model=S26\", \"커버리지 — 끝남 2 · 결과 없음 1\\n기존 보고서(ra) — 결과 없음: 보고서 없음\"], \"minutes\": [\"- [voc.c1] signalforge:search_voc {\\\"q\\\": \\\"x\\\"} — 성공 · 12ms\"], \"recommendation\": [\"인사이트 [voc.c1]\"], \"results\": [\"VOC\\nVOC 요약 [voc.c1]\\n넘긴 키 — code=SM-1\\n- 힌지 크랙 [voc.c1]\", \"기존 보고서\\n_(이 단계는 결과 없음 — 보고서 없음)_\", \"메커니즘\\n결정문\"]}, \"coverage\": {\"counts\": {\"empty\": 1, \"ok\": 2}, \"not_ok\": [{\"reason\": \"보고서 없음\", \"state\": \"empty\", \"step\": \"ra\", \"title\": \"기존 보고서\"}]}, \"report_md\": \"# VOC → 심의\\n\\n> 루틴 「VOC → 심의」 판 2 · 실행 rrrrrrrr · chat\\n\\nS26 의 불량\\n\\n**입력** — model=S26\\n\\n**커버리지** — 끝남 2 · 결과 없음 1\\n- 기존 보고서(ra) — 결과 없음: 보고서 없음\\n\\n## VOC\\n\\nVOC 요약 [voc.c1]\\n\\n넘긴 키 — code=SM-1\\n- 힌지 크랙 [voc.c1]\\n\\n## 기존 보고서\\n\\n_(이 단계는 결과 없음 — 보고서 없음)_\\n\\n## 메커니즘\\n\\n결정문\\n\\n## 인사이트\\n\\n인사이트 [voc.c1]\\n\\n## 근거 부록\\n\\n- [voc.c1] signalforge:search_voc {\\\"q\\\": \\\"x\\\"} — 성공 · 12ms\", \"tags\": [\"분석 루틴\", \"VOC → 심의\"], \"title\": \"VOC → 심의\", \"warnings\": []}"
 
 
-def _report(steps=None, top=..., stages=None):
-    plan = {"steps": steps or _R_STEPS, **({} if top is ... else {"team": top})}
+def _report(steps=None, top=..., stages=None, top_why=None):
+    plan = {"steps": steps or _R_STEPS, **({} if top is ... else {"team": top}), **({"team_why": top_why} if top_why else {})}
     run = {"id": "r" * 32, "version_no": 2, "executor": "chat", "inputs": {"model": "S26"}, "started_at": 1763800000, "plan": plan}
     return render_report(spec=RoutineSpec.model_validate(_R_SPEC), run=run, steps=plan["steps"], stages=stages or _R_STAGES,
                          calls=_R_CALLS, sections=_R_SECTIONS, title=None)
@@ -213,7 +213,8 @@ def _report(steps=None, top=..., stages=None):
 
 def test_팀이_없는_실행의_보고서는_팀_전과_바이트까지_같다():
     assert json.dumps(_report(), ensure_ascii=False, sort_keys=True) == _R_GOLDEN
-    assert json.dumps(_report(top=None), ensure_ascii=False, sort_keys=True) == _R_GOLDEN, "루틴 팀을 못 풀었으면(null) 줄이 없다"
+    assert json.dumps(_report(top=None), ensure_ascii=False, sort_keys=True) == _R_GOLDEN, \
+        "루틴 팀은 없고 단계만 덮은 실행(위 team 이 null · 까닭 없음) — 덮지 않은 단계는 줄이 없다"
 
 
 SNAP = {"id": "tm_" + "a" * 32, "name": "힌지 낙하 검토팀", "version": 1, "lead": {"key": "mech-a", "name": "기구 강도 전문가"},
@@ -236,14 +237,35 @@ def test_보고서_단계_절에_그_단계를_돈_팀이_한_줄로_남는다()
     assert md.count("의 판단으로 돌았다") == 2
 
 
-def test_팀_없이로_고른_단계_못_푼_단계_팀_돌지_않은_단계는_줄이_없다():
+GONE = "팀 tm_x 를 찾을 수 없다 — 지워졌거나 이 사람에게 보이지 않는다"
+
+
+def test_팀_없이로_고른_단계와_돌지_않은_단계는_줄이_없다():
     steps = copy.deepcopy(_R_STEPS)
-    steps[0]["team"] = False                                       # 빈 글 = 팀 없이
-    steps[1].update({"team": False, "team_why": "팀 tm_x 를 찾을 수 없다 — 지워졌거나 이 사람에게 보이지 않는다"})
+    steps[0]["team"] = False                                       # 빈 글 = 팀 없이(사람이 정했다 — 까닭이 없다)
     stages = copy.deepcopy(_R_STAGES)
+    stages[1].update({"state": "skipped", "reason": "건너뜀"})
     stages[2].update({"state": "denied", "reason": "심의 권한이 없다"})     # 루틴 팀이 닿지만 돌지 않았다
     out = _report(steps=steps, top=SNAP, stages=stages)
     assert "판단으로 돌았다" not in out["report_md"] and "팀 없이 돌았다" not in out["report_md"], out["report_md"]
+
+
+def test_팀을_붙였는데_못_푼_단계는_팀_없이_돌았다와_까닭():
+    """사용자 결정 11-22(ET-17) — 단계 팀을 못 풀었거나(false + team_why) 루틴 팀을 못 풀어(null + team_why) 그 팀을 따르는 단계도 까닭 한 줄."""
+    steps = copy.deepcopy(_R_STEPS)
+    steps[1].update({"team": False, "team_why": GONE})              # 단계 팀을 못 풀었다
+    out = _report(steps=steps, top=SNAP)
+    assert out["blocks"]["results"][1] == f"기존 보고서\n_(이 단계는 결과 없음 — 보고서 없음)_\n이 단계는 팀 없이 돌았다 — {GONE}"
+    assert out["report_md"].count("판단으로 돌았다") == 2, "다른 단계는 루틴 팀 그대로"
+    why = "팀 tm_y 를 찾을 수 없다 — 지워졌거나 이 사람에게 보이지 않는다"
+    steps = copy.deepcopy(_R_STEPS)
+    steps[0]["team"] = False                                       # 빈 글은 루틴 팀을 못 풀어도 줄이 없다
+    steps[2]["team"] = {**SNAP, "name": "심의 팀"}                  # 덮은 단계는 제 팀
+    out = _report(steps=steps, top=None, top_why=why)
+    res = out["blocks"]["results"]
+    assert "팀 없이" not in res[0] and "판단으로" not in res[0], res[0]
+    assert res[1].endswith(f"이 단계는 팀 없이 돌았다 — {why}"), res[1]
+    assert "「심의 팀」" in res[2], res[2]
 
 
 def test_실행_보고서_창구가_원장의_사본으로_팀_줄을_단다(tc):
@@ -264,5 +286,23 @@ def test_실행_보고서_창구가_원장의_사본으로_팀_줄을_단다(tc)
     md = rep.json()["report_md"]
     line = f"이 단계는 「{TEAM['name']}」(주 기구 강도 전문가 · 보조 구조 해석 전문가, StepForge 운영자)의 판단으로 돌았다"
     assert md.count(line) == 2, "돈 단계(voc · delib)만 — 실행 때의 사본 이름이지 지금 팀 이름이 아니다"
-    assert "바뀐 이름" not in md
+    assert "바뀐 이름" not in md and "팀 없이 돌았다" not in md, "ft 는 사람이 「팀 없이」 로 정했고 돌지도 않았다"
+
+
+def test_지운_팀으로_돈_실행의_보고서는_단계마다_팀_없이_돌았다와_까닭(tc):
+    c, _ = tc
+    h = _login(c, "boss@corp.com")
+    t = _team(c, h)
+    assert c.delete(f"/agent/teams/{t['id']}", headers=h).status_code == 200
+    v = _run(c, h, _spec(t["id"]))
+    run_id = v["run"]["id"]
+    assert v["team"] is None and v["team_why"]
+    c.post(f"{PREFIX}/runs/{run_id}/calls", json={"step": "voc", "backend": "signalforge", "tool": "search_voc", "args": {},
+                                                  "ok": True, "result": "{}"}, headers=h)
+    c.post(f"{PREFIX}/runs/{run_id}/steps/voc/done", json={"status": "ok", "summary": "VOC 요약"}, headers=h)
+    c.post(f"{PREFIX}/runs/{run_id}/calls", json={"step": "delib", "backend": "hwax-deliberation", "tool": "deliberate_start",
+                                                  "args": {}, "ok": True, "result": '{"job_id": "j1"}'}, headers=h)
+    c.post(f"{PREFIX}/runs/{run_id}/steps/delib/done", json={"status": "ok", "summary": "결정문"}, headers=h)
+    md = c.post(f"{PREFIX}/runs/{run_id}/report", json={}, headers=h).json()["report_md"]
+    assert md.count(f"이 단계는 팀 없이 돌았다 — {v['team_why']}") == 2, "돈 단계(voc · delib)만 — 돌지 않은 ra · ft · risk 는 줄이 없다"
 

@@ -528,20 +528,22 @@ def _team_who(m: dict) -> str:
     return str(m.get("name") or m.get("key") or "")
 
 
-def team_report_line(ps: dict | None, top, state: str | None) -> str:
-    """보고서 단계 절의 팀 한 줄(docs/expert-teams ET-15) — 단계 계획 행에 team 칸이 있으면 그것(사본 · false), 없으면 계획 위 team(실행기가 읽는
-    차례와 같다 — ET-9). 사본이면 '이 단계는 「팀」(주 … · 보조 …)의 판단으로 돌았다', false · null 이면 줄이 없다. 루틴 팀이 닿았는데 리스크 심사 계열이라
-    앉히지 않은 단계(false + team_why)는 그 까닭을 적는다 — 다른 단계가 다 팀 줄을 달 때 이 단계만 말이 없으면 팀이 갔는지 모른다. 돌지 않은 단계는 줄이 없다."""
+def team_report_line(ps: dict | None, top, state: str | None, top_why: str = "") -> str:
+    """보고서 단계 절의 팀 한 줄(docs/expert-teams ET-15 · ET-17) — 단계 계획 행에 team 칸이 있으면 그것(사본 · false)과 그 행의 team_why, 없으면
+    계획 위 team 과 그 team_why(실행기가 읽는 차례와 같다 — ET-9). 사본이면 '이 단계는 「팀」(주 … · 보조 …)의 판단으로 돌았다'. 팀을 붙였는데 쓰지
+    못한 단계(false · null 에 까닭이 있다 — 못 푼 팀 · 리스크 심사 계열로 막음)는 '이 단계는 팀 없이 돌았다 — <까닭>'. 사람이 「팀 없이」(빈 글)로 정한
+    단계와 팀 칸을 안 쓴 루틴은 까닭이 없어 줄이 없다(못 푼 것이 아니다 — 사용자 결정 11-22). 돌지 않은 단계는 줄이 없다."""
     if state in _NOT_RUN:
         return ""
     ps = ps or {}
-    team = ps.get("team", top)      # 칸이 있으면(false 포함) 그것 — 값이 거짓인지로 가르지 않는다
+    own = "team" in ps          # 칸이 있으면(false 포함) 그것 — 값이 거짓인지로 가르지 않는다
+    team, why = (ps["team"], ps.get("team_why")) if own else (top, top_why)
     if isinstance(team, dict) and isinstance(team.get("lead"), dict):
         helpers = [h for h in team.get("helpers") or () if isinstance(h, dict)]
         who = f"주 {_team_who(team['lead'])}" + (f" · 보조 {', '.join(_team_who(h) for h in helpers)}" if helpers else "")
         return f"이 단계는 「{team.get('name') or team.get('id') or '팀'}」({who})의 판단으로 돌았다"
-    if team is False and ps.get("team_why") and delib_is_risk(ps.get("deliberation")):
-        return f"이 단계는 팀 없이 돌았다 — {ps['team_why']}"
+    if team in (False, None) and why:
+        return f"이 단계는 팀 없이 돌았다 — {why}"
     return ""
 
 
@@ -563,6 +565,7 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
     titles = {ps["id"]: ps["title"] for ps in steps}
     plans = {ps["id"]: ps for ps in steps}
     top_team = (run.get("plan") or {}).get("team")      # 실행을 만들 때 남긴 루틴 팀의 사본(ET-9) — 팀 칸을 안 쓴 실행은 None
+    top_why = str((run.get("plan") or {}).get("team_why") or "")     # 루틴 팀을 못 풀었으면 그 까닭(ET-17)
     warnings: list[str] = []
     unknown_sections = sorted(k for k in sections if k not in spec.report.sections)
     if unknown_sections:
@@ -596,7 +599,7 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
         body = text or (env.get("summary") or "").strip() or \
             f"_(이 단계는 {STATE_LABEL.get(st.get('state'), st.get('state'))}" + (f" — {st.get('reason')}" if st.get("reason") else "") + ")_"
         extra = []
-        team_line = team_report_line(plans.get(sec), top_team, st.get("state"))
+        team_line = team_report_line(plans.get(sec), top_team, st.get("state"), top_why)
         if team_line:
             extra.append(team_line)
         if env.get("keys"):
