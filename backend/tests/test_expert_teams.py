@@ -174,9 +174,11 @@ def test_판_번호가_어긋나면_409_이고_고치지_않는다(env):
 
 
 def test_공식_표지는_관리자만_달고_떼며_목록_맨_앞이고_주인은_공식_팀을_지우지_못한다(env):
-    c, _ = env
+    c, st = env
     a = _make(c, name="먼저 만든 팀", scope="org")
     b = _make(c, name="나중 만든 팀", scope="org")
+    with st._conn() as cx:       # 고친 때는 초 단위다 — 시계에 기대지 않고 b 를 나중에 고친 것으로 둔다
+        cx.execute("UPDATE expert_teams SET updated_at = updated_at + 10 WHERE id=?", (b["id"],))
     h = _login(c, "me@example.com")
     assert c.post(f"{P}/{a['id']}/official", json={"on": True}, headers=h).status_code == 403
     assert _ids(c)[:2] == [b["id"], a["id"]], "최근 고친 것 먼저"

@@ -238,7 +238,7 @@ class TeamStore:
         if not v.admin:
             q += " WHERE owner_email = ? OR (scope = 'org' AND owner_aff != '' AND owner_aff = ?)"
             args = (v.email, v.aff or "")
-        q += " ORDER BY official DESC, updated_at DESC, id"
+        q += " ORDER BY official DESC, updated_at DESC, rowid DESC"      # 같은 초면 나중에 넣은 행 먼저(정해진 차례)
         return [_row(r) for r in self._conn().execute(q, args).fetchall()]
 
     def update(self, tid: str, body: TeamBody, *, expected_version: int, by: str,
