@@ -536,6 +536,23 @@ def test_만든_초안의_번호를_읽지_못해도_결과를_모르는_쪽이�
     assert box.risk.ledger["state"] == "sending" and box.gw.calls[-1][1]["outcome_unknown"] is True
 
 
+def test_RA_가_준_주소는_꼴이_맞고_그_번호일_때만_싣는다(box, monkeypatch):
+    real = _RA.__call__
+
+    async def odd_url(self, req):
+        resp = await real(self, req)
+        if req.method == "POST" and not json.loads(req.content).get("dry_run"):
+            data = resp.json()["data"]
+            return httpx.Response(201, json={"success": True, "data": {**data, "url": "https://evil.example/w/x/reports/58"}})
+        return resp
+
+    monkeypatch.setattr(_RA, "__call__", odd_url)
+    out = box.post().json()
+    assert (out["ok"], out["report_id"], out["url"]) == (True, 58, None), "꼴이 다른 글을 링크로 내지 않는다"
+    assert box.gw.calls[1][1] == {"target_key": TARGET, "report_uid": UID, "report_id": 58, "pages_sent": 1}
+    assert box.risk.ledger["url"] is None
+
+
 def test_초안은_만들었는데_원장에_적지_못하면_번호를_돌려주고_멈춘다(box):
     box.gw.down.add(RECORD)
     r = box.post()
