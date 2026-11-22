@@ -356,3 +356,16 @@ WDA 의 셋째 답(10의 6)과 맞춰 본 것 — 아래 가운데 202 의 `owne
   ingest 에서 블록 0개로 거절된다(4.6-2 의 그 물음 — 11-21 재현). ② W-4 가 덮지 않는 길(`meeting_start` · `report_ingest` · 주인 없는 회의 · 콘솔의
   심의 → 시나리오).
 
+## 14. M3 — 사용자 결정 둘(2026-11-22, WDA 가지 `wt1121/deck` — 병합 · 배치 전)
+
+13절이 남긴 물음 둘에 사용자가 답했다(둘 다 선택지 (나)). 포털의 중계가 기대는 꼴이다.
+
+- **`template_schemas` — `POST {WDA}/api/runs` 의 새 칸(선택).** `{"<template_id>@<version>": <RA GET /api/templates/{id}/versions/{v} 의 data.schema>}`.
+  포털은 정의(extra_blocks)에 없는 content · 순서 키가 있는 쪽의 템플릿 판만 그 사람 명의로 읽어 싣는다(필요 없는 보고서에는 칸이 없다). WDA 는 쪽이 쓰는
+  템플릿 블록을 그 정의(종류 · 라벨)로 풀고, 키는 쪽의 템플릿 · 판이 이긴다. 꼴이 틀리면 400 `INVALID`(키 `<id>@<양의 정수>` · 값에 `blocks` 목록 · 블록에
+  id · type 글 · 64개까지). health features 에 `template_schemas` 가 있어야 포털이 서식 보고서를 넘긴다 — 없으면 409 로 말하고 넘기지 않는다.
+- 긴 글(rich_text)의 내용은 RA 실물 꼴 `{"items": [{"depth", "text"}]}` 를 읽는다(4.6-2 의 짐작 `markdown` 이 아니었다 — RA ai-draft 가 문자열 목록을 이 꼴로
+  저장한다). 항목마다 한 조각이고, 블록 라벨이 그 블록의 단락을 정한다('심의 주제' 화두 · '의사결정문' 결정 · 회의록 · 심화 논의 라운드).
+- **회의 · ingest 의 주인** — WDA 콘솔(REST)의 회의 창구가 `X-Heax-User-Email` 을 회의 도구에 넘기고, 주인 있는 실행을 문 회의는 그 실행의 주인 것이다.
+  `meeting_start(run_id)` · `report_ingest` 는 남 · 신원 없음에 없는 것과 같은 답이다(MCP 는 위임 단언만 신원 — 13절 W-18). 포털은 회의 창구를 부르지 않는다.
+

@@ -33,8 +33,8 @@
       (`--root-path` 뒤에서 통째로 무력하던 것 — `app_path` · 진짜 uvicorn 두 조건 시험)
 - [x] W-3 `GET /api/runs` = 내 것 + 주인 없는 것 — WDA `d1f144b`(`get_runs` · `visible_to`)
 - [x] W-4 MCP 의 run_id · job_id · 경로 도구와 렌더 잡 내려받기는 주인 있는 run 에 닿지 않는다 — WDA `d1f144b`(`_block_owned` 도구 아홉 ·
-      `download_render_job`). **계약 목록 밖의 길이 남아 있다**(11-21 탐침 — `meeting_start(run_id)` · `report_ingest(file · run_id)` · 주인 없는 회의,
-      WD-D94 ② — 결정 대기)
+      `download_render_job`). 계약 목록 밖의 길(11-21 탐침 — `meeting_start(run_id)` · `report_ingest(file · run_id)` · 주인 없는 회의)은
+      **11-22 사용자 결정으로 닫았다**(WDA `4c25b08` · `1da9733` — 웹 길이 신원을 넘기고 회의에 주인 칸, WD-D97)
 - [x] W-5 주인 있는 새 run id 128비트 무작위 · run_id 꼴 검사 — WDA `d1f144b`(`new_run_id(owned=True)` · `RUN_ID_RE`)
 - [x] W-6 `/api/health` 에 version · features(`owner` · `render_chain` · `doc_formats` · `skipped_report` · `interrupted`) — WDA `d1f144b`(+ `idempotency` ·
       `error_codes` · 꼴마다 `format:<id>`) · 11-21 `delete`(W-17) · 비밀이 있는 박스에만 `mcp_owner`(W-18)
@@ -56,6 +56,9 @@
       건너뛰어 `ValueError: 텍스트를 가진 블록이 없다 (블록 0개, 텍스트 0개)` 로 '보고서 읽기' 단계에서 실패한다(11-21 WDA `wt1121/deck` 에서
       `normalize_report` 에 이 리포 시험의 `DELIB` 꼴을 직접 넣어 재현 — 봉투째도 같다). 심의 결과 카드 · `/보고서` · 분석 루틴 초안 셋이 다 이 꼴이다 —
       단추가 서도 발표자료는 실패한다(WD-D94 ① — WDA 의 결정 대기, 요청서 4.6-2 의 그 물음)
+      — **11-22 사용자 결정 (나)로 닫았다** — 포털이 그 사람 명의로 RA 템플릿 스키마를 읽어 `template_schemas` 로 싣고(포털 `547b98fc`) WDA 가 그것으로
+      블록을 푼다(WDA `56bb9e9`). 실물 꼴(dev RA 의 심의 보고서 70건 — 읽기 전용)로 시험했고 세 출처가 `delib-16x9` 빌드까지 간다(WD-D96).
+      남은 것은 배치본에서 실물 보고서 하나로 보는 일이다(아래 M3 — cae00)
 - [x] 요청서 §10 의 다섯 물음에 답했다(11-01 — W-1 ~ W-12 없음 · 심의 꼴 안 맞음 · pptx + pdf 나옴 · 5.5초 · 보존 · 동시 상한 없음)
 - [x] 주인 있는 run 은 `WDA_RA_*` 서비스 자격으로 RA 그림을 받지 않는다 — **11-21 지음**(WDA `wt1121/deck` `bca5988` · `66a606c`). 받기를 통째로
       건너뛰고(로그인도 없다) 원장 `run.assets{service_fetch, total, resolved, skipped[], skipped_count}` · `run.warnings` 에 드러낸다. 주인은 원장에서
@@ -228,11 +231,24 @@
       첫 전체 회귀가 루틴 화면 시험 열넷을 붉혔다(루틴 칸이 발표자료 모듈을 끌어왔다) — `8deb28a3` 로 엮임을 풀고 다시 돌렸다
 - [ ] dev 실주행 — 하지 않았다(dev 에는 RA 가 없다 — WD-D88). cae00 에서 server-setup.md 4절
 
+### 11-22 사용자 결정 둘(같은 가지 `wt1121/deck` — 포털 · WDA, 올리지 않음)
+
+- [x] ① 실물 꼴의 심의 보고서 — 포털이 그 사람 명의로 RA 템플릿 스키마를 읽어 `template_schemas` 로 싣는다(선택지 (나)) — 포털 `547b98fc`
+      (`templates_needed` · `read_template_schemas` · WDA 판 문 · status 의 심의 자리) · WDA `56bb9e9`(스키마로 블록 풀기 · 긴 글 items 꼴 · 라벨 단락 ·
+      저장과 재개). 못 읽으면 정해진 글(권한 403 · 없음 409 · 불통 502) · 서비스 자격 없음 · WDA 를 부르지 않는다. WD-D96
+- [x] ② WDA 회의 · ingest 도구의 주인 — 웹 길이 신원을 넘기고 회의에 주인 칸(선택지 (나)) — WDA `4c25b08` · `1da9733`. 11-21 탐침이 막힌다 ·
+      주인이 자기 실행으로 회의를 여는 길이 열린다 · 실기동(`--root-path` 두 조건). WD-D97
+- [x] ③ 내 실행 목록 도구(짓지 않음) · ④ PDF 미리보기 격리(지금대로 + '받기' 안내) — 닫힌 기본값 그대로
+- [x] 시험 먼저 · 변이 — 포털 여덟 · WDA 열다섯(두 살아 하나는 시험을 강화해 붉혔고 하나는 같은 동작의 변이) · 회귀 수치는 WD-D98
+- [ ] 배치본 확인(사람 — server-setup.md 5절) — 실물 심의 보고서 하나가 '보고서 읽기' 를 지나는지 · WDA 콘솔에서 주인 있는 실행으로 회의를 열 수 있는지
+
 ## M3 — cae00(사람 몫 — server-setup 은 M1 끝에 쓴다)
 
 - [ ] WDA SIF 가 W-1 ~ W-12 판인지(`/api/health` features) · (U-3 이면) 익명 401
 - [ ] 박스 스위치 `wda_deck_enabled` 켜기 · 포털 재기동 — 11-08 사용자 결정으로 cae00 에서 2절까지(받은 편지함 2026-11-08 Q4, WD-D88 — dev 에는 RA 가 없어 못 한다)
 - [ ] 쓸 사람의 허브 계정(허브 타일 한 번) · 실제 보고서 하나로 확인
+- [ ] (11-22 M3 판을 받은 뒤) WDA SIF 가 `template_schemas` 판인지(health features) · 심의 결과 카드 · `/보고서` · 루틴 초안의 '발표자료로' 가 끝까지
+      가는지 — server-setup.md 5절
 - [ ] (11-21 M2 판을 받은 뒤) WDA SIF 가 M2 판인지(`/api/health` features 에 `delete`) · 끝난 잡에서 PDF 미리보기 · 사본 지우기 · 실패한 잡에서 다시 시도 —
       server-setup.md 4절
 - [ ] (선택) MCP 쪽 주인 켜기 — WDA `secrets.env` 의 `WDA_GATEWAY_SECRET` · 게이트웨이 `per_user_sso.web_design_agents` · 게이트웨이 재기동
