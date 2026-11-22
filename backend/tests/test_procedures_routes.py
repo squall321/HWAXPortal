@@ -2444,16 +2444,19 @@ def test_목록은_제목으로_저장소에서_거르고_넘친_수를_말한�
 
     c, h = user
     spec = {"title": "t", "vars": [], "steps": [{"backend": "b", "tool": "find_reports", "args": {}}]}
-    for t in ("열충격 SED 판정", "적층 굴곡 수명", "낙하 100% 판정", "Drop_Check"):
+    for t in ("열충격 SED 판정", "적층 굴곡 수명", "낙하 100% 판정", "Drop_Check", "DropXCheck", "100 번 낙하"):
         assert c.post(f"{PREFIX}/procedures", json={"title": t, "spec": spec}, headers=h).status_code == 201
     monkeypatch.setattr(R, "CATALOG_MAX", 2)
     got = c.get(f"{PREFIX}/catalog", headers=h).json()
-    assert (got["count"], got["total"], got["truncated"]) == (2, 4, True)
+    assert (got["count"], got["total"], got["truncated"]) == (2, 6, True)
     hit = c.get(f"{PREFIX}/catalog", params={"q": "열충격"}, headers=h).json()
     assert [r["title"] for r in hit["procedures"]] == ["열충격 SED 판정"] and (hit["total"], hit["truncated"]) == (1, False), \
         "상한 밖(가장 오래된 것)이어도 제목으로 찾는다"
     assert c.get(f"{PREFIX}/catalog", params={"q": "판정"}, headers=h).json()["total"] == 2
-    assert c.get(f"{PREFIX}/catalog", params={"q": "100%"}, headers=h).json()["total"] == 1, "글자 그대로 찾는다(% · _ 는 무늬가 아니다)"
-    assert c.get(f"{PREFIX}/catalog", params={"q": "drop_check"}, headers=h).json()["total"] == 1
-    assert c.get(f"{PREFIX}/catalog", params={"q": "dropXcheck"}, headers=h).json()["total"] == 0
-    assert len(c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"]) == 4, "화면의 목록은 종전 그대로다"
+
+    def titles(q):
+        return sorted(r["title"] for r in c.get(f"{PREFIX}/catalog", params={"q": q}, headers=h).json()["procedures"])
+    # 글자 그대로 찾는다 — % · _ 는 무늬가 아니다(무늬로 읽으면 '100%' 가 '100 번 낙하' 를, 'drop_check' 가 'DropXCheck' 를 같이 집는다)
+    assert titles("100%") == ["낙하 100% 판정"] and titles("drop_check") == ["Drop_Check"]
+    assert titles("dropxcheck") == ["DropXCheck"] and titles("drop-check") == []
+    assert len(c.get(f"{PREFIX}/procedures", headers=h).json()["procedures"]) == 6, "화면의 목록은 종전 그대로다"
