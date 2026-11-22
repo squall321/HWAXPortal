@@ -194,5 +194,8 @@
 - [x] ~~관련성 신호·거르기·'해당 없음' 표본 재검토~~ — 버림(10-17 — D-33(10-14)으로 M3 에 당겨 C3-5 relevance.py·C3-6 분류·C3-7 표본 구현, D-56(10-17)로 켬 — 리스크 앱 d8f6a87)
 - [ ] 2차 영향 · 결손 사냥
 - [ ] 현황 타깃의 단위
-- [ ] RA 저장 — 사용자 결정 10-31 A7: (가) 종합 보고서를 RA 에 저장하는 문은 M3 실주행(184행) 뒤에 짓는다 — RK-01 보내는 쪽과 같은 `ra_client.py` (10-31 정리)
+- [x] RA 저장 — 사용자 결정 10-31 A7: (가) 종합 보고서를 RA 에 저장하는 문은 M3 실주행(184행) 뒤에 짓는다 — RK-01 보내는 쪽과 같은 `ra_client.py` (10-31 정리) — 지음(11-22 · 기본 꺼짐): 사용자 결정 11-21(문만 먼저 짓고 끈다) · 11-22(RA 에 쓰는 것은 포털 — 그 사람 명의로, 앱에 쓰기 토큰을 두지 않는다 — `ra_client.py` 는 쓰지 않는다). 리스크 앱은 켠 박스에서만 뜨는 두 창구(재료 내주기 `risk_report_ra_material` · 결과 적기 `risk_report_ra_record`)와 원장(스키마 v9), 포털은 `POST /agent/risk-report/ra-draft`(`backend/app/agent/risk_report.py` — 세션 + CSRF). 결정 D-59, 계약 · 박스 절차는 리스크 앱 `docs/ra-report-draft.md`
+  - [ ] (cae00 · 사람) 켜기 — 리스크 앱 `knobs.env` 에 `HWAXRISK_RA_REPORT_DRAFT=1`(+ 박스가 RA 형식을 바꿨으면 `HWAXRISK_RA_REPORT_TEMPLATE` · `_VERSION` 을 `infra/ra-formats.local.json` 의 심의 형식과 같게) → 앱 재기동 → 게이트웨이 `tools/list` 에 두 도구가 뜨는지 확인 → 조직 공개 과제의 판 하나로 눌러 본다. M3 실주행(184행) 뒤에 켠다
+  - [ ] (리스크 앱 프론트 세션) 화면의 단추 — 리스크 앱 `docs/ra-report-draft-frontend-request.md`(포털 창구를 부른다)
+  - [ ] (결정 대기 · 게이트웨이 세션) 재료가 게이트웨이를 지나며 메일 · 계정 꼴이 가려진 채 RA 에 실린다(`[가림:메일]`) — 그대로 둘지, 두 창구를 가림 면제(`_PII_MASK_EXEMPT`)에 넣을지
 - [ ] 지표 · 쟁점 패널 자동 재개 · AIDataHub `get_agent_cards` · 밤 창 · 기본값 켬 — 사용자 결정 10-31 A8: (가) 밤 창 · `get_agent_cards` 는 걷는다(카드는 `/card-review/pack` 하나로 받는다 — `get_agent_cards` 는 9만 자 응답을 집는 위험, problems P-12) · 나머지 셋(지표 · 쟁점 패널 자동 재개 · 기본값 켬)은 181 · 184행 뒤로 (10-31 정리)
