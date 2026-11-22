@@ -10,7 +10,9 @@ import { Modal } from '../ui/Modal';
 const LOCAL_LIMIT = 12;
 
 export function PersonaPicker({ onClose, onExpand }: { onClose: () => void; onExpand: () => void }) {
-  const { pinnedAgent, pinnedAgentName, setPinnedAgent } = useChat();
+  const { pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers } = useChat();
+  // 대화 중 보조 전문가는 조직도에서 더한다(docs/persona-chat — 사용자 결정 11-22) — 주 전문가가 있고 자리가 남았으면 그 길을 알린다.
+  const helperRoom = Boolean(pinnedAgent) && pinnedHelpers.length < 4;
   const { pool, loading, failed } = usePersonaPool();
   const [q, setQ] = useState('');
   // 주제 추천(서버) — 이름이 안 떠오를 때 "무엇을 물을지"로 찾는 길이다.
@@ -139,7 +141,7 @@ export function PersonaPicker({ onClose, onExpand }: { onClose: () => void; onEx
           </div>
 
           <button type="button" className="pp-expand" onClick={onExpand}>
-            전체 조직도 열기 ⤢
+            {helperRoom ? '전체 조직도 열기 ⤢ — 보조 전문가도 여기서 더합니다' : '전체 조직도 열기 ⤢'}
           </button>
         </div>
       </div>
