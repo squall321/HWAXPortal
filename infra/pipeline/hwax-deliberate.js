@@ -727,16 +727,20 @@ const GROUND = A.groundCards === true
 //   (2026-09-02 솔더볼 심의): get_context_bundle 이 좌석당 5~6회, 총 97회 호출됐고 그중
 //   96회가 권한 판정 rate-limit 에 걸렸다(호출이 몰릴수록 막힌다). 2라운드부터는 이미 읽은
 //   카드를 쓰게 하고, **쟁점이 옮겨갔을 때만** 좁은 재조회(semantic_search)를 허용한다.
+// ⚠ 맨 이름 semantic_search 는 AI 데이터 허브와 SignalForge 가 둘 다 내는 박스에서 게이트웨이가 접두를 붙여(aidatahub_ · signalforge_) 맨 이름이
+//   사라진다(dev 11-22 인구조사 — 호출 별칭도 없다). 그래서 안내 글이 두 이름을 다 적는다(docs/procedures W-118 후속).
 const groundBlock = (k, first) => !GROUND ? ''
   : first
   ? `[근거 그라운딩 — 발언 전 실행] 먼저 get_context_bundle(agent_type: "${k}") 로 네 지식카드를 ` +
-    `불러오고, 필요하면 semantic_search(q: 쟁점, agent_type: "${k}") 로 쟁점 관련 근거를 찾아라. ` +
+    `불러오고, 필요하면 AI 데이터 허브의 semantic_search(q: 쟁점, agent_type: "${k}") 로 쟁점 관련 근거를 찾아라 — 다른 앱과 이름이 겹치는 ` +
+    `박스에서는 aidatahub_semantic_search 로 뜬다(agent_type 을 받는 쪽이다). ` +
     `수치·임계·정리를 인용할 땐 카드/섹션 출처를 붙이고, 카드에 없어 일반지식으로 답하면 ` +
     `(경험칙)/(expert-judgement)로 표기하라. 도구가 실패하면 그 사실을 한 줄로 남기고 페르소나 ` +
     `지식으로 답하되 과단정하지 마라. ${SEAT_BY_NAME}\n\n`
   : `[근거 그라운딩] 네 지식카드는 앞 라운드에서 이미 읽었다 — get_context_bundle 을 다시 ` +
     `부르지 마라(같은 결과다). 쟁점이 앞 라운드에서 옮겨가 새 근거가 필요할 때만 ` +
-    `semantic_search(q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. 인용·표기 규칙은 그대로다. ${SEAT_BY_NAME}\n\n`
+    `AI 데이터 허브의 semantic_search(겹치는 박스에서는 aidatahub_semantic_search — q: 그 쟁점, agent_type: "${k}") 로 좁혀 찾아라. ` +
+    `인용·표기 규칙은 그대로다. ${SEAT_BY_NAME}\n\n`
 // 페르소나 정규화 — LLM이 persona 필드에 긴 역할 설명을 붙여 반환하면 포털 저장(persona ≤120자
 // 검증)이 배치째 422로 거부된다(전기박리 심의 대화 유실 사고의 원인). 정본 키로 강제한다.
 const withKey = (k) => (o) => (o ? { ...o, persona: k } : o)
