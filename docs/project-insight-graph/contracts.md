@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS insight_cards (
   confirmed_at INTEGER, confirmed_by TEXT, withdrawn_at INTEGER, withdrawn_by TEXT)
 CREATE TABLE IF NOT EXISTS insight_links (from_id TEXT, to_id TEXT, kind TEXT, by_email TEXT, note TEXT, at INTEGER,
   PRIMARY KEY (from_id, to_id, kind))       -- kind = disputes(from 이 to 를 반박한다)
-CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_since(MCP 잡 당기기의 커서) · jobs_partial(앞 당기기가 쪽 상한에서 멈췄나)
+CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_since(MCP 잡 당기기의 커서) · jobs_partial(앞 당기기가 쪽 상한에서 멈췄나) · ra:<카드 id>(RA 투영 줄 — §11)
 ```
 
 - **멱등** — 같은 id 는 하나다(`INSERT OR IGNORE`). 거둔 카드는 내용을 지운 묘비(id · 주인 · 거둔 사람 · 때)로 남아 다시 들여도 되살지 않는다.
@@ -339,3 +339,36 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
   카드마다 한 항목(§10.1 의 꼴) · 같은 (과제, 차수) · 범위가 소속 · 조직뿐인 확인 · 반박 카드만(plat 이 붙은 것 · 초안은 아니다) · 리스크 심사에는
   넘기지 않는다(엔진이 뺀다). 범용 실행기(`invoke_tool`)로 부른 것도 같은 근거다. 게이트웨이 `insight_get` 은 `stale`(판정 낱말만 — 자세한 것은
   포털 화면) · `same` 을 말한다.
+
+## 11. M5 — RA 투영(11-22, 결정 PG-53 ~ PG-60 · 사용자 결정 11-21 L21-6 ③)
+
+포털 `app/insights/ra_project.py` · 창구 `POST /insights-api/cards/{id}/ra`. 박스 스위치 `INSIGHT_RA_PROJECT`(설정 `insight_ra_project`, 기본 꺼짐).
+켜는 절차는 [server-setup.md](server-setup.md) 1절이다.
+
+- **무엇** — 카드 하나 → 그 카드의 RA 보고서(`card.report_id`) 하나에 SP 과제 객체 태그 하나. 객체를 만들거나 고치거나 잇지 않는다(RA 의 객체 ·
+  별칭 · 관계 쓰기와 축 · 관계 정의는 시스템 관리자 전용이다 — REST `_require_admin` · MCP '[시스템 관리자 전용]').
+- **창구** — 세션 + CSRF 만(사람 PAT 로는 못 부른다) · 카드 주인만(관리자도 남의 카드는 못 단다) · `feat:insights` + `plat:reportarchive`. 스위치가
+  꺼져 있으면 로그인 · CSRF 를 보기 전에 없는 창구와 같은 404(`{"detail": "Not Found"}`)다 — 누가 부르든 같은 답이다. 같은 길의 다른
+  메서드(GET 등)는 405 다(길이 있다는 것만 드러난다 — 본문은 없다).
+- **대상** — `status == "confirmed"`(반박이 달린 카드 · 초안은 아니다) · 범위가 정확히 `["org"]`(plat 토큰이 붙은 카드 · 소속 범위는 아니다) · 확인된
+  주제(`subject.sp_state == "confirmed"` · `sp_task` 가 칸과 같다) · key 가 64자 이하 · `card.report_id` 가 양의 정수(정수 글 포함). 아니면 409 와
+  까닭이고 RA 를 부르지 않는다.
+- **RA 를 부르는 것**(그 사람 명의 RA 세션 — `report_figures._ra`: 위임 먼저 · 등록 토큰 다음, 위임이면 `X-Workspace-Slug` 를 싣지 않는다) —
+  ① `POST /api/entities/search {"q": <key>, "limit": 200}` → `{success, data: {items: EntityRead[], total}}`. `items` 가운데 `code == key`(글자 그대로)이고
+  `status == "active"` 이며 `id` 가 정수인 것이 정확히 하나이고 `total <= len(items)` 일 때만 그 객체다. 없으면 `ra_no_task_object` · 여럿이면
+  `ra_task_object_ambiguous` · `total` 이 없거나 더 많으면 `ra_search_truncated`(모두 409). ② `POST /api/reports/{report_id}/entities/add
+  {"entity_ids": [<객체 id>]}` → `{success, data: {report_id, entity_ids, added}}`(더하기만 · 편집 잠금 없음 · RA `can_edit` — 보고서 주인 · 편집자).
+  답의 `entity_ids` 에 그 객체가 없으면 `ra_outcome_unknown`(502).
+- **거절의 옮김** — RA 401 → 502 `ra_token_rejected` · 더하기 403 → 403 `not_editable` · 더하기 404 → 404 `report_not_found` · 그 밖 4xx → 422
+  `ra_rejected` · 5xx → 502 `ra_error` · 연결 실패 → 502 `ra_unreachable` · RA 연결 없음 → `_ra_user_token` 의 글(`no_ra_connection`). RA 의 글은
+  `message` 를 300자까지 붙인다.
+- **원장** — `insight_meta` 의 `ra:<카드 id>` = JSON `{state: "projected", report_id, entity_id, type_slug, value, added, at, by}`. 성공한 뒤에만 적는다 —
+  거절 · 실패는 적지 않아 다시 누르면 다시 한다. 줄이 있으면 RA 를 부르지 않고 그 줄을 돌려준다(`already: true`). 답은 `{id, ra, already, note}`.
+- **거두기** — `POST /cards/{id}/withdraw` 는 RA 를 부르지 않는다. 줄이 있으면 `state: "withdrawn"` · `withdrawn_at` · `withdrawn_by` 로 바꾸고(스위치와
+  상관없이 — 원장만이다), 스위치가 켜져 있으면 답에 `ra: {state: "withdrawn", report_id, note}` 를 더한다(태그는 RA 에 남는다 — PG-55). 꺼져 있으면
+  답은 종전 `{id, status}` 그대로다.
+- **읽기** — 스위치가 켜져 있고 화면(세션) 읽기일 때만 `/project` · `/mine` · `/review` · `/cards/{id}` 의 카드마다 `ra`(투영한 줄의
+  `{state, report_id, entity_id, type_slug, value, added, at, by}` 또는 `null`)를 단다. 꺼져 있거나 사람 PAT 의 읽기(게이트웨이 `insight_find` ·
+  `insight_get`)면 칸이 없다 — 답이 바이트까지 같다. 화면은 `ra` 칸이 있을 때만 단추를 그린다.
+- **감사** — `insight_ra_projected` `{id, report_id, entity_id, added}`(ok) · `{id, error}`(failed).
+

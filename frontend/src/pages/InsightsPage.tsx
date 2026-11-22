@@ -14,6 +14,7 @@ import {
   setCardClaim,
   setCardRound,
   setCardSubject,
+  projectCardToRa,
   widenCard,
   withdrawCard,
   type InsightCard,
@@ -119,6 +120,21 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
     }
   };
   const t = card.tally;
+  // RA 투영(M5) — 칸이 오면 박스에서 켜져 있다. 조직에만 연 확인 카드이고 RA 보고서 · 과제가 있을 때 주인이 단다(서버가 다시 본다)
+  const canProject =
+    card.ra === null &&
+    card.mine &&
+    card.status === 'confirmed' &&
+    card.scope.length === 1 &&
+    card.scope[0] === 'org' &&
+    card.report_id != null &&
+    !!card.subject.sp_task;
+  const project = () => {
+    const ask =
+      `RA 보고서 #${card.report_id} 에 과제 「${card.subject.sp_task}」 의 객체 태그를 답니다. 그 보고서를 볼 수 있는 사람의 RA 검색 · 과제 화면에 ` +
+      '서고, 보고서의 공개 범위는 바뀌지 않습니다. 카드를 거두어도 RA 의 태그는 떼지 않습니다(RA 보고서 편집 화면에서 손으로 뗍니다). 달까요?';
+    if (window.confirm(ask)) void act(() => projectCardToRa(card.id));
+  };
   // 거두기 — 기다림 줄 카드도 주인이 거둔다(주제를 확인할 생각이 없으면 버린다)
   const withdrawBtn = (
     <button
@@ -126,7 +142,11 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
       className="btn-secondary"
       disabled={busy}
       onClick={() => {
-        if (window.confirm('이 카드를 거둘까요? 내용이 지워지고 아무에게도 보이지 않습니다.')) void act(() => withdrawCard(card.id));
+        if (window.confirm('이 카드를 거둘까요? 내용이 지워지고 아무에게도 보이지 않습니다.'))
+          void act(async () => {
+            const out = await withdrawCard(card.id);
+            if (out.ra) window.alert(out.ra.note);
+          });
       }}
     >
       거두기
@@ -181,6 +201,11 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
       {card.continues && <p className="ins-sub">이어하기 — 앞 카드 {card.continues}</p>}
       {card.stale && <StaleLine cardId={card.id} stale={card.stale} />}
       {card.same && <p className="ins-sub">같은 결론의 다른 카드 — {card.same.ids.join(' · ')}</p>}
+      {card.ra && (
+        <p className="ins-sub">
+          RA 과제 객체에 달림 — {card.ra.value}(#{card.ra.entity_id}) · 보고서 #{card.ra.report_id} · {day(card.ra.at)}
+        </p>
+      )}
       {card.mine && card.status !== 'waiting' && (
         <div className="ins-actions">
           {card.status === 'draft' && (
@@ -211,6 +236,11 @@ function InsightCardView({ card, onChanged }: { card: InsightCard; onChanged: ()
           {(card.status === 'confirmed' || card.status === 'disputed') && card.evidence_known && !card.scope.includes('org') && (
             <button type="button" className="btn-secondary" disabled={busy} onClick={() => void act(() => widenCard(card.id))}>
               조직에 열기
+            </button>
+          )}
+          {canProject && (
+            <button type="button" className="btn-secondary" disabled={busy} onClick={project}>
+              RA 과제 객체에 달기
             </button>
           )}
           {(card.status === 'confirmed' || card.status === 'disputed') && (

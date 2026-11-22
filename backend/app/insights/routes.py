@@ -16,7 +16,7 @@ import dataclasses
 import logging
 import time
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.access.policy import ADMIN_GROUP
@@ -26,6 +26,7 @@ from app.config import Settings, get_settings
 from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 from app.insights import cards as C
 from app.insights import intake, lineage
+from app.insights import ra_project as RA
 from app.insights import store as S
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,17 @@ def _stale_out(request: Request, stale: dict) -> dict:
     return stale if _on_screen(request) else lineage.public(stale)
 
 
+def _with_ra(request: Request, settings: Settings, views: list[dict]) -> list[dict]:
+    """RA 투영(M5)이 켜진 박스의 화면 읽기에만 카드마다 'ra'(투영한 줄 또는 null)를 단다 — 화면이 'RA 과제 객체에 달기' 단추를 그릴지 가른다.
+    꺼져 있거나 사람 PAT 의 읽기면 아무것도 더하지 않는다(답이 바이트까지 같다)."""
+    if not settings.insight_ra_project or not _on_screen(request) or not views:
+        return views
+    recs = RA.records(_store(request), [x["id"] for x in views])
+    for x in views:
+        x["ra"] = RA.public(recs.get(x["id"]))
+    return views
+
+
 def _newest(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda r: (-int(r.get("created_at") or 0), str(r.get("id"))))
 
@@ -333,6 +345,7 @@ async def project(request: Request, sp_task: str = Query(..., min_length=1, max_
         if rp.get("sp_task") in fam:
             cells[_bucket(_risk_round(rp))]["risk"].append(rp)
     order = [b for b in (*C.STAGES, C.ROUND_UNKNOWN) if (not want or b == want) and (cells[b]["cards"] or cells[b]["risk"])]
+    _with_ra(request, settings, [x for b in order for x in cells[b]["cards"]])
     _audit_admin(request, v, admin_only + admin_seen, "project")
     return {"sp_task": sp_task, "rounds": [cells[b] for b in order], **({"risk_error": risk_why} if risk_why else {}), **more,
             **({"previous_keys": old} if old else {}), **({"keys_note": keys_note} if keys_note else {}), "note": NOTE}
@@ -349,6 +362,7 @@ async def mine(request: Request, principal: Principal = Depends(_reader), settin
     groups: dict = {"waiting": [], "draft": [], "shared": []}
     for r in rows:
         groups["shared" if r["status"] in C.SHARED else r["status"]].append(_view(r, v, seen=seen))
+    _with_ra(request, settings, [x for g in groups.values() for x in g])
     _audit_admin(request, v, admin_seen, "mine")
     return {**groups, **({"truncated": True} if len(rows) >= S.ROWS_MAX else {}), "note": NOTE}
 
@@ -410,6 +424,7 @@ async def review(request: Request, principal: Principal = Depends(_reader), sett
         items.append({"reasons": reasons, "say": " · ".join(_REVIEW[x] for x in reasons), "card": view})
         for x in reasons:
             counts[x] = counts.get(x, 0) + 1
+    _with_ra(request, settings, [it["card"] for it in items])
     _audit_admin(request, v, admin_only + admin_seen, "review")
     return {"items": items, "counts": counts, **({"truncated": True} if len(mine) >= S.ROWS_MAX else {}), "note": NOTE}
 
@@ -503,6 +518,7 @@ async def card(cid: str, request: Request, principal: Principal = Depends(_reade
                     stale["risk_diffs"] = diffs
                 stale["risk_note"] = lineage.RISK_DIFF_NOTE if diffs else (why or "뒤 판의 CAD 과제를 원천으로 쓰는 리스크 변경 심사가 내 시야에 없다")
         view["stale"] = stale
+    _with_ra(request, settings, [view])
     return {**view, "note": NOTE}
 
 
@@ -721,9 +737,53 @@ async def dispute(cid: str, body: DisputeIn, request: Request, principal: Princi
 
 
 @router.post("/cards/{cid}/withdraw")
-async def withdraw(cid: str, request: Request, principal: Principal = Depends(_writer)) -> dict:
+async def withdraw(cid: str, request: Request, principal: Principal = Depends(_writer),
+                   settings: Settings = Depends(get_settings)) -> dict:
     """거두기 — 주인 · 관리자. 내용을 지우고 묘비(id · 거둔 사람 · 때)만 남긴다. 아무에게도 안 보인다(PLAN §6.5)."""
     r, v = await _mine_or_404(request, cid, principal, admin_ok=True)
     st = _store(request)
     await asyncio.to_thread(lambda: st.withdraw(cid, by=v.email))
+    # RA 에 단 태그는 떼지 않는다 — 원장 줄의 표지만 바꾼다(ra_project 머리). RA 를 부르지 않으므로 스위치와 상관없이 원장은 맞춘다.
+    ra = await asyncio.to_thread(RA.mark_withdrawn, st, cid, v.email)
+    if ra is not None and settings.insight_ra_project:
+        return {"id": cid, "status": "withdrawn", "ra": {"state": RA.WITHDRAWN, "report_id": ra.get("report_id"), "note": RA.WITHDRAWN_NOTE}}
     return {"id": cid, "status": "withdrawn"}
+
+
+def _ra_switch(settings: Settings = Depends(get_settings)) -> None:
+    """RA 투영 스위치 — 꺼져 있으면 로그인 · CSRF 를 보기 전에 없는 창구와 같은 404 다(누가 부르든 같은 답 — 창구가 있다는 것도 말하지 않는다)."""
+    if not settings.insight_ra_project:
+        raise HTTPException(status_code=404)
+
+
+@router.post("/cards/{cid}/ra")
+async def project_to_ra(cid: str, request: Request, _on: None = Depends(_ra_switch), principal: Principal = Depends(_writer),
+                        settings: Settings = Depends(get_settings)) -> dict:
+    """RA 투영(M5) — 주인이 화면에서 누른다. 조직에 연 확인 카드의 RA 보고서에 SP 과제 객체(code = SP 키)를 그 사람의 RA 연결로 태그로 단다
+    (app/insights/ra_project). 한 카드는 한 번만이다(원장에 줄이 있으면 RA 를 부르지 않는다). 스위치가 꺼져 있으면 없는 창구와 같은 404 다."""
+    r, v = await _mine_or_404(request, cid, principal)
+    ensure(principal, "plat:reportarchive")
+    st = _store(request)
+    have = RA.public(await asyncio.to_thread(RA.record, st, cid))
+    if have is not None:
+        return {"id": cid, "ra": have, "already": True, "note": RA.NOTE}
+    why = RA.why_not(r)
+    if why:
+        raise AuthError(why, status_code=409)
+    from app.agent import report_figures as _figs           # 지연 import — 그 사람 명의 RA 세션(위임 먼저 · 등록 토큰 다음, 서비스 계정 없음)
+    try:
+        session = await _figs._ra(request, settings, principal)
+        rec = await RA.project(ra=session, store=st, row=r, by=v.email)
+    except (_figs.FigureError, RA.ProjectError) as exc:
+        code = getattr(exc, "error", "ra_error")
+        _audit_ra(request, v, cid, "failed", {"error": code})
+        raise AuthError(exc.detail, status_code=exc.status) from None
+    _audit_ra(request, v, cid, "ok", {"report_id": rec["report_id"], "entity_id": rec["entity_id"], "added": rec["added"]})
+    return {"id": cid, "ra": RA.public(rec), "already": False, "note": RA.NOTE}
+
+
+def _audit_ra(request: Request, v: C.Viewer, cid: str, status: str, meta: dict) -> None:
+    try:
+        request.app.state.agent_audit.record(principal=v.sub or v.email, event="insight_ra_projected", status=status, meta={"id": cid, **meta})
+    except Exception:  # noqa: BLE001 — 감사가 못 남아도 답은 막지 않는다(로그로 남긴다)
+        logger.warning("과제 인사이트 — RA 투영을 감사에 남기지 못했다", exc_info=True)
