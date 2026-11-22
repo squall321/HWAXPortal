@@ -503,6 +503,22 @@ textarea.pr-input {
   background: var(--danger-bg);
   color: var(--danger);
 }
+/* 준비도의 전문가 팀 줄(docs/expert-teams) — 쓸 수 있음 · 일부 빠짐 · 쓸 수 없음은 단계 준비도와 같은 색 */
+.rt-ready.is-team-ok {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.rt-ready.is-team-partial {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.rt-ready.is-team-unresolved {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
 .rt-chip {
   display: inline-flex;
   align-items: center;

@@ -20,11 +20,18 @@ import {
   type RoutineStep,
   type StepKind,
   type StepReadiness,
+  type TeamReadiness,
 } from '../../api/routines.api';
+import { listTeams, type Team } from '../../api/teams.api';
+import { useCan } from '../../auth/useCan';
 // 준비도 라벨 · 사슬 글은 챗의 루틴 고르기와 함께 쓴다(R3) — 화면 조각 밖(.ts)에 둔다
 import { READY_LABEL, chain } from '../../components/chat/routine';
 
 const KIND_LABEL: Record<StepKind, string> = { platform: '플랫폼', cite: '기존 보고서 인용', deliberation: '전문가 심의' };
+const TEAM_STATE: Record<TeamReadiness['state'], string> = { ok: '쓸 수 있음', partial: '일부 빠짐', unresolved: '쓸 수 없음', off: '앉히지 않음' };
+// 리스크 심사 계열 심의 단계 — 팀을 앉히지 않는다(D-18 · docs/expert-teams ET-5). 서버 routines.delib_is_risk 와 같은 머리
+const isRiskStep = (s: RoutineStep) =>
+  s.kind === 'deliberation' && [s.deliberation?.job, s.deliberation?.chair_template].some((v) => String(v ?? '').toLowerCase().startsWith('risk-review'));
 const UPLOAD_LABEL = { auto: '저절로 초안을 만든다', ask: '끝에 묻는다', off: '올리지 않는다' } as const;
 
 function blankStep(n: number): RoutineStep {
@@ -151,6 +158,7 @@ export function RoutineDetailView() {
   const navigate = useNavigate();
   const [d, setD] = useState<RoutineDetail | null>(null);
   const [ready, setReady] = useState<StepReadiness[] | null>(null);
+  const [teamLines, setTeamLines] = useState<TeamReadiness[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [version, setVersion] = useState<number | undefined>(undefined);
@@ -162,7 +170,10 @@ export function RoutineDetailView() {
         setD(r);
         return routineReadiness(id, r.version.version_no);
       })
-      .then((r) => setReady(r.steps))
+      .then((r) => {
+        setReady(r.steps);
+        setTeamLines(r.teams ?? []);
+      })
       .catch((e: Error) => setErr(e.message));
   }, [id, version]);
   useEffect(() => load(), [load]);
@@ -231,6 +242,19 @@ export function RoutineDetailView() {
       {spec.vars.length > 0 && (
         <p className="pr-meta">입력 — {spec.vars.map((v) => `${v.label}(${v.key})`).join(' · ')}</p>
       )}
+      {/* 준비도의 팀 줄 — 팀의 전문가 중 내가 못 쓰는 사람(앱 권한이 없는 운영자)은 실행 때 빠진다. 도구는 단계 울타리 그대로다(ET-4) */}
+      {teamLines.length > 0 && (
+        <ul className="pr-list rt-teams" data-testid="routine-team-readiness">
+          {teamLines.map((t) => (
+            <li key={`${t.where}-${t.team_id}`} className="pr-meta">
+              전문가 팀 — {t.where === 'routine' ? '루틴' : `단계 ${t.where}`}
+              {t.name ? ` 「${t.name}」` : ''}: <span className={`rt-ready is-team-${t.state}`}>{TEAM_STATE[t.state]}</span>
+              {t.hidden.length > 0 && ` · 내가 못 쓰는 사람 ${t.hidden.map((h) => h.name || h.key).join(', ')}`}
+              {t.why && ` — ${t.why}`}
+            </li>
+          ))}
+        </ul>
+      )}
       <ol className="pr-list">
         {spec.steps.map((s, i) => {
           const r = byStep.get(s.id);
@@ -297,6 +321,15 @@ function RoutineEditor({
   const [platErr, setPlatErr] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 전문가 팀(docs/expert-teams 2-2) — 루틴 · 단계에 붙인다. 전문가와 대화 권한이 있을 때만 고른다(서버도 저장 때 본다)
+  const canTeam = useCan()('feat:expert-chat');
+  const [teams, setTeams] = useState<Team[] | null>(null);
+  useEffect(() => {
+    if (!canTeam) return;
+    listTeams()
+      .then((r) => setTeams(r.teams))
+      .catch(() => setTeams([]));
+  }, [canTeam]);
 
   useEffect(() => {
     routinePlatforms()
@@ -381,6 +414,25 @@ function RoutineEditor({
           />
         </div>
         <VarsEditor vars={spec.vars} onChange={(vars) => patch({ vars })} />
+        {teams && (
+          <div className="pr-row">
+            <label htmlFor="rt-team" className="pr-label">
+              전문가 팀
+            </label>
+            <select id="rt-team" value={spec.team ?? ''} onChange={(e) => patch({ team: e.target.value || undefined })}>
+              <option value="">팀 없음</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.official ? '[공식] ' : ''}{t.name}
+                </option>
+              ))}
+              {spec.team && !teams.some((t) => t.id === spec.team) && <option value={spec.team}>(지금 팀 — 목록에 없음)</option>}
+            </select>
+            <span className="pr-note">
+              단계마다 주 전문가의 목소리 · 판단 기준 · 지식카드를 보탭니다. 도구는 단계의 울타리 그대로입니다. 실행할 때의 팀 구성이 원장에 남습니다.
+            </span>
+          </div>
+        )}
       </section>
 
       {platErr && <ErrorBanner message={`고를 수 있는 플랫폼을 못 받았습니다 — ${platErr}`} />}
@@ -393,6 +445,7 @@ function RoutineEditor({
               index={i}
               earlier={spec.steps.slice(0, i)}
               plats={plats}
+              teams={teams}
               onChange={(p) => setStep(i, p)}
               onMove={(d) => moveStep(i, d)}
               onRemove={spec.steps.length > 1 ? () => removeStep(i) : undefined}
@@ -540,6 +593,7 @@ function StepEditor({
   index,
   earlier,
   plats,
+  teams,
   onChange,
   onMove,
   onRemove,
@@ -548,11 +602,16 @@ function StepEditor({
   index: number;
   earlier: RoutineStep[];
   plats: Platforms | null;
+  /** 고를 수 있는 전문가 팀 — 없으면(권한 없음) 팀 칸을 그리지 않는다 */
+  teams?: Team[] | null;
   onChange: (p: Partial<RoutineStep>) => void;
   onMove: (d: -1 | 1) => void;
   onRemove?: () => void;
 }) {
   const fid = `rt-s${index}`;
+  const risk = isRiskStep(step);
+  // 단계 팀 — 안 적음(루틴 팀 그대로) · 빈 글(이 단계는 팀 없이) · 팀 id(덮어쓰기)
+  const teamValue = step.team == null ? '@inherit' : step.team === '' ? '@none' : step.team;
   const chosen = new Set(step.backends);
   const tools = (plats?.platforms ?? []).filter((p) => chosen.has(p.backend)).flatMap((p) => p.tools.filter((t) => !t.write));
   const known = new Set((plats?.platforms ?? []).map((p) => p.backend));
@@ -774,6 +833,31 @@ function StepEditor({
           <option value="stop">멈춤</option>
         </select>
       </div>
+      {teams && (
+        <div className="pr-row">
+          <label htmlFor={`${fid}-team`} className="pr-label">
+            전문가 팀
+          </label>
+          <select
+            id={`${fid}-team`}
+            value={teamValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({ team: v === '@inherit' ? undefined : v === '@none' ? '' : v });
+            }}
+          >
+            <option value="@inherit">루틴의 팀 그대로</option>
+            <option value="@none">이 단계는 팀 없이</option>
+            {!risk && teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.official ? '[공식] ' : ''}{t.name}
+              </option>
+            ))}
+            {!risk && step.team && !teams.some((t) => t.id === step.team) && <option value={step.team}>(지금 팀 — 목록에 없음)</option>}
+          </select>
+          {risk && <span className="pr-note">리스크 심사 계열 심의 단계에는 팀을 앉히지 않습니다(D-18).</span>}
+        </div>
+      )}
     </div>
   );
 }

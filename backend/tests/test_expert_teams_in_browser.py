@@ -17,12 +17,13 @@ from tests.test_delib_stream_in_browser import _BUILD, FE, pytestmark  # noqa: F
 _HARNESS = r"""
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthContext } from '__FE__/src/auth/AuthContext';
 import { ChatProvider, useChat } from '__FE__/src/state/ChatContext';
 import { ExpertToggle } from '__FE__/src/components/chat/ExpertToggle';
 import { StartPicker } from '__FE__/src/components/chat/StartPicker';
 import { ExpertPicker } from '__FE__/src/components/chat/ExpertPicker';
+import { RoutineDetailView, RoutineNew } from '__FE__/src/pages/procedures/RoutinesView';
 
 function Pins() {
   const { pinnedAgent, pinnedAgentName, pinnedHelpers, pinnedApps, pinnedTools } = useChat();
@@ -68,12 +69,13 @@ function Seats() {
 }
 (window as unknown as { __mount: (what?: string) => void }).__mount = (what) => {
   const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [] };
-  const body = what === 'start' ? <Start /> : what === 'open' ? <Open /> : what === 'seats' ? <Seats /> : <Toggle />;
+  const body = what === 'start' ? <Start /> : what === 'open' ? <Open /> : what === 'seats' ? <Seats /> : what === 'routine' ? <RoutineNew />
+    : what === 'routineview' ? <Routes><Route path="/r/:id" element={<RoutineDetailView />} /></Routes> : <Toggle />;
   createRoot(document.getElementById('root')!).render(
     <AuthContext.Provider
       value={{ user, status: 'authenticated', login: () => undefined, logout: async () => undefined, refresh: async () => undefined }}
     >
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[what === 'routineview' ? '/r/r1' : '/']}>
         <ChatProvider storagePrefix="hwax.chat" serverKind="chat">{body}</ChatProvider>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -109,6 +111,17 @@ _STUB = r"""
     if (u === '/agent/conversations' && method === 'GET') return json({ conversations: [] });
     if (u === '/agent/conversations' && method === 'POST') return json({ id: 'srv-1' });
     if (u.startsWith('/agent/conversations/')) return json({ detail: 'not found' }, 404);
+    if (u === '/routines-api/platforms') return json({ deliberation: true, not_permitted: [],
+      platforms: [{ backend: 'signalforge', label: 'SignalForge VOC', tools: [{ name: 'search_voc', exposed: 'search_voc', write: false, description: '' }] }] });
+    if (u === '/routines-api/routines' && method === 'POST') return json({ id: 'r1', version_no: 1 }, 201);
+    if (u.startsWith('/routines-api/routines/r1/readiness')) return json({ version_no: 1, steps: [{ step: 's1', state: 'allowed', backends: [],
+      missing_tools: [], reason: '' }], teams: [{ where: 'routine', team_id: TEAM.id, name: TEAM.name, state: 'partial',
+      why: '보조 전문가 StepForge 운영자(he-cad-stepforge) 는 이 사람이 쓸 수 없어 뺐다', hidden: [{ key: 'he-cad-stepforge', name: 'StepForge 운영자' }] }] });
+    if (u.startsWith('/routines-api/routines/r1')) return json({ mine: true, versions: [{ version_no: 1 }], routine: { id: 'r1' },
+      version: { version_no: 1, spec: { title: '낙하 루틴', purpose: '', vars: [], team: TEAM.id, report: { title: '', sections: ['s1'], ra: { upload: 'off' } },
+        limits: { minutes: 60, calls: 60 }, visibility: 'private', steps: [{ id: 's1', title: 'VOC', kind: 'platform', backends: ['signalforge'],
+        goal: 'VOC 를 본다', tools: [], uses: [], expect: { keys: [] }, budget: { calls: 8, seconds: 300 },
+        blocked: { empty: 'continue', denied: 'skip', unavailable: 'skip' } }] } } });
     if (u.startsWith('/agent/chat')) {
       const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('event: done\ndata: {}\n\n')); c.close(); } });
       return Promise.resolve(new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
@@ -212,6 +225,27 @@ const SCENARIOS = {
     await page.waitForFunction(() => window.__calls.some((c) => c.url.startsWith('/agent/chat')));
     return { pins: got, sent: await chatBody(page), errors: page.__errors };
   },
+  // 루틴 짜기 — 루틴의 팀 · 단계의 팀(이 단계는 팀 없이)을 골라 저장하면 스펙에 실린다
+  async routine(browser) {
+    const page = await open(browser, 'routine');
+    await page.locator('#rt-team').waitFor();
+    await page.locator('#rt-title').fill('낙하 루틴');
+    await page.locator('#rt-s0-title').fill('VOC');
+    await page.locator('#rt-s0-add').selectOption('signalforge');
+    await page.locator('textarea').nth(1).fill('VOC 를 본다');
+    await page.locator('#rt-team').selectOption({ label: '[공식] 힌지 낙하 검토팀' });
+    await page.locator('#rt-s0-team').selectOption('@none');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+    await page.waitForFunction(() => window.__calls.some((c) => c.url === '/routines-api/routines' && c.method === 'POST'));
+    const post = (await page.evaluate(() => window.__calls)).find((c) => c.url === '/routines-api/routines' && c.method === 'POST');
+    return { spec: post.body.spec, errors: page.__errors };
+  },
+  // 루틴 보기 — 준비도의 팀 줄(내가 못 쓰는 사람)
+  async routineview(browser) {
+    const page = await open(browser, 'routineview');
+    await page.locator('[data-testid="routine-team-readiness"]').waitFor();
+    return { line: await page.locator('[data-testid="routine-team-readiness"]').textContent(), errors: page.__errors };
+  },
   // 절차의 팀으로 심의 좌석을 미리 채운다 — 추천 대신 그 사람들로 시작
   async seats(browser) {
     const page = await open(browser, 'seats');
@@ -306,3 +340,15 @@ def test_절차의_팀으로_심의_좌석을_미리_채운다(seen):
     s = seen("seats")
     assert s["confirmed"] == ["rel-thermal", "cae-b"], "추천(x-1 · x-2) 대신 팀의 사람들로 시작한다"
     assert "열충격 검토팀" in s["note"]
+
+
+def test_루틴_짜기에서_루틴_팀과_단계_팀을_골라_저장하면_스펙에_실린다(seen):
+    s = seen("routine")
+    spec = s["spec"]
+    assert spec["team"] == "tm_" + "a" * 32, spec
+    assert spec["steps"][0]["team"] == "", "단계는 「이 단계는 팀 없이」 — 빈 글"
+
+
+def test_루틴_보기의_준비도에_팀_줄과_내가_못_쓰는_사람이_보인다(seen):
+    line = seen("routineview")["line"]
+    assert "루틴" in line and "힌지 낙하 검토팀" in line and "일부 빠짐" in line and "StepForge 운영자" in line, line
