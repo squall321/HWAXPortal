@@ -499,6 +499,16 @@ def test_템플릿이_없거나_RA_가_거절하면_만들지_않고_푼다(box)
     assert r.status_code == 502 and r.json()["error"] == "ra_unreachable" and box.risk.ledger["state"] is None
 
 
+def test_템플릿은_리스크_앱의_박스_설정을_그대로_쓴다(box):
+    """템플릿 id · 판의 정본은 리스크 앱의 박스 설정 한 곳이다(재료에 실려 온다) — 포털은 고르지 않는다."""
+    box.risk.template = {"id": "sys.hwax.deliberation", "version": 2}
+    box.ra.templates.add(("sys.hwax.deliberation", 2))
+    assert box.post().json()["ok"] is True
+    assert box.ra.reports[58]["template"] == ("sys.hwax.deliberation", 2)
+    assert [(b["template_id"], b["template_version"]) for b in map(json.loads, (q.content for q in box.ra.calls[:2]))] == [
+        ("sys.hwax.deliberation", 2)] * 2
+
+
 def test_만드는_호출의_결과를_모르면_보내는_중으로_남기고_곧바로_다시_만들지_않는다(box):
     """RA 가 초안을 만들고 답을 잃었다(시간 초과) — 곧바로 다시 만들면 초안이 둘이 된다. 원장은 「보내는 중」 으로 남고(앱이 15분 뒤에 다시
     잡게 한다) 둘째 누름은 409 다. 낡은 뒤 다시 잡으면 앞 시도의 초안이 남았을 수 있다고 알린다(orphan_possible)."""
@@ -670,14 +680,16 @@ def test_리스크_앱의_문이_꺼져_있으면_꺼져_있다고_답한다(box
     ("project_purged", 409, "project_purged"), ("ra_report_withheld", 409, "ra_report_withheld"),
     ("ra_report_empty", 409, "ra_report_empty"), ("ra_report_in_progress", 409, "ra_report_in_progress"),
     ("ra_report_other_author", 409, "ra_report_other_author"), ("delegation_required", 502, "risk_not_delegated"),
-    ("internal_error", 502, "risk_refused"), ("brand_new_code", 502, "risk_refused")])
+    ("internal_error", 502, "risk_refused"), ("brand_new_code", 502, "risk_refused"),
+    ("<script>alert(1)</script>", 502, "risk_refused"), ("낱말이 아닌 긴 글 " * 5, 502, "risk_refused")])
 def test_리스크_앱의_거절은_정해진_글로_옮긴다(box, code, status, error):
     secret = "상대가 지은 글 hong@corp.com <script>"
     box.risk.refuse["material"] = (code, secret)
     r = box.post()
     assert (r.status_code, r.json()["error"], r.json()["ok"]) == (status, error, False)
-    assert "상대가 지은 글" not in r.text and "script" not in r.text, "상대의 글을 그대로 내지 않는다"
-    assert r.json()["detail"] == M.REFUSALS[error][1] or code in r.json()["detail"]
+    assert "상대가 지은 글" not in r.text and "script" not in r.text and "낱말이 아닌" not in r.text, "상대의 글을 그대로 내지 않는다"
+    shown = code if re.fullmatch(r"[A-Za-z0-9_]{1,40}", code) else "unknown"      # 낱말 꼴이 아닌 오류 칸은 싣지 않는다
+    assert r.json()["detail"] == M.REFUSALS[error][1].format(code=shown)
     assert box.ra.calls == [] and box.gw.names() == ["material"]
     (row,) = app.state.agent_audit.rows
     assert row["status"] == "failed" and row["meta"] == {"target_key": TARGET, "error": error}

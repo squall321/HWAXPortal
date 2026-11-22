@@ -143,7 +143,7 @@ async def _risk(settings: Settings, pat: str, tool: str, args: dict, timeout: fl
     code = code if isinstance(code, str) and _CODE_RE.fullmatch(code) else ""
     if code in RISK_CODES:
         raise DraftError(RISK_CODES[code])
-    raise DraftError("risk_refused", code=code or v.kind)
+    raise DraftError("risk_refused", code=code or "unknown")
 
 
 async def _record(settings: Settings, pat: str, ids: dict, **facts) -> dict:
