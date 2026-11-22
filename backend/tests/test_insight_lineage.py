@@ -357,3 +357,142 @@ def test_관리자의_검토_줄에는_남의_반박_카드가_서고_범위_밖
         metas = [json.loads(m) for (m,) in db.execute("SELECT meta FROM agent_audit WHERE event='insight_admin_read'").fetchall()]
     assert any(m["where"] == "review" and m["ids"] == [theirs] for m in metas)
     assert C.claim_key(" A  b\n") == "a b" and C.claim_key(None) == ""
+
+
+# ── 반대 검토 11-22 — 퍼지는 자리에는 판정 낱말만 · 기한 · 관리자의 같은 결론 ──────────────────────────────────────────
+def _pat_of(api, who: str) -> dict:
+    """그 사람의 PAT 머리(게이트웨이 insight_get 이 포털을 부르는 꼴) — 쿠키는 지운다."""
+    from app.agent import routes as R
+    from app.main import app
+    from test_insights import _principal
+    api.login(who)
+    pat = R._chat_user_pat(app.state.keystore, api.s, _principal(who))
+    api.c.cookies.clear()
+    return {"Authorization": f"Bearer {pat}"}
+
+
+def test_판정_낱말만_내는_표지에는_뒤_판의_이름과_id_가_없다():
+    full = L.card_stale(_subject(("mcad", OLD, FP[OLD])), _revs(OLD))
+    assert full["state"] == "stale" and "(뒤 판 A2)" in full["say"] and L.next_ids(full) == [NEW]
+    pub = L.public(full)
+    assert pub == {"state": "stale", "say": "낡았을 수 있다 — 기구 CAD: 뒤 판이 있다"} and set(pub) == {"state", "say"}
+    assert NEW not in json.dumps(pub, ensure_ascii=False) and L.public(None) is None
+    for state in ("unknown", "current", "not_checked"):
+        assert L.public({"state": state, "say": "x", "items": [{"state": state, "why": "StepForge 의 자세한 까닭"}]}) == \
+            {"state": state, "say": L.stale_say(state, [], detail=False)}
+
+
+def test_사람_PAT_로_읽은_답의_판_표지는_판정_낱말만이고_리스크_변경_심사는_부르지_않는다(api):
+    """M1 — 게이트웨이 insight_get · insight_find 의 답은 근거로 다시 퍼질 수 있다(그 답을 근거로 쓴 카드의 범위에는 StepForge · 리스크 앱 토큰이
+    없다). 뒤 판의 id · 이름 · 리스크 변경 줄은 포털 화면(세션)의 그 사람에게만 낸다."""
+    a = api.confirmed("me@example.com", "a", subject={**CONFIRMED, "artifacts": [{"kind": "mcad", "id": OLD, "rev": FP[OLD]}]})
+    api.table.update({L.STEPFORGE_META: _meta, L.RISK_FIND: lambda q: RK["find_by_mcad"], L.RISK_DIFF: lambda q: RK["diff_lines"]})
+    auth = _pat_of(api, "peer@example.com")
+    api.calls.clear()
+    r = api.c.get(f"/insights-api/cards/{a}", headers=auth)
+    assert r.status_code == 200 and r.json()["stale"] == {"state": "stale", "say": "낡았을 수 있다 — 기구 CAD: 뒤 판이 있다"}
+    assert not [x for x in api.calls if x[0] in (L.RISK_FIND, L.RISK_DIFF)], "리스크 앱은 부르지도 않는다"
+    text = r.text
+    assert NEW not in text and "risk_diffs" not in text and "diff:d-0102" not in text and "(뒤 판" not in text
+    for path, params in (("/insights-api/project", {"sp_task": KEY}), ("/insights-api/review", None)):
+        got = api.c.get(path, params=params, headers=auth)
+        assert got.status_code == 200 and NEW not in got.text and "(뒤 판" not in got.text, path
+    got = _cards(api.c.get("/insights-api/project", params={"sp_task": KEY}, headers=auth).json())
+    assert got[a]["stale"] == {"state": "stale", "say": "낡았을 수 있다 — 기구 CAD: 뒤 판이 있다"}
+    # 같은 사람이 화면(세션)에서 읽으면 자세히 본다
+    api.login("peer@example.com")
+    full = api.c.get(f"/insights-api/cards/{a}").json()["stale"]
+    assert "(뒤 판 A2)" in full["say"] and full["items"][0]["next"][0]["project_id"] == NEW and full["risk_diffs"]
+    api.login("me@example.com")
+    mine = api.c.get("/insights-api/review", headers=_pat_of(api, "me@example.com")).json()
+    assert [x["card"]["stale"] for x in mine["items"]] == [{"state": "stale", "say": "낡았을 수 있다 — 기구 CAD: 뒤 판이 있다"}]
+
+
+def test_관리자가_카드_하나를_볼_때_같은_결론에_남의_초안_id_를_싣지_않는다(api):
+    """L3 — 같은 결론 표지(same.ids)는 읽는 사람이 볼 수 있는 카드만 센다. 관리자의 범위 밖 읽기로 본 남의 초안 id 가 감사 없이 실리지 않는다."""
+    a = api.confirmed("peer@example.com", "a")
+    b = api.confirmed("me@example.com", "b")
+    _relay(api.st, owner="peer@example.com", cid="draft")                                        # 같은 글 — 남의 초안
+    solo = api.confirmed("out@example.com", "o")                                                 # 같은 글 — 그 사람만(소속 없음)
+    api.login("boss@example.com")                                                                # 관리자 — 소속 없음: 다 범위 밖 읽기다
+    one = api.c.get(f"/insights-api/cards/{a}").json()
+    assert "same" not in one, "관리자 표지 없이는 같은 칸에 볼 수 있는 다른 카드가 없다"
+    assert "ins:web:draft:r1:default" not in json.dumps(one, ensure_ascii=False) and solo not in json.dumps(one, ensure_ascii=False)
+    assert api.c.patch("/auth/access/users/boss@example.com", json={"affiliation": "CAEG"}, headers=api.login("boss@example.com")).status_code == 200
+    api.login("boss@example.com")
+    one = api.c.get(f"/insights-api/cards/{a}").json()
+    assert one["same"] == {"n": 2, "ids": [b]}, "제 소속으로 보이는 것만 센다 — 남의 초안 · 그 사람만 보는 카드는 뺀다"
+    # 범위 밖 카드를 볼 때도 그 카드 자신과 견줄 것은 내 시야의 카드뿐이다
+    one = api.c.get(f"/insights-api/cards/{solo}").json()
+    assert sorted(one["same"]["ids"]) == sorted([a, b]) and one["same"]["n"] == 3
+    with closing(sqlite3.connect(api.s.agent_audit_log_path)) as db:
+        metas = [json.loads(m) for (m,) in db.execute("SELECT meta FROM agent_audit WHERE event='insight_admin_read'").fetchall()]
+    assert any(m["where"] == "card" and m["ids"] == [solo] for m in metas), "범위 밖으로 연 카드 자신은 감사에 남는다"
+
+
+def test_기한을_넘긴_일은_취소만_걸고_뒤처리를_기다리지_않는다():
+    """L5 — 게이트웨이 호출은 취소된 뒤에도 세션 닫기를 보내느라 호출 기한만큼 더 걸린다. 그것을 기다리면 상한이 그만큼 늘어난다."""
+    import time
+    state = {"cleaned": False}
+
+    async def slow():
+        try:
+            await asyncio.sleep(5)
+        finally:
+            await asyncio.sleep(0.6)
+            state["cleaned"] = True
+
+    async def run():
+        t0 = time.monotonic()
+        with pytest.raises(TimeoutError):
+            await L.bounded(slow(), 0.05)
+        took = time.monotonic() - t0
+        assert not state["cleaned"], "뒤처리가 끝나기를 기다리지 않았다"
+        await asyncio.sleep(0.8)
+        return took
+    took = asyncio.run(run())
+    assert took < 0.4 and state["cleaned"], f"{took:.2f}초 — 취소는 걸렸고 뒤처리는 뒤에서 끝난다"
+
+    async def quick():
+        return 7
+
+    async def boom():
+        raise ValueError("x")
+    assert asyncio.run(L.bounded(quick(), 1)) == 7
+    with pytest.raises(ValueError):
+        asyncio.run(L.bounded(boom(), 1))
+
+
+def test_갈래마다_기한_안에서_답하고_못_들은_것은_모른다고_한다():
+    """L6 — 개정 줄 · 리스크 변경 심사 · key 이력은 저마다 기한(READ_BUDGET_S) 안에서 끝난다. 늦은 호출은 '모름' 으로 답한다."""
+    import time
+
+    async def late(tool, args):
+        if tool == L.STEPFORGE_META and args["project_id"] == OLD:
+            return {"id": OLD, "revision": SF["meta_old_with_next"]["revision"]}
+        await asyncio.sleep(5)
+        return {}
+    t0 = time.monotonic()
+    out = asyncio.run(L.mcad_revisions(late, [OLD, NEW], budget_s=0.1))
+    assert time.monotonic() - t0 < 1.0
+    assert out[OLD]["state"] == "ok" and out[NEW]["state"] == "unknown" and "기한" in out[NEW]["why"], "답한 것은 쓰고 늦은 것만 모른다"
+    t0 = time.monotonic()
+    diffs, why = asyncio.run(L.risk_diffs(late, [NEW], budget_s=0.1))
+    assert time.monotonic() - t0 < 1.0 and diffs == [] and "기한" in why
+    t0 = time.monotonic()
+    old, why = asyncio.run(L.old_keys(late, KEY, {KEY, OLD_KEY}, budget_s=0.1))
+    assert time.monotonic() - t0 < 1.0 and old == [] and "기한" in why, "이력을 못 읽으면 모으지 않는다(닫힌 쪽)"
+
+
+def test_안쪽_기한의_합이_게이트웨이_인사이트_도구의_기한보다_짧다():
+    """L6 — 안쪽이 먼저 걸려야 한다. 호출 하나 ≤ 갈래 하나, 한 창구가 차례로 도는 갈래 둘(과제 보기 — key 이력 + 개정 줄 · 카드 하나의 화면 —
+    개정 줄 + 리스크 변경 심사)의 합이 게이트웨이 insight_find · insight_get 의 기한보다 짧다."""
+    from app.insights import reuse as X
+    gw = _ROOT.parent / "HWAXMcpGateway" / "gateway.py"
+    if not gw.exists():
+        pytest.skip(f"형제 리포 없음: {gw}")
+    m = re.search(r'^INSIGHT_TIMEOUT_S = float\(os\.environ\.get\("GATEWAY_INSIGHT_TIMEOUT_S", "(\d+)"\) or (\d+)\)$', gw.read_text(encoding="utf-8"), re.M)
+    assert m and m.group(1) == m.group(2)
+    outer = float(m.group(1))
+    assert 0 < L.CALL_TIMEOUT_S < L.READ_BUDGET_S and 2 * L.READ_BUDGET_S + 5 <= outer, (L.CALL_TIMEOUT_S, L.READ_BUDGET_S, outer)
+    assert X.LAY_TIMEOUT_S >= 2 * L.READ_BUDGET_S
