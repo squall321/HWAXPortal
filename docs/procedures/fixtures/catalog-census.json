@@ -49,6 +49,7 @@
   {
    "name": "aidatahub_semantic_search",
    "backend": "ai-data-hub",
+   "orig": "semantic_search",
    "dry_run": false,
    "args": 4,
    "args_documented": 0
@@ -2016,6 +2017,7 @@
   {
    "name": "heaxkooremapper_mcp_cancel_job",
    "backend": "heax-kooremapper_mcp",
+   "orig": "cancel_job",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -2023,6 +2025,7 @@
   {
    "name": "heaxkooremapper_mcp_list_reports",
    "backend": "heax-kooremapper_mcp",
+   "orig": "list_reports",
    "dry_run": false,
    "args": 2,
    "args_documented": 0
@@ -2030,6 +2033,7 @@
   {
    "name": "heaxkooremapper_mcp_recipe_run",
    "backend": "heax-kooremapper_mcp",
+   "orig": "recipe_run",
    "dry_run": false,
    "args": 6,
    "args_documented": 0
@@ -2037,6 +2041,7 @@
   {
    "name": "heaxkooremapper_mcp_system_capabilities",
    "backend": "heax-kooremapper_mcp",
+   "orig": "system_capabilities",
    "dry_run": false,
    "args": 0,
    "args_documented": 0
@@ -2044,6 +2049,7 @@
   {
    "name": "heaxkooremapper_mcp_system_status",
    "backend": "heax-kooremapper_mcp",
+   "orig": "system_status",
    "dry_run": false,
    "args": 0,
    "args_documented": 0
@@ -2051,6 +2057,7 @@
   {
    "name": "heaxkooremapper_mcp_whoami",
    "backend": "heax-kooremapper_mcp",
+   "orig": "whoami",
    "dry_run": false,
    "args": 0,
    "args_documented": 0
@@ -2058,6 +2065,7 @@
   {
    "name": "heaxmaterialtwin_web_register_material",
    "backend": "heax-materialtwin_web",
+   "orig": "register_material",
    "dry_run": true,
    "args": 6,
    "args_documented": 0
@@ -2065,6 +2073,7 @@
   {
    "name": "heaxstep_forge_cancel_job",
    "backend": "heax-step_forge",
+   "orig": "cancel_job",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -2072,6 +2081,7 @@
   {
    "name": "heaxstep_forge_job_status",
    "backend": "heax-step_forge",
+   "orig": "job_status",
    "dry_run": false,
    "args": 2,
    "args_documented": 0
@@ -2079,6 +2089,7 @@
   {
    "name": "heaxstep_forge_list_jobs",
    "backend": "heax-step_forge",
+   "orig": "list_jobs",
    "dry_run": false,
    "args": 4,
    "args_documented": 2
@@ -2086,6 +2097,7 @@
   {
    "name": "heaxstep_forge_register_material",
    "backend": "heax-step_forge",
+   "orig": "register_material",
    "dry_run": false,
    "args": 9,
    "args_documented": 0
@@ -2093,6 +2105,7 @@
   {
    "name": "heaxstep_forge_system_capabilities",
    "backend": "heax-step_forge",
+   "orig": "system_capabilities",
    "dry_run": false,
    "args": 1,
    "args_documented": 1
@@ -2100,6 +2113,7 @@
   {
    "name": "heaxstep_forge_system_status",
    "backend": "heax-step_forge",
+   "orig": "system_status",
    "dry_run": false,
    "args": 0,
    "args_documented": 0
@@ -2107,6 +2121,7 @@
   {
    "name": "heaxstep_forge_whoami",
    "backend": "heax-step_forge",
+   "orig": "whoami",
    "dry_run": false,
    "args": 0,
    "args_documented": 0
@@ -3878,6 +3893,7 @@
   {
    "name": "reportarchive_list_reports",
    "backend": "reportarchive",
+   "orig": "list_reports",
    "dry_run": false,
    "args": 21,
    "args_documented": 0
@@ -3885,6 +3901,7 @@
   {
    "name": "reportarchive_prepare_upload",
    "backend": "reportarchive",
+   "orig": "prepare_upload",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -4844,6 +4861,7 @@
   {
    "name": "signalforge_semantic_search",
    "backend": "signalforge",
+   "orig": "semantic_search",
    "dry_run": false,
    "args": 5,
    "args_documented": 0
@@ -5012,6 +5030,7 @@
   {
    "name": "smarttwinmcp_job_status",
    "backend": "smart-twin-mcp",
+   "orig": "job_status",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -5019,6 +5038,7 @@
   {
    "name": "smarttwinmcp_recipe_run",
    "backend": "smart-twin-mcp",
+   "orig": "recipe_run",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -5026,6 +5046,7 @@
   {
    "name": "smarttwinmcp_submit_job",
    "backend": "smart-twin-mcp",
+   "orig": "submit_job",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -5089,6 +5110,7 @@
   {
    "name": "ste_cancel_job",
    "backend": "ste",
+   "orig": "cancel_job",
    "dry_run": false,
    "args": 1,
    "args_documented": 0
@@ -5103,6 +5125,7 @@
   {
    "name": "ste_list_jobs",
    "backend": "ste",
+   "orig": "list_jobs",
    "dry_run": false,
    "args": 4,
    "args_documented": 0
@@ -5110,6 +5133,7 @@
   {
    "name": "ste_prepare_upload",
    "backend": "ste",
+   "orig": "prepare_upload",
    "dry_run": false,
    "args": 0,
    "args_documented": 0
@@ -5117,6 +5141,7 @@
   {
    "name": "ste_submit_job",
    "backend": "ste",
+   "orig": "submit_job",
    "dry_run": false,
    "args": 4,
    "args_documented": 0

@@ -413,3 +413,19 @@ def test_그대로_쓸_수_있는_이름은_조용하다():
     """짝 검사 — 아무 때나 경고하면 경고가 소음이 된다."""
     _spec, warns = derive.promote(_one_const(), [{"step": 1, "arg": "lot", "key": "lot_no"}])
     assert warns == [], warns
+
+
+def test_챗_기록의_접두_붙은_노출_이름은_원래_이름으로_싣는다():
+    """W-119 — 챗 기록은 노출 이름이라 이름이 겹친 도구는 `ste_submit_job` 처럼 온다. 그대로 실으면 실행 별칭이 `ste_ste_submit_job`
+    이 되어 못 부르고 저장 검증(`submit_` 경고 · 관문 목록)도 비켜 간다. 화면(BuildView)과 같은 규칙으로 앱 접두를 뗀다."""
+    g = derive.draft([{"tool": "ste_submit_job", "args": {"app": "lsdyna"}, "result": {}}],
+                     tool_backend={"ste_submit_job": "ste"})
+    st = g["spec"]["steps"][0]
+    assert (st["backend"], st["tool"]) == ("ste", "submit_job")
+    spec = ProcedureSpec.model_validate(g["spec"])
+    assert spec.steps[0].alias == "ste_submit_job"
+    assert any("게이트를 권한다" in e for e in validate_spec(spec))
+    # 접두가 없는 이름 · 앱을 모르는 단계는 그대로다
+    g2 = derive.draft([{"tool": "list_apps", "args": {}, "result": {}},
+                       {"tool": "ste_submit_job", "args": {}, "result": {}}], tool_backend={"list_apps": "ste"})
+    assert [s["tool"] for s in g2["spec"]["steps"]] == ["list_apps", "ste_submit_job"]

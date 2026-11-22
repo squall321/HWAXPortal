@@ -349,6 +349,7 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `backend/scripts/refresh-census.py` — 갱신은 **사람이** 돌린다
 - [x] 11-22 다시 찍음(사용자 결정으로 에이전트가 — W-118) — 480 → 773종(내려간 smart-twin-cluster 19줄은 `--keep-absent` 로 지킴) · MUST_GATE +3 ·
       WARN_EXACT +5 · DRY_RUN_TOOLS +9 · `catalog-forward.json` 비움, 사람이 정할 것 다섯 갈래와 `recipe_run`(원래 이름이 인구조사에 없다)은 W-118
+- [x] 목록 · 인구조사 대조를 원래 이름으로(W-119) — 인구조사 줄 `orig` · 가드는 단계 이름 · `DRY_RUN_TOOLS` 는 갈릴 때만 `<앱키>:<원래 이름>`(`has_dry_run`) · `recipe_run` 경고 · `register_material` dry_run 은 MaterialTwin 만 · 챗 초안이 앱 접두를 뗀다
 - [x] ⚠ 가드가 첫 실행에 둘을 잡았다 — 도구 465→470 · **`publish_report_to_datahub` 무게이트**
 - [x] 게이트웨이에서 베낀 상수 대조 — `_CACHEABLE`·`_INVOKE_DENY_*` · **시간 상한 관계**
 - [x] 검출기가 `catalog_run` 을 못 찾던 것 수정(접두만 봤다, W-67)

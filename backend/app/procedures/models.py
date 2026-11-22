@@ -21,6 +21,8 @@ from app.procedures import template
 # ⚠ 손으로 고치지 마라. 게이트웨이가 바뀌면 다시 뽑는다(docs/procedures/PLAN.md §5-4).
 
 # 되돌리려면 타인 승인이 필요한 바깥 방향 행위 — gate: human 이 없으면 저장 거절.
+# 이 파일의 목록 이름은 모두 단계가 싣는 **원래 이름**이다(Step.tool — 노출 이름의 `<앱키>_` 접두는 뗀다 · W-119). 게이트웨이 관문도
+# 원래 이름으로 본다(`_orig`). 인구조사 대조는 줄의 `orig`(없으면 `name`)로 한다.
 MUST_GATE = frozenset({
     "publish_report", "request_unpublish", "trash_report", "restore_version",
     "job_stop", "risk_add_finding", "add_report_tags",
@@ -56,6 +58,9 @@ WARN_EXACT = frozenset({
     # 심사 잡 · StepForge 덱 → STEP 반입 잡(새 과제) · MX 백서 위키 원천 들이기 둘. ⚠ 단계는 **원래 이름**을 싣는다(Step.tool) — 이름이 겹쳐
     # 게이트웨이가 접두를 붙인 `ste_submit_job` 등은 단계에서 `submit_job` 이라 접두 규칙이 그대로 잡는다.
     "docforge_convert", "risk_start_job", "extract_surface_to_cad", "wiki_submit_source", "wiki_fileback",
+    # 2026-11-22(W-119) — smart-twin-mcp · KooRemapper 둘 다 레시피를 펼쳐 잡을 낸다. 둘이 이름이 겹쳐 노출은 접두로만 뜨지만
+    # 단계는 원래 이름이다 — 이름만으로 둘 다 경고한다(경고는 넓어도 닫힌 쪽이다).
+    "recipe_run",
 })
 
 # 게이트웨이 invoke_tool 이 막는 것(gateway.py:1100-1101). **백스톱일 뿐** 안전 목록이 아니다 —
@@ -91,10 +96,15 @@ def gateway_caches(tool: str) -> bool:
 
 # 자기 dry_run 인자를 가진 도구(465종 중 16 → 11-22 인구조사 792줄 중 25). 그 밖의 도구 args 에 dry_run 이 적혀 있으면
 # 백엔드가 조용히 버리고 **실제로 실행된다**.
+# 이름은 단계가 싣는 **원래 이름**이다(노출 이름이 아니다 — W-119). 같은 원래 이름이 여러 앱에 있고 그 가운데 일부만 dry_run 을
+# 받으면 `<앱키>:<원래 이름>` 으로 적는다 — 맨 이름으로 적으면 dry_run 이 없는 쪽 단계의 dry_run 이 통과해 실제로 실행된다.
+# 판정은 `has_dry_run` 하나로 한다.
 DRY_RUN_TOOLS = frozenset({
     "create_report_draft", "update_report_draft", "append_rows", "patch_cells", "remove_rows",
     "restore_version", "import_record", "slurm_node_set_state", "slurm_job_control",
-    "smarttwin_submit", "slurm_submit_job", "heaxmaterialtwin_web_register_material",
+    "smarttwin_submit", "slurm_submit_job",
+    # MaterialTwin 만 받는다 — StepForge 의 같은 이름 도구는 dry_run 이 없다(W-119 — 예전에는 노출 이름으로 적혀 단계와 안 맞았다).
+    "heax-materialtwin_web:register_material",
     "register_tensile_test", "register_relaxation_test", "apply_naming_rules",
     "register_materials_csv",
     # 2026-11-22 인구조사(W-118) — StepForge 의 쓰기 아홉이 dry_run 을 받는다.
@@ -440,6 +450,11 @@ def omit_empty_optionals(spec: ProcedureSpec, scope: dict) -> dict:
     return scope
 
 
+def has_dry_run(st: "Step") -> bool:
+    """그 단계의 도구가 자기 dry_run 인자를 받는가 — 맨 원래 이름 또는 `<앱키>:<원래 이름>` 이 DRY_RUN_TOOLS 에 있다."""
+    return st.tool in DRY_RUN_TOOLS or f"{st.backend}:{st.tool}" in DRY_RUN_TOOLS
+
+
 def ungated_write(st: "Step") -> bool:
     """사람 확인 없이 도는 쓰기 · 잡 단계인가 — 자원을 쓰거나 잡을 만드는 부류(WARN_EXACT · WARN_PREFIX)인데 `gate: human` 이 없다.
 
@@ -450,7 +465,7 @@ def ungated_write(st: "Step") -> bool:
     """
     if not (st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX)):
         return False
-    preview = st.tool in DRY_RUN_TOOLS and st.args.get("dry_run") is True
+    preview = has_dry_run(st) and st.args.get("dry_run") is True
     return st.gate != "human" and not preview
 
 
@@ -520,7 +535,7 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
                     errs.append(f"{at}: ok_text 정규식이 깨졌다 — {exc}")
 
         # ④ dry_run — 스키마에 없는 도구에 얹으면 조용히 진짜 실행된다
-        if "dry_run" in st.args and st.tool not in DRY_RUN_TOOLS:
+        if "dry_run" in st.args and not has_dry_run(st):
             errs.append(f"{at}: 이 도구에는 dry_run 인자가 없다 — 백엔드가 버리고 실제로 실행한다")
 
         # ⑤ 비밀·경로가 상수로 박히면 공유 절차가 곧 유출이다

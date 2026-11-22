@@ -37,6 +37,32 @@ def _forward() -> list[dict]:
     return json.loads(FORWARD.read_text(encoding="utf-8"))["tools"]
 
 
+def _orig(t: dict) -> str:
+    """그 줄을 단계가 싣는 이름 — 이름이 겹쳐 게이트웨이가 접두를 붙인 줄은 `orig`(원래 이름), 아니면 `name`(W-119).
+    목록(MUST_GATE · WARN_EXACT · DRY_RUN_TOOLS)은 단계 이름(Step.tool)으로 판정하므로 노출 이름이 아니라 이것에 대조한다."""
+    return t.get("orig") or t["name"]
+
+
+def _step_names(census: dict) -> set[str]:
+    return {_orig(t) for t in census["tools"]}
+
+
+def _expected_dry(census: dict) -> set[str]:
+    """dry_run 을 받는 도구의 단계 이름. 같은 원래 이름이 여러 앱에 있고 **일부만** 받으면 그 앱만 `<앱키>:<원래 이름>` 이다 —
+    맨 이름으로 적으면 받지 않는 앱의 단계에 적힌 dry_run 이 통과해 실제로 실행된다(models.has_dry_run)."""
+    rows: dict[str, list[dict]] = {}
+    for t in census["tools"]:
+        rows.setdefault(_orig(t), []).append(t)
+    out: set[str] = set()
+    for name, rs in rows.items():
+        dry = [t for t in rs if t["dry_run"]]
+        if dry and len(dry) == len(rs):
+            out.add(name)
+        else:
+            out |= {f"{t['backend']}:{name}" for t in dry}
+    return out
+
+
 @pytest.fixture(scope="module")
 def census() -> dict:
     assert CENSUS.is_file(), "인구조사 고정물이 없다 — refresh-census.py 를 돌려라"
@@ -55,7 +81,7 @@ def test_인구조사가_실물_규모다(census):
 
 # ── dry_run — 여기 없는 도구에 적으면 **조용히 버려지고 실제로 실행된다** ──
 def test_DRY_RUN_TOOLS_가_카탈로그와_정확히_같다(census):
-    real = {t["name"] for t in census["tools"] if t["dry_run"]}
+    real = _expected_dry(census)
     assert DRY_RUN_TOOLS == real, (
         f"어긋났다 — 목록에만 있는 것: {sorted(DRY_RUN_TOOLS - real)} · "
         f"카탈로그에만 있는 것: {sorted(real - DRY_RUN_TOOLS)}. "
@@ -64,8 +90,9 @@ def test_DRY_RUN_TOOLS_가_카탈로그와_정확히_같다(census):
 
 # ── 그 도구가 아직 있나 ──────────────────────────────────────────────────
 def test_게이트_필수_도구가_아직_카탈로그에_있다(census):
-    """사라진 도구가 목록에 남아 있으면 그 줄은 **아무 일도 안 한다** — 지키는 척만 한다."""
-    have = {t["name"] for t in census["tools"]}
+    """사라진 도구가 목록에 남아 있으면 그 줄은 **아무 일도 안 한다** — 지키는 척만 한다. 노출 이름(`heaxmaterialtwin_web_…`)으로
+    적은 줄도 같다 — 단계는 원래 이름을 싣으므로 그 줄은 아무 단계에도 안 맞는다(W-119). 그래서 단계 이름에 대조한다."""
+    have = _step_names(census)
     # 소스에서 확인해 앞서 적은 이름(catalog-forward.json)은 인구조사에 없어도 받는다 — MUST_GATE 에만. WARN_EXACT 는 그대로다.
     assert MUST_GATE <= have | {t["name"] for t in _forward()}, f"사라진 것: {sorted(MUST_GATE - have)}"
     assert WARN_EXACT <= have, f"사라진 것: {sorted(WARN_EXACT - have)}"
@@ -74,7 +101,7 @@ def test_게이트_필수_도구가_아직_카탈로그에_있다(census):
 def test_앞서_적은_이름은_근거가_있고_인구조사에_아직_없다(census):
     """catalog-forward.json 은 **인구조사가 실을 때까지만** 쓰는 자리다. 인구조사에 그 이름이 들어오면 여기서 지운다 — 안 지우면
     그 줄이 사라진 도구를 영영 가려 준다(인구조사 가드가 지키던 것). 근거 없는 줄은 받지 않는다 — 짐작으로 적는 자리가 아니다."""
-    have = {t["name"] for t in census["tools"]}
+    have = _step_names(census)
     seen = set()
     for t in _forward():
         for k in ("name", "backend", "added", "source", "why"):
@@ -106,24 +133,69 @@ def test_11_22_인구조사에서_더한_이름이_저장_검증에서_실제로
         assert not ungated_write(one(backend, tool, gate="human").steps[0]), tool
 
 
+def test_목록_대조는_노출_이름이_아니라_단계_이름이다(census):
+    """W-119 — 인구조사 줄의 `orig` 가 살아 있는지(접두로만 뜨는 도구가 있어야 이 대조가 뜻이 있다)와 그 이름으로 적은 줄을 본다."""
+    prefixed = {t["name"]: t["orig"] for t in census["tools"] if t.get("orig")}
+    assert prefixed.get("smarttwinmcp_recipe_run") == "recipe_run", "인구조사에 원래 이름이 없다 — refresh-census.py 가 /tools-map orig 를 싣나"
+    assert "recipe_run" in WARN_EXACT
+    assert "heax-materialtwin_web:register_material" in DRY_RUN_TOOLS
+    stale = {n for n in MUST_GATE | WARN_EXACT | DRY_RUN_TOOLS if n in prefixed}
+    assert not stale, f"노출 이름으로 적힌 줄 — 단계는 원래 이름을 싣으므로 아무 단계에도 안 맞는다: {sorted(stale)}"
+
+
+def test_원래_이름으로_적은_줄이_저장_검증에서_실제로_걸린다():
+    """W-119 — 잡을 내는 `recipe_run` 은 두 앱 모두 경고, `register_material` 의 dry_run 은 MaterialTwin 만 받는다(StepForge 는 없다 —
+    맨 이름으로 적으면 StepForge 단계의 dry_run 이 통과해 실제로 등록된다)."""
+    from app.procedures.models import ProcedureSpec, has_dry_run, ungated_write, validate_spec
+
+    def one(backend: str, tool: str, **kw) -> ProcedureSpec:
+        return ProcedureSpec.model_validate({"title": "t", "steps": [{"backend": backend, "tool": tool, **kw}]})
+
+    for backend in ("smart-twin-mcp", "heax-kooremapper_mcp"):
+        assert ungated_write(one(backend, "recipe_run").steps[0]), backend
+    no_dry = "dry_run 인자가 없다"
+    mt = one("heax-materialtwin_web", "register_material", args={"dry_run": True})
+    sf = one("heax-step_forge", "register_material", args={"dry_run": True})
+    assert has_dry_run(mt.steps[0]) and not has_dry_run(sf.steps[0])
+    assert not any(no_dry in e for e in validate_spec(mt))
+    assert any(no_dry in e for e in validate_spec(sf))
+    # 미리보기(리터럴 dry_run: true)는 확인 없는 쓰기로 안 센다 — dry_run 을 받는 쪽만
+    assert not ungated_write(mt.steps[0]) and ungated_write(sf.steps[0])
+
+
 def test_되돌리기_어려운_도구가_새로_생기지_않았나(census):
     """⚠ 이 테스트는 **사람을 부른다.** 게이트웨이 거절 접두사에 걸리는 도구는 백스톱이
     막지만, `trash_report`·`job_stop` 처럼 거기 안 걸리는 파괴 도구는 MUST_GATE 가
-    유일한 방어다. 새 이름이 보이면 사람이 판단해 목록에 넣는다."""
-    have = {t["name"] for t in census["tools"]}
+    유일한 방어다. 새 이름이 보이면 사람이 판단해 목록에 넣는다. 접두는 원래 이름으로 본다 — 이름이 겹쳐
+    `reportarchive_trash_report` 로 뜨는 박스에서도 걸려야 하고, 게이트웨이 백스톱도 원래 이름으로 막는다(W-119)."""
+    prefixed, suspicious = _canary(census)
+    # ⚠ **먼저 접두사가 살아 있는지 본다.** 오타 하나로 `prefixed` 가 0건이 되면
+    # `suspicious` 도 0건이 되어 **조용히 통과**한다 — 카나리가 죽은 줄 아무도 모른다.
+    assert prefixed, f"접두사 {_CANARY} 에 걸리는 도구가 하나도 없다 — 목록이 죽었다"
+    assert not suspicious, (
+        f"되돌리기 어려워 보이는 새 도구: {sorted(suspicious)} — "
+        "사람이 보고 MUST_GATE 에 넣을지 정한다")
+
+
+_CANARY = ("publish_", "trash_", "restore_", "unpublish_")
+
+
+def _canary(census: dict) -> tuple[set[str], set[str]]:
+    """(접두에 걸린 단계 이름, 그 가운데 알려지지 않은 것)."""
+    have = _step_names(census)
     backstopped = {n for n in have
                    if n.startswith(GW_DENY_PREFIX) or n.endswith(GW_DENY_SUFFIX)}
     # 이름만으로 "되돌리기 어렵다" 를 판정할 수 없다(§9-7) — 그래서 **알려진 것만** 센다.
     known = MUST_GATE | WARN_EXACT | backstopped
-    prefixes = ("publish_", "trash_", "restore_", "unpublish_")
-    prefixed = {n for n in have if any(n.startswith(p) for p in prefixes)}
-    # ⚠ **먼저 접두사가 살아 있는지 본다.** 오타 하나로 `prefixed` 가 0건이 되면
-    # `suspicious` 도 0건이 되어 **조용히 통과**한다 — 카나리가 죽은 줄 아무도 모른다.
-    assert prefixed, f"접두사 {prefixes} 에 걸리는 도구가 하나도 없다 — 목록이 죽었다"
-    suspicious = prefixed - known
-    assert not suspicious, (
-        f"되돌리기 어려워 보이는 새 도구: {sorted(suspicious)} — "
-        "사람이 보고 MUST_GATE 에 넣을지 정한다")
+    prefixed = {n for n in have if n.startswith(_CANARY)}
+    return prefixed, prefixed - known
+
+
+def test_카나리는_이름이_겹쳐_접두가_붙은_도구도_본다():
+    """W-119 — 노출 이름으로 보면 `reportarchive_trash_x` 는 `trash_` 로 시작하지 않아 조용히 지나간다."""
+    row = {"name": "reportarchive_trash_everything", "backend": "reportarchive", "orig": "trash_everything",
+           "dry_run": False, "args": 0, "args_documented": 0}
+    assert _canary({"tools": [row]})[1] == {"trash_everything"}
 
 
 # ── 다른 리포에서 베낀 상수 — 그쪽이 바뀌면 어긋난다 ─────────────────────
