@@ -49,9 +49,10 @@ def test_지식카드_목록과_카드_한_장을_그룹과_함께_포워딩한�
         grp = ["analyst", "feat:expert-chat"]
         assert seen[0] == (
             "/catalog/agent/records",
-            {"key": "material-twin-analyst", "q": "SiC", "offset": 50, "limit": 50, "groups": grp},
+            {"key": "material-twin-analyst", "q": "SiC", "offset": 50, "limit": 50, "groups": grp, "user_email": "u1@hwax.local"},
         )
-        assert seen[1] == ("/catalog/record", {"id": "DOC-1", "section_offset": 0, "char_offset": 0, "groups": grp})
+        assert seen[1] == ("/catalog/record", {"id": "DOC-1", "section_offset": 0, "char_offset": 0, "groups": grp,
+                                               "user_email": "u1@hwax.local"}), "누구의 일 — 로그인 주체의 이메일(docs/ops-dashboard OD-52)"
         assert bad.status_code == 422, "한 쪽 100건 상한 — 수천 건을 한 번에 당기지 못하게"
     finally:
         app.dependency_overrides.pop(dep, None)
@@ -80,7 +81,8 @@ def test_카드_다음_부분_위치를_그대로_넘긴다():
                 app.state.agent_client = real
         assert ok.status_code == 200, ok.text
         assert seen == [("/catalog/record",
-                         {"id": "DOC-1", "section_offset": 29, "char_offset": 1039, "groups": ["feat:expert-chat"]})]
+                         {"id": "DOC-1", "section_offset": 29, "char_offset": 1039, "groups": ["feat:expert-chat"],
+                          "user_email": "u1@hwax.local"})]
         assert neg.status_code == 422 and neg2.status_code == 422, "음수 위치는 에이전트서버까지 가지 않는다"
     finally:
         app.dependency_overrides.pop(dep, None)

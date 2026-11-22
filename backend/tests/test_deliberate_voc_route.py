@@ -32,7 +32,7 @@ def test_voc_경로는_그룹과_검색어를_포워딩한다():
         assert seen["path"] == "/deliberate/voc-preview"
         # 그룹은 로그인 주체의 것 — 프론트가 보낸 값을 믿지 않는다. 빈 검색어는 버린다.
         assert seen["body"] == {"message": "폴드 힌지 파손", "groups": ["analyst", "feat:deliberation"],
-                                "keywords": ["hinge", "crease"]}
+                                "keywords": ["hinge", "crease"], "user_email": "u1@hwax.local"}
     finally:
         app.dependency_overrides.pop(principal_pat_or_session, None)
 

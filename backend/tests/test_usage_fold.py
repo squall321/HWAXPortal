@@ -309,6 +309,9 @@ class Remote:
         self.ag = _sibling("HWAXAgentServer", "sibling_agent_usage_rollup")
         self.audit, self.db = tmp_path / "gw-audit.jsonl", tmp_path / "gw-usage-rollup.sqlite"
         self.jobs: list[dict] = []
+        self.llm: list[dict] = []                 # 사람별 LLM 토큰 줄(에이전트 서버 usage_tokens.rows 의 꼴) — 기간 · 뺄 계정은 아래에서 건다
+        self.llm_since: str | None = None
+        self.agent_old = False                    # 토큰 칸을 내지 않는 옛 에이전트 서버
         self.asked: list[tuple[str, dict]] = []
         self.status = {"gateway.test": gateway_status, "agent.test": agent_status}
         self.budget = 20.0
@@ -325,7 +328,11 @@ class Remote:
             return httpx.Response(200, json=self.gw.view(self.db, self.audit, body, budget_s=self.budget, today=self.today))
         p = self.ag.params(body, self.today)
         first = min((datetime.fromtimestamp(j["started_at"], KST).date().isoformat() for j in self.jobs), default=None)
-        return httpx.Response(200, json={**self.ag.fold(self.jobs, p), "ledger": {"first_day": first, "scanned": len(self.jobs)}})
+        out = {**self.ag.fold(self.jobs, p), "ledger": {"first_day": first, "scanned": len(self.jobs)}}
+        if not self.agent_old:
+            out["llm"] = [r for r in self.llm if p["since"] <= r["day"] <= p["until"] and r["user"] not in p["exclude"]]
+            out["llm_since"] = self.llm_since
+        return httpx.Response(200, json=out)
 
 
 def test_게이트웨이_창구의_답을_날마다_접는다(tmp_path):

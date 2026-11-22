@@ -5,7 +5,12 @@ import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
 import { Block, Card, Table } from '../../components/usage/UsageBlocks';
 import { ColumnChart, Spark, StatTile } from '../../components/usage/UsageCharts';
-import { FoldCards, FoldErrors, FoldStatusCard } from '../../components/usage/UsageFoldCards';
+import {
+  FoldCards,
+  FoldErrors,
+  FoldStatusCard,
+  PeopleCard,
+} from '../../components/usage/UsageFoldCards';
 import { fetchUsage, type Completion, type UsageReport } from '../../api/usage.api';
 import { useAuth } from '../../auth/useAuth';
 import { maxOf, monthlyRows, pct, perDay, shortDay } from '../../lib/usageChart';
@@ -214,6 +219,15 @@ export default function UsageStatsPage() {
               label="MCP 도구 호출"
               value={mcp?.pending ? null : mcp?.totals?.calls}
               sub={`상태 묻기 ${mcp?.totals?.status_calls ?? '—'} 따로 · 부른 사람 ${mcp?.totals?.people ?? '—'}`}
+            />
+            <StatTile
+              label="LLM 토큰"
+              value={
+                s.llm_tokens?.pending || !s.llm_tokens?.totals
+                  ? null
+                  : s.llm_tokens.totals.tokens_in + s.llm_tokens.totals.tokens_out
+              }
+              sub={`입력 + 출력 · 모르는 호출 ${s.llm_tokens?.totals?.unknown ?? '—'}`}
             />
             <StatTile
               label="MCP 심의 잡"
@@ -518,6 +532,8 @@ export default function UsageStatsPage() {
                 )}
               </Block>
             </Card>
+
+            <PeopleCard s={s} />
 
             <FoldStatusCard s={s} />
           </div>
