@@ -462,7 +462,9 @@ def test_다시_시도는_루틴_턴을_일반_챗으로_보내지_않는다():
     assert "reply?.routine?.run_id" in retry and "resumeRoutine(reply.routine.run_id, reply.routine.title)" in retry, \
         "실행 id 를 받은 루틴 턴을 다시 보내면 새 실행이 또 생긴다 — 이어서로 간다"
     assert "routineSentRef.current.get(lastUser.id)" in retry, "실행 id 전에 실패한 루틴 턴(동시 상한)이 '루틴: 제목' 질문으로 간다"
-    assert "sendMessage(text, undefined, null);" in retry, "그새 켜 둔 루틴이 다시 보내는 발화에 실린다"
+    # 둘째 인자는 절차 실행을 넘긴 심의 발화가 그때 실은 선택(procedure_run 등)을 다시 싣는 자리다(절차 W-117 · M3) — 그 밖의
+    # 발화에는 여전히 undefined 다. 이 시험이 지키는 것은 셋째 인자 null 이다(켜 둔 루틴을 싣지 않는다).
+    assert "sendMessage(text, procedureSentRef.current.get(lastUser.id), null);" in retry, "그새 켜 둔 루틴이 다시 보내는 발화에 실린다"
 
 
 # ── 저장 · 되살리기 ────────────────────────────────────────────────────────────────────────────────
