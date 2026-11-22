@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
-import { useChat } from '../state/ChatContext';
+import { useChat, type OpenPins } from '../state/ChatContext';
 import { ActivityPanel } from '../components/chat/ActivityPanel';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { Composer, type ComposerHandle } from '../components/chat/Composer';
@@ -86,9 +86,11 @@ export default function ChatPage() {
   // 다른 화면이 만든 서버 대화를 연다(절차 실행을 챗으로 가져가기 — docs/procedures W-115). 주소 상태로 받고 곧 비운다 — 새로고침 ·
   // 뒤로 가기가 같은 대화를 다시 열지 않게. 메시지는 챗 컨텍스트가 열 때 서버에서 읽는다.
   useEffect(() => {
-    const o = (location.state as { openConversation?: { id?: unknown; title?: unknown } } | null)?.openConversation;
+    const o = (location.state as { openConversation?: { id?: unknown; title?: unknown; pins?: OpenPins } } | null)?.openConversation;
     if (!o || typeof o.id !== 'string' || !o.id) return;
-    openServerConversation(o.id, typeof o.title === 'string' ? o.title : '');
+    // 절차의 전문가 팀 사본(있으면) — 대화 지정값으로 복사해 연다(docs/expert-teams 2-3). 지정 전문가는 전문가와 대화 권한이 있을 때만 싣는다
+    const pins = o.pins && typeof o.pins.agent === 'string' && can('feat:expert-chat') ? o.pins : undefined;
+    openServerConversation(o.id, typeof o.title === 'string' ? o.title : '', pins);
     navigate('.', { replace: true, state: null });
     // 들어올 때 한 번만 본다
     // eslint-disable-next-line react-hooks/exhaustive-deps

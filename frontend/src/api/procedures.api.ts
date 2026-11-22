@@ -3,6 +3,7 @@
 // ⚠ 접두사는 '/procedures-api' 다. SPA 경로는 '/procedures/*' — 같게 두면 브라우저
 //    새로고침이 SPA 가 아니라 JSON 을 받는다('/changelog' 와 '/updates' 를 가른 것과 같다).
 import { apiFetch, errorDetail } from './client';
+import type { TeamSnapshot } from './teams.api';
 import { config } from '../config';
 
 const P = '/procedures-api';
@@ -86,7 +87,9 @@ export type ProcedureVersion = {
   // ⚠ `vars` 를 필수로 두면 **낡은 판본**(서버가 정규화하기 전에 들어간 것)에서
   // 화면이 `.length` 를 읽다 죽는다 — 이 리포엔 ErrorBoundary 가 없어 라우트가
   // 아니라 **앱 전체가 흰 화면**이 된다. 서버는 이제 채워 주지만 타입은 방어한다.
-  spec: { title: string; vars?: VarDef[]; steps: StepDef[] };
+  spec: { title: string; vars?: VarDef[]; steps: StepDef[]; team?: string };
+  /** 판본은 주인만 더한다 — 화면이 주인에게만 '팀 정하기(새 판본)' 를 보인다 */
+  mine?: boolean;
 };
 
 export type VarDef = {
@@ -165,6 +168,12 @@ export function listProcedures() {
 
 export function getProcedure(id: string) {
   return get<ProcedureVersion>(`/procedures/${id}`, '절차를 불러오지 못했습니다.');
+}
+
+/** 새 판본(주인만) — 판본은 불변이라 팀을 바꾸는 것도 새 판본이다(docs/expert-teams 2-3). 저장 시점 검증을 그대로 탄다. */
+export function addProcedureVersion(id: string, spec: ProcedureVersion['spec']) {
+  return post<{ id: string; version_no: number; warnings: string[] }>(
+    `/procedures/${id}/versions`, { title: spec.title, spec }, '새 판본을 저장하지 못했습니다.');
 }
 
 export function listRuns(procedureId?: string) {
@@ -268,6 +277,9 @@ export type RunHandoff = {
   items: { ix: number; tool: string; state: string; chars: number }[];
   not_called: { ix: number; tool: string; state: string; stage: string | null }[];
   limits: { items: number; result_chars: number; args_chars: number };
+  /** 절차에 전문가 팀이 있으면 그 사람의 시야로 푼 사본(못 풀면 null + 까닭) — 심의 화면이 좌석으로 미리 채운다(docs/expert-teams 2-3) */
+  team?: TeamSnapshot | null;
+  team_why?: string;
 };
 
 export function runHandoff(runId: string) {
@@ -276,7 +288,8 @@ export function runHandoff(runId: string) {
 
 /** 실행을 챗 대화로 가져간다(주인만) — 단계 요약과 그 조회 근거가 든 내 챗 대화가 생긴다. */
 export function runToChat(runId: string) {
-  return post<{ conversation_id: string; title: string }>(`/runs/${runId}/chat`, {}, '챗으로 가져가지 못했습니다.');
+  return post<{ conversation_id: string; title: string; team?: TeamSnapshot | null; team_why?: string }>(
+    `/runs/${runId}/chat`, {}, '챗으로 가져가지 못했습니다.');
 }
 
 /** 비교표 — 한 배치의 실행들을 나란히. `inputs` 를 그대로 열로 편다. */

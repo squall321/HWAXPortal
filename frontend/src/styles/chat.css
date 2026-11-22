@@ -2643,7 +2643,7 @@ body.dock-open .page-wide {
   white-space: nowrap;
 }
 .pp-empty, .pp-hint { font-size: 0.74rem; color: var(--muted); margin: 0.5rem 0; line-height: 1.6; }
-.pp-expand {
+.pp-expand, .pp-teams {
   margin-top: 0.6rem;
   width: 100%;
   border: 1px solid var(--border);
@@ -2654,7 +2654,27 @@ body.dock-open .page-wide {
   font-size: 0.8rem;
   cursor: pointer;
 }
-.pp-expand:hover { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
+.pp-expand:hover, .pp-teams:hover { border-color: var(--accent); background: rgba(20, 40, 160, 0.2); }
+
+/* ── 전문가 팀(docs/expert-teams) — 빠른 선택기의 카드 · 줄을 그대로 쓰고 칸 몇 개만 더한다 ───────────────────────────── */
+.tm-card { width: min(560px, 100%); }
+.tm-note { margin-top: 0; }
+.tm-err { margin: 0.25rem 0; }
+.tm-item { display: flex; flex-direction: column; gap: 0.25rem; }
+.tm-row:disabled { cursor: progress; opacity: 0.7; }
+.tm-badge {
+  margin-left: 0.4rem;
+  font-size: 0.64rem;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+}
+.tm-badge.is-official { color: var(--accent); border-color: var(--accent); }
+.tm-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; padding-left: 0.5rem; }
+.tm-form { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.4rem 0; }
+.tm-check { font-size: 0.74rem; color: var(--muted); display: flex; align-items: center; gap: 0.3rem; }
 
 /* ── 전문가 조직도(전창) ────────────────────────────────────────────────────────────── */
 .pv-overlay {

@@ -9,7 +9,7 @@ import { Modal } from '../ui/Modal';
 
 const LOCAL_LIMIT = 12;
 
-export function PersonaPicker({ onClose, onExpand }: { onClose: () => void; onExpand: () => void }) {
+export function PersonaPicker({ onClose, onExpand, onTeams }: { onClose: () => void; onExpand: () => void; onTeams?: () => void }) {
   const { pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers } = useChat();
   // 대화 중 보조 전문가는 조직도에서 더한다(docs/persona-chat — 사용자 결정 11-22) — 주 전문가가 있고 자리가 남았으면 그 길을 알린다.
   const helperRoom = Boolean(pinnedAgent) && pinnedHelpers.length < 4;
@@ -143,6 +143,12 @@ export function PersonaPicker({ onClose, onExpand }: { onClose: () => void; onEx
           <button type="button" className="pp-expand" onClick={onExpand}>
             {helperRoom ? '전체 조직도 열기 ⤢ — 보조 전문가도 여기서 더합니다' : '전체 조직도 열기 ⤢'}
           </button>
+          {/* 전문가 팀(docs/expert-teams) — 미리 만든 주 1 + 보조 4 를 한 번에 지정값으로 복사하고, 지금 조합을 팀으로 저장한다 */}
+          {onTeams && (
+            <button type="button" className="pp-teams" onClick={onTeams}>
+              팀에서 고르기 · 지금 조합 저장
+            </button>
+          )}
         </div>
       </div>
     </Modal>
