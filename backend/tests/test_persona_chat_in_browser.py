@@ -61,6 +61,18 @@ function Chat() {
     </>
   );
 }
+// 대화 중 보조 전문가 더하기(사용자 결정 11-22) — 입력창 전문가 알약 → 가벼운 선택기 → 조직도 → 「＋ 보조 전문가로 더하기」 → 보낸 요청의 pinned_agents
+function Helper() {
+  const { setPinnedAgent, sendMessage, pinnedHelpers } = useChat();
+  return (
+    <>
+      <button id="pin" type="button" onClick={() => setPinnedAgent(KEY, NAME)}>pin</button>
+      <button id="send" type="button" onClick={() => sendMessage('힌지 강도 봐 줘')}>send</button>
+      <span id="helpers">{JSON.stringify(pinnedHelpers.map((h) => h.key))}</span>
+      <ExpertToggle />
+    </>
+  );
+}
 (window as unknown as { __mount: (what?: string) => void }).__mount = (what) => {
   const user = { subject: 'u1@corp.example', email: 'u1@corp.example', display_name: 'U', groups: [] };
   createRoot(document.getElementById('root')!).render(
@@ -69,7 +81,7 @@ function Chat() {
     >
       <MemoryRouter>
         <ChatProvider storagePrefix="hwax.chat" serverKind="chat">
-          {what === 'chat' ? <Chat /> : <Colours />}
+          {what === 'chat' ? <Chat /> : what === 'helper' ? <Helper /> : <Colours />}
         </ChatProvider>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -154,6 +166,30 @@ const SERVER_COPY = (ts) => ({
 });
 
 const SCENARIOS = {
+  // 대화 중에 보조 전문가를 더한다 — 알약 → 가벼운 선택기(안내 문구) → 조직도에서 cae-b 를 「＋ 보조 전문가로 더하기」 · 주 전문가 자신에게는
+  // 그 단추가 없다 · 보낸 요청은 [주, 보조]
+  async helpermid(browser) {
+    const page = await open(browser, 'helper');
+    await page.locator('#pin').click();
+    await page.locator('.tool-av').waitFor();
+    await page.locator('.tool-pill').click();
+    await page.locator('.pp-expand').waitFor();
+    const expand = await page.locator('.pp-expand').textContent();
+    await page.locator('.pp-expand').click();
+    await page.locator('.pv-search').fill('mech-a');
+    await page.locator('.pv-card', { hasText: 'mech-a' }).first().click();
+    await page.locator('.pv-detail.is-open').waitFor();
+    const self_add = await page.getByText('＋ 보조 전문가로 더하기').count();
+    await page.locator('.pv-search').fill('cae-b');
+    await page.locator('.pv-card', { hasText: 'cae-b' }).first().click();
+    await page.getByText('＋ 보조 전문가로 더하기').click();
+    await page.waitForFunction(() => document.getElementById('helpers').textContent.includes('cae-b'));
+    const helpers = await page.locator('#helpers').textContent();
+    await page.locator('#send').click();
+    await page.waitForFunction(() => window.__calls.some((c) => c.url.startsWith('/agent/chat') && c.method === 'POST'));
+    const chat = (await page.evaluate(() => window.__calls)).find((c) => c.url.startsWith('/agent/chat') && c.method === 'POST');
+    return { expand, self_add, helpers, sent: chat && chat.body, errors: page.__errors };
+  },
   // 같은 사람(mech-a)이 그려지는 자리마다 계산된 색 — 아바타는 배경, 버블은 왼쪽 테두리
   async colours(browser) {
     const page = await open(browser);
@@ -356,3 +392,13 @@ def test_전문가를_고른_채_띵킹_심의로_보낸_답은_다시_열어도
     assert s["live"]["bubble"] is False and s["live"][view] is True, f"라이브: {s['live']}"
     for where in ("reloaded", "elsewhere"):
         assert s[where]["bubble"] is False, f"{where}: 서버 사본으로 연 {name} 의 답이 고른 전문가의 말풍선이 됐다 — {s[where]}"
+
+
+def test_대화_중에도_조직도에서_보조_전문가를_더하고_보낸_요청에_실린다(seen):
+    """종전엔 보조 전문가를 시작 화면에서만 더할 수 있었다(사용자 결정 11-22 — 대화 중에도). 입력창 알약의 조직도에서 더하고, 주 전문가
+    자신은 보조로 더하지 못하며, 보낸 요청의 pinned_agents 가 [주, 보조] 다(에이전트 서버는 첫 명을 주 전문가로 읽는다)."""
+    s = seen("helpermid")
+    assert "보조 전문가도 여기서 더합니다" in s["expand"], "가벼운 선택기가 보조를 더하는 길(조직도)을 알린다"
+    assert s["self_add"] == 0, "주 전문가 자신에게는 「보조로 더하기」 단추가 없다"
+    assert s["helpers"] == '["cae-b"]'
+    assert s["sent"]["pinned_agents"] == ["mech-a", "cae-b"], s["sent"]

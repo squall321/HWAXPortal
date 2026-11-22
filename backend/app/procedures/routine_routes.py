@@ -25,8 +25,8 @@ from app.procedures import judge as J
 from app.procedures.models import SpecError
 from app.procedures.routes import RA_BACKEND, _gw, _runner, _tools_map
 from app.procedures.routine_store import RESULT_MAX, CallRefused
-from app.procedures.routines import (CLOSED, CONTRACT, Envelope, RoutineSpec, allowed_tools, first_states, is_write_tool,
-                                     parse_spec, plan_steps, render, render_report, started_kst, write_reason)
+from app.procedures.routines import (CLOSED, CONTRACT, Envelope, RoutineSpec, allowed_tools, delib_is_risk, first_states,
+                                     is_write_tool, parse_spec, plan_steps, render, render_report, started_kst, write_reason)
 from app.procedures.runner import GatewaySession
 
 logger = logging.getLogger(__name__)
@@ -74,11 +74,76 @@ def _me_write(request: Request, principal: Principal = Depends(_me_any)) -> Prin
     return principal
 
 
-def _parse(raw) -> dict:
+def _parse(raw, principal: Principal | None = None) -> dict:
+    """저장 때 검증. 팀 칸을 쓰는 스펙은 전문가와 대화 권한도 있어야 저장한다(docs/expert-teams PLAN 1 — 루틴에 팀을 붙이는 것은 두 권한)."""
     try:
-        return parse_spec(raw).model_dump(mode="json")
+        spec = parse_spec(raw)
     except SpecError as exc:
         raise AuthError(f"루틴 스펙이 틀렸습니다 — {exc}"[:600], status_code=422) from None
+    if principal is not None and spec.uses_team():
+        ensure(principal, TEAM_FEAT)
+    return spec.model_dump(mode="json")
+
+
+# ── 전문가 팀(docs/expert-teams PLAN 2-2 · 3-2) — 실행을 만들 때 그 사람의 시야로 푼 사본을 계획(실행 원장)에 남긴다 ──────────────────
+TEAM_FEAT = "feat:expert-chat"
+TEAM_RISK_WHY = "리스크 심사 계열 심의 단계라 팀을 앉히지 않는다(D-18)"
+
+
+def _team_plan(request: Request, principal: Principal, spec: RoutineSpec, steps: list[dict]) -> dict | None:
+    """루틴 · 단계 팀의 사본 — 루틴 기본은 {team: 사본 | None, team_why?}로 돌려주고, 덮은 단계(팀 id · 빈 글)와 루틴 팀이 리스크 심사 계열 심의
+    단계에 닿는 단계는 계획 행(steps)에 team(사본 · False = 팀 없이) · team_why 를 단다. 못 푼 단계 팀은 False + 까닭이다 — 루틴 팀으로 대신하지
+    않는다(그 단계를 짠 사람이 다른 팀을 고른 자리다). 스펙이 팀 칸을 안 쓰면 None — 계획 · 실행 보기가 팀 전과 바이트까지 같다."""
+    if not spec.uses_team():
+        return None
+    from app.agent.team_routes import resolve_for
+    got: dict = {}
+
+    def res(tid: str):
+        if tid not in got:
+            got[tid] = resolve_for(request, principal, tid)
+        return got[tid]
+
+    top: dict = {"team": None}
+    if spec.team:
+        r = res(spec.team)
+        top["team"] = r.team
+        if r.why:
+            top["team_why"] = r.why
+    for s, ps in zip(spec.steps, steps, strict=True):
+        risk = s.kind == "deliberation" and delib_is_risk(s.deliberation)
+        if s.team is None:
+            if risk and top["team"] is not None:
+                ps["team"], ps["team_why"] = False, TEAM_RISK_WHY
+            continue
+        if s.team == "":
+            ps["team"] = False
+            continue
+        r = res(s.team)
+        if risk and r.team is not None:
+            ps["team"], ps["team_why"] = False, TEAM_RISK_WHY
+        else:
+            ps["team"] = r.team if r.team is not None else False
+            if r.why:
+                ps["team_why"] = r.why
+    return top
+
+
+def _team_readiness(request: Request, principal: Principal, spec: RoutineSpec) -> list[dict]:
+    """준비도의 팀 줄 — 루틴 · 단계마다 그 팀이 이 사람에게 풀리나 · 못 쓰는 전문가(hidden). 루틴 팀이 리스크 심사 계열 심의 단계에 닿으면 off."""
+    from app.agent.team_routes import resolve_for
+    out = []
+    for where, tid, risk in [("routine", spec.team, False)] + [
+            (s.id, s.team, s.kind == "deliberation" and delib_is_risk(s.deliberation)) for s in spec.steps]:
+        if where != "routine" and tid is None and risk and spec.team:
+            out.append({"where": where, "team_id": spec.team, "name": "", "state": "off", "why": TEAM_RISK_WHY, "hidden": []})
+            continue
+        if not tid:
+            continue
+        r = resolve_for(request, principal, tid)
+        out.append({"where": where, "team_id": tid, "name": r.name or "",
+                    "state": "unresolved" if r.team is None else "partial" if r.hidden else "ok", "why": r.why, "hidden": r.hidden})
+    return out
 
 
 class SpecIn(BaseModel):
@@ -226,7 +291,7 @@ def list_routines(request: Request, q: str = Query("", max_length=200),
 
 @router.post("/routines", status_code=201, dependencies=[Depends(require_csrf)])
 def create_routine(request: Request, body: SpecIn, principal: Principal = Depends(_me)) -> dict:
-    return _store(request).create(owner_sub=principal.subject, spec=_parse(body.spec))
+    return _store(request).create(owner_sub=principal.subject, spec=_parse(body.spec, principal))
 
 
 def _readable(request: Request, principal: Principal, routine_id: str, version: int | None) -> dict:
@@ -247,7 +312,7 @@ def get_routine(request: Request, routine_id: str, version: int | None = Query(N
 @router.post("/routines/{routine_id}/versions", status_code=201, dependencies=[Depends(require_csrf)])
 def add_version(request: Request, routine_id: str, body: SpecIn, principal: Principal = Depends(_me)) -> dict:
     try:
-        return _store(request).add_version(routine_id=routine_id, author_sub=principal.subject, spec=_parse(body.spec))
+        return _store(request).add_version(routine_id=routine_id, author_sub=principal.subject, spec=_parse(body.spec, principal))
     except KeyError:
         raise AuthError("루틴을 찾을 수 없습니다 — 판은 주인만 더한다(남의 루틴은 내보내기 · 가져오기로 내 것을 만든다)",
                         status_code=404) from None
@@ -265,8 +330,11 @@ async def readiness(request: Request, routine_id: str, version: int | None = Que
                     settings: Settings = Depends(get_settings), principal: Principal = Depends(_me_any)) -> dict:
     got = _readable(request, principal, routine_id, version)
     spec = RoutineSpec.model_validate(got["version"]["spec"])
-    return {"routine_id": routine_id, "version_no": got["version"]["version_no"],
-            "steps": await readiness_of(request, principal, settings, spec)}
+    out = {"routine_id": routine_id, "version_no": got["version"]["version_no"],
+           "steps": await readiness_of(request, principal, settings, spec)}
+    if spec.uses_team():
+        out["teams"] = _team_readiness(request, principal, spec)     # 팀 칸을 쓰는 루틴만 — 안 쓰면 응답이 팀 전과 같다
+    return out
 
 
 @router.post("/validate")
@@ -291,7 +359,7 @@ def import_routine(request: Request, body: ImportIn = Body(...), principal: Prin
         raw = yaml.safe_load(body.yaml)
     except yaml.YAMLError as exc:
         raise AuthError(f"YAML 을 읽지 못했습니다 — {str(exc)[:200]}", status_code=422) from None
-    return _store(request).create(owner_sub=principal.subject, spec=_parse(raw))
+    return _store(request).create(owner_sub=principal.subject, spec=_parse(raw, principal))
 
 
 # ── 실행(R2) — 원장 · 단계 · 보고서(docs/analysis-routines/contracts.md §2 · §3) ─────────────────────────────────────────
@@ -406,6 +474,8 @@ def run_view(run: dict, stages: list[dict]) -> dict:
                    | {"limits": limits, "limit_reached": limit, "limit_kind": kind, "report_ready": bool(run.get("report_md"))},
             # 사용자가 덧붙인 말(시작 때 한 번) — 실행기는 이어서도 이것을 싣는다. 칸이 생기기 전 실행은 빈 글
             "note": run.get("note") or "",
+            # 전문가 팀(docs/expert-teams PLAN 3-2) — 실행을 만들 때 푼 사본(못 풀면 null + team_why). 팀 칸을 안 쓰는 루틴의 실행에는 칸이 없다
+            **({"team": plan["team"]} if "team" in plan else {}), **({"team_why": plan["team_why"]} if plan.get("team_why") else {}),
             "inputs": inputs, "purpose": render(plan.get("purpose") or "", inputs, keys, started), "steps": steps,
             "next_step": next((s["id"] for s in steps if s["state"] in ("pending", "running", "ambiguous")), None),
             # 쓰기 분류를 무엇으로 했나(R3-D6) — R3 전에 찍은 계획은 None
@@ -441,6 +511,9 @@ async def start_run(request: Request, body: RunIn, settings: Settings = Depends(
     store = _store(request)
     plan = {"steps": steps, "report": spec.report.model_dump(), "limits": spec.limits.model_dump(),
             "purpose": spec.purpose, "routine_title": spec.title, "write_class": _write_class(cat[1])}
+    team = _team_plan(request, principal, spec, steps)      # 사본은 계획(실행 원장)에 — 이어서 · 다시 붙기도 같은 사본(ET-3)
+    if team is not None:
+        plan.update(team)
     run_id = store.create_run(owner_sub=principal.subject, routine=got["routine"], version=got["version"], inputs=inputs,
                               plan=plan, executor=body.executor, conversation_id=body.conversation_id,
                               deadline=int(time.time()) + spec.limits.minutes * 60,

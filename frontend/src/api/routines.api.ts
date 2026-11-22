@@ -26,6 +26,8 @@ export interface RoutineStep {
   budget: { calls: number; seconds: number };
   blocked: { empty: 'continue' | 'stop'; denied: 'skip' | 'stop'; unavailable: 'skip' | 'stop' };
   deliberation?: { job: string; chair_template?: string | null } | null;
+  /** 이 단계의 전문가 팀(docs/expert-teams) — 안 적으면 루틴의 팀, 빈 글이면 이 단계는 팀 없이, 팀 id 면 그 팀 */
+  team?: string | null;
 }
 
 export interface RoutineSpec {
@@ -37,6 +39,8 @@ export interface RoutineSpec {
   report: { title: string; sections: string[]; ra: { upload: 'auto' | 'ask' | 'off' } };
   limits: { minutes: number; calls: number };
   visibility: 'private' | 'all';
+  /** 루틴의 전문가 팀(docs/expert-teams) — 실행을 만들 때 그 사람의 시야로 푼 사본이 실행 원장에 남는다 */
+  team?: string | null;
 }
 
 export interface RoutineRow {
@@ -123,7 +127,19 @@ export async function archiveRoutine(id: string): Promise<{ ok: boolean }> {
   return json(await apiFetch(`${BASE}/routines/${encodeURIComponent(id)}`, { method: 'DELETE' }), '보관');
 }
 
-export async function routineReadiness(id: string, version?: number): Promise<{ version_no: number; steps: StepReadiness[] }> {
+/** 준비도의 팀 줄 — 팀 칸을 쓰는 루틴만 온다. where 는 routine 또는 단계 id, hidden 은 내가 쓸 수 없어 빠지는 전문가. off 는 리스크 심사 계열 단계. */
+export interface TeamReadiness {
+  where: string;
+  team_id: string;
+  name: string;
+  state: 'ok' | 'partial' | 'unresolved' | 'off';
+  why: string;
+  hidden: { key: string; name?: string }[];
+}
+
+export async function routineReadiness(
+  id: string, version?: number,
+): Promise<{ version_no: number; steps: StepReadiness[]; teams?: TeamReadiness[] }> {
   const qs = version ? `?version=${version}` : '';
   return json(await apiFetch(`${BASE}/routines/${encodeURIComponent(id)}/readiness${qs}`), '준비도');
 }

@@ -5,12 +5,29 @@ import { IconUser } from './icons';
 import { colorOf, initialOf, shortName } from './personaColor';
 import { PersonaBrowser } from './PersonaBrowser';
 import { PersonaPicker } from './PersonaPicker';
+import { TeamPicker } from './TeamPicker';
+import type { TeamSnapshot } from '../../api/teams.api';
 import { useOperatorGone } from './useOperatorGone';
 
 export function ExpertToggle() {
-  const { pinnedAgent, pinnedAgentName, setPinnedAgent, thinking } = useChat();
-  // null=닫힘 · quick=가벼운 선택기 · browse=전창 조직도
-  const [mode, setMode] = useState<null | 'quick' | 'browse'>(null);
+  const { pinnedAgent, pinnedAgentName, setPinnedAgent, pinnedHelpers, setPinnedHelpers, pinnedApps, setPinnedApps, pinnedTools,
+          setPinnedTools, thinking } = useChat();
+  // 대화 중에도 보조 전문가를 더한다(사용자 결정 11-22 — 종전엔 시작 화면에서만 됐다). 시작 화면의 규칙 그대로 — 주 전문가가 있을 때만 ·
+  // 주 전문가와 같은 사람 · 이미 있는 사람은 안 받고 · 상한 4.
+  const addHelper = (a: { key: string; name?: string }) => {
+    if (!pinnedAgent || a.key === pinnedAgent || pinnedHelpers.some((h) => h.key === a.key) || pinnedHelpers.length >= 4) return;
+    setPinnedHelpers([...pinnedHelpers, { key: a.key, name: a.name }]);
+  };
+  // null=닫힘 · quick=가벼운 선택기 · browse=전창 조직도 · team=전문가 팀
+  const [mode, setMode] = useState<null | 'quick' | 'browse' | 'team'>(null);
+  // 팀을 고르면 그 순간의 사본을 이 대화의 지정값으로 복사한다(docs/expert-teams ET-3) — 팀을 가리키지 않으므로 나중에 팀을 고쳐도 이 대화는 그대로다.
+  // 에이전트 서버 계약은 그대로다(pinned_agent · pinned_agents · pinned_apps · pinned_tools).
+  const pickTeam = (snap: TeamSnapshot) => {
+    setPinnedAgent(snap.lead.key, snap.lead.name);
+    setPinnedHelpers(snap.helpers.filter((h) => h.key !== snap.lead.key));
+    setPinnedApps(snap.apps);
+    setPinnedTools(snap.tools);
+  };
   const label = pinnedAgentName || pinnedAgent || '';
   // 고른 운영자의 앱이 이 서버 게이트웨이에 없으면 보내기 전에 알약이 말한다(docs/request-1030 HP-51) — 종전엔 보낸 뒤에야 주의
   // (operator_app_missing)가 떴다.
@@ -47,8 +64,24 @@ export function ExpertToggle() {
           ×
         </button>
       )}
-      {mode === 'quick' && <PersonaPicker onClose={() => setMode(null)} onExpand={() => setMode('browse')} />}
-      {mode === 'browse' && <PersonaBrowser onClose={() => setMode(null)} onBack={() => setMode('quick')} />}
+      {mode === 'quick' && (
+        <PersonaPicker onClose={() => setMode(null)} onExpand={() => setMode('browse')} onTeams={() => setMode('team')} />
+      )}
+      {mode === 'team' && (
+        <TeamPicker
+          current={{ lead: pinnedAgent ? { key: pinnedAgent, name: pinnedAgentName || undefined } : null, helpers: pinnedHelpers,
+                     apps: pinnedApps, tools: pinnedTools }}
+          onPick={pickTeam}
+          onClose={() => setMode(null)}
+        />
+      )}
+      {mode === 'browse' && (
+        <PersonaBrowser
+          onClose={() => setMode(null)}
+          onBack={() => setMode('quick')}
+          onAddHelper={pinnedAgent && pinnedHelpers.length < 4 ? addHelper : undefined}
+        />
+      )}
     </div>
   );
 }

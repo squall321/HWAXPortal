@@ -11,9 +11,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_serializer, model_validator
 
 from app.procedures.models import GW_DENY_PREFIX, GW_DENY_SUFFIX, MUST_GATE, WARN_EXACT, WARN_PREFIX, SpecError, Var, USERINFO_URL
+from app.agent.teams import TEAM_ID_RE
 
 CONTRACT = 1
 RUN_STATES = ("queued", "running", "waiting", "done", "failed", "cancelled", "interrupted")
@@ -74,6 +75,32 @@ class DelibOpts(BaseModel):
     chair_template: str | None = Field(None, max_length=64)
 
 
+RISK_TEMPLATE = "risk-review"
+
+
+def delib_is_risk(d) -> bool:
+    """리스크 심사 계열 심의인가 — 일(job) 또는 의장 틀이 risk-review*(봉인 포함). 팀을 앉히지 않는다(D-18 · docs/expert-teams ET-5).
+    과제 인사이트(cards.risk_family)와 에이전트 서버(delib_decision.risk_family)가 의장 틀로 가르는 것과 같은 머리다."""
+    d = d.model_dump() if isinstance(d, BaseModel) else (d or {})
+    return any(str(d.get(k) or "").strip().lower().startswith(RISK_TEMPLATE) for k in ("job", "chair_template"))
+
+
+def _team_ref(v, *, blank_ok: bool):
+    """팀 칸 — None(안 적음) · 팀 id(tm_<32 hex>) · 단계만 빈 글(이 단계는 팀 없이)."""
+    if v is None or (blank_ok and v == ""):
+        return v
+    if not isinstance(v, str) or not TEAM_ID_RE.match(v):
+        raise ValueError("팀 칸은 팀 id(tm_…)" + (" 또는 빈 글(이 단계는 팀 없이)" if blank_ok else "") + "다")
+    return v
+
+
+def _drop_none_team(d):
+    """팀을 안 적은 스펙 · 단계는 칸이 없던 때와 바이트까지 같게 — 저장 · 내보내기에 `team: null` 을 남기지 않는다."""
+    if isinstance(d, dict) and "team" in d and d["team"] is None:
+        d.pop("team")
+    return d
+
+
 class Step(BaseModel):
     model_config = {"extra": "forbid"}
     id: str
@@ -88,6 +115,17 @@ class Step(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     blocked: Blocked = Field(default_factory=Blocked)
     deliberation: DelibOpts | None = None
+    # 이 단계의 팀(docs/expert-teams) — 안 적으면 루틴의 팀, 빈 글이면 이 단계는 팀 없이, 팀 id 면 그 팀으로 덮는다
+    team: str | None = None
+
+    @field_validator("team")
+    @classmethod
+    def _team(cls, v):
+        return _team_ref(v, blank_ok=True)
+
+    @model_serializer(mode="wrap")
+    def _ser(self, handler):
+        return _drop_none_team(handler(self))
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +156,8 @@ class Step(BaseModel):
                 self.deliberation = DelibOpts()
         elif self.deliberation is not None:
             raise ValueError(f"{self.id}: deliberation 칸은 심의 단계에만 쓴다")
+        if self.kind == "deliberation" and self.team and delib_is_risk(self.deliberation):
+            raise ValueError(f"{self.id}: 리스크 심사 계열 심의 단계에는 팀을 앉히지 않는다(D-18) — team 을 빼거나 빈 글로 둔다")
         bad = [t for t in self.tools if not _TOOL.match(t)]
         if bad:
             raise ValueError(f"{self.id}: 도구 이름 꼴이 아니다 — {bad}")
@@ -163,6 +203,28 @@ class RoutineSpec(BaseModel):
     report: ReportSpec = Field(default_factory=ReportSpec)
     limits: Limits = Field(default_factory=Limits)
     visibility: Literal["private", "all"] = "private"
+    # 루틴의 팀(docs/expert-teams) — 단계가 덮지 않으면 모든 단계에. 실행을 만들 때 그 사람의 시야로 푼 사본이 실행 원장에 남는다
+    team: str | None = None
+
+    @field_validator("team")
+    @classmethod
+    def _team(cls, v):
+        return _team_ref(v, blank_ok=False)
+
+    @model_serializer(mode="wrap")
+    def _ser(self, handler):
+        return _drop_none_team(handler(self))
+
+    def team_ids(self) -> list[str]:
+        """이 스펙이 가리키는 팀 id 들(루틴 · 단계, 처음 나온 차례) — 없으면 빈 목록(팀 칸을 쓰지 않는 루틴)."""
+        out: list[str] = []
+        for t in [self.team, *(s.team for s in self.steps)]:
+            if t and t not in out:
+                out.append(t)
+        return out
+
+    def uses_team(self) -> bool:
+        return self.team is not None or any(s.team is not None for s in self.steps)
 
     @model_validator(mode="after")
     def _whole(self):
@@ -458,6 +520,33 @@ def coverage_of(steps: list[dict], stages: list[dict]) -> dict:
     return {"counts": counts, "not_ok": blocked}
 
 
+# 단계가 돌지 않은 상태 — 보고서의 팀 줄을 달지 않는다('그 팀의 판단으로 돌았다' 가 거짓이 된다)
+_NOT_RUN = ("pending", "denied", "not_connected", "unavailable", "skipped")
+
+
+def _team_who(m: dict) -> str:
+    return str(m.get("name") or m.get("key") or "")
+
+
+def team_report_line(ps: dict | None, top, state: str | None, top_why: str = "") -> str:
+    """보고서 단계 절의 팀 한 줄(docs/expert-teams ET-15 · ET-17) — 단계 계획 행에 team 칸이 있으면 그것(사본 · false)과 그 행의 team_why, 없으면
+    계획 위 team 과 그 team_why(실행기가 읽는 차례와 같다 — ET-9). 사본이면 '이 단계는 「팀」(주 … · 보조 …)의 판단으로 돌았다'. 팀을 붙였는데 쓰지
+    못한 단계(false · null 에 까닭이 있다 — 못 푼 팀 · 리스크 심사 계열로 막음)는 '이 단계는 팀 없이 돌았다 — <까닭>'. 사람이 「팀 없이」(빈 글)로 정한
+    단계와 팀 칸을 안 쓴 루틴은 까닭이 없어 줄이 없다(못 푼 것이 아니다 — 사용자 결정 11-22). 돌지 않은 단계는 줄이 없다."""
+    if state in _NOT_RUN:
+        return ""
+    ps = ps or {}
+    own = "team" in ps          # 칸이 있으면(false 포함) 그것 — 값이 거짓인지로 가르지 않는다
+    team, why = (ps["team"], ps.get("team_why")) if own else (top, top_why)
+    if isinstance(team, dict) and isinstance(team.get("lead"), dict):
+        helpers = [h for h in team.get("helpers") or () if isinstance(h, dict)]
+        who = f"주 {_team_who(team['lead'])}" + (f" · 보조 {', '.join(_team_who(h) for h in helpers)}" if helpers else "")
+        return f"이 단계는 「{team.get('name') or team.get('id') or '팀'}」({who})의 판단으로 돌았다"
+    if team in (False, None) and why:
+        return f"이 단계는 팀 없이 돌았다 — {why}"
+    return ""
+
+
 def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: list[dict], calls: list[dict],
                   sections: dict, title: str | None) -> dict:
     """보고서 — 절은 루틴의 report.sections 차례. 실행자가 쓴 절을 쓰고, 안 쓴 단계 절은 단계 요약으로 채운다. 포털이 덧붙이는 것 —
@@ -474,6 +563,9 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
     skipped = [f"{b['title']}({b['step']}) — {STATE_LABEL.get(b['state'], b['state'])}" + (f": {b['reason']}" if b["reason"] else "")
                for b in cov["not_ok"]]
     titles = {ps["id"]: ps["title"] for ps in steps}
+    plans = {ps["id"]: ps for ps in steps}
+    top_team = (run.get("plan") or {}).get("team")      # 실행을 만들 때 남긴 루틴 팀의 사본(ET-9) — 팀 칸을 안 쓴 실행은 None
+    top_why = str((run.get("plan") or {}).get("team_why") or "")     # 루틴 팀을 못 풀었으면 그 까닭(ET-17)
     warnings: list[str] = []
     unknown_sections = sorted(k for k in sections if k not in spec.report.sections)
     if unknown_sections:
@@ -507,6 +599,9 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
         body = text or (env.get("summary") or "").strip() or \
             f"_(이 단계는 {STATE_LABEL.get(st.get('state'), st.get('state'))}" + (f" — {st.get('reason')}" if st.get("reason") else "") + ")_"
         extra = []
+        team_line = team_report_line(plans.get(sec), top_team, st.get("state"), top_why)
+        if team_line:
+            extra.append(team_line)
         if env.get("keys"):
             extra.append("넘긴 키 — " + " · ".join(f"{k}={v}" for k, v in env["keys"].items()))
         # 실행자가 쓴 절에 이미 있는 발견은 다시 붙이지 않는다 — 에이전트 실행기의 단계 절이 요약 + '- 발견 [ref]' 줄이라 그대로 붙이면

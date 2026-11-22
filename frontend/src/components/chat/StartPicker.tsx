@@ -13,12 +13,14 @@ import { useChat } from '../../state/ChatContext';
 import { useCan } from '../../auth/useCan';
 import { AgentDeepView } from './AgentDeepView';
 import { PersonaBrowser } from './PersonaBrowser';
+import { TeamPicker } from './TeamPicker';
 import { DetailError, OperatorApps } from './AgentFacts';
 import { shortName } from './personaColor';
 import { ToolAreaChips } from './ToolAreaChips';
 import { inArea, toolAreasOf } from './toolAreas';
 import { InlineMd } from './renderers/TextBlock';
-import { IconOrg, IconUser, IconWrench } from './icons';
+import { IconOrg, IconUser, IconUsers, IconWrench } from './icons';
+import type { TeamSnapshot } from '../../api/teams.api';
 
 const MAX_TOOLS = 12; // 챗 pinned_tools 상한
 const MAX_APPS = 3;   // 챗 pinned_apps 상한 — 앱 하나가 도구 20~30개다
@@ -36,6 +38,10 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const [toolGroup, setToolGroup] = useState('');   // 소유 MCP 앱 필터(2단)
   const [toolArea, setToolArea] = useState<string | null>(null);   // 영역(하는 일) 필터(1단)
   const [browse, setBrowse] = useState<null | 'lead' | 'helper'>(null);   // 조직도 전창(분야→그룹→사람)
+  // 전문가 팀(docs/expert-teams) — 고르면 그 사본으로 아래 고르기 칸을 채운다(확정은 '적용하고 대화 시작'). 팀이 준 이름은 명부에 없는 사람도 이름으로 보이게
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [teamNote, setTeamNote] = useState<string | null>(null);
+  const teamNamesRef = useRef<Map<string, string>>(new Map());
   // 보조 전문가 — 확정 전까지 여기 담는다(주 전문가와 한 목소리로 답한다).
   const [helperSel, setHelperSel] = useState<{ key: string; name?: string }[]>(pinnedHelpers);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
@@ -58,7 +64,7 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
   const pool = useMemo(() => res?.pool ?? [], [res]);
 
   // 키 → 사람 이름. 지정 시 표시용 이름을 함께 실어야 칩·말풍선이 키를 안 보여 준다.
-  const nameOf = (key: string) => pool.find((a) => a.key === key)?.name ?? key;
+  const nameOf = (key: string) => pool.find((a) => a.key === key)?.name ?? teamNamesRef.current.get(key) ?? key;
   const selExpert = agentSel ? pool.find((a) => a.key === agentSel) : undefined;
 
   const toolAll = useMemo(() => res?.tools?.all ?? [], [res]);
@@ -153,6 +159,16 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
         : [...prev, { key: a.key, name: a.name }]);
   };
 
+  // 팀 고르기 — 사본의 주 · 보조 · 앱 · 도구를 고르기 칸에 복사한다(팀을 가리키지 않는다 — ET-3). 상한은 이 화면의 것 그대로.
+  const pickTeam = (snap: TeamSnapshot, why: string) => {
+    for (const m of [snap.lead, ...snap.helpers]) if (m.name) teamNamesRef.current.set(m.key, m.name);
+    showAgent(snap.lead.key);
+    setHelperSel(snap.helpers.filter((h) => h.key !== snap.lead.key).slice(0, 4));
+    setAppSel(new Set(snap.apps.slice(0, MAX_APPS)));
+    setToolSel(new Set(snap.tools.slice(0, MAX_TOOLS)));
+    setTeamNote(`팀 「${snap.name}」 으로 채웠습니다 — 고쳐서 시작해도 됩니다.${why ? ` ${why}` : ''}`);
+  };
+
   const pickFromOrg = (a: PoolExpert, sample?: string) => {
     if (!sample) {
       showAgent(a.key);
@@ -190,6 +206,10 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
             <button type="button" className="sp-browse" onClick={() => setBrowse('lead')}>
               <IconOrg className="ico" width={14} height={14} /> 조직도에서 고르기 <span className="sp-dim">— 분야·그룹으로 훑어보기</span>
             </button>
+            <button type="button" className="sp-browse sp-team" onClick={() => setTeamOpen(true)}>
+              <IconUsers className="ico" width={14} height={14} /> 팀에서 고르기 <span className="sp-dim">— 미리 만든 주 1 + 보조 4 · 지금 조합 저장</span>
+            </button>
+            {teamNote && <p className="sp-dim sp-team-note">{teamNote}</p>}
             {agentSel && (
               <>
                 {/* 보조 전문가 — 도구 특화(HE팀 운영자)와 전문 지식을 조합해 **한 목소리**로 답한다.
@@ -349,6 +369,15 @@ export function StartPicker({ onClose }: { onClose: () => void }) {
           적용하고 대화 시작
         </button>
       </div>
+
+      {teamOpen && (
+        <TeamPicker
+          current={{ lead: agentSel ? { key: agentSel, name: nameOf(agentSel) } : null, helpers: helperSel,
+                     apps: [...appSel], tools: [...toolSel] }}
+          onPick={pickTeam}
+          onClose={() => setTeamOpen(false)}
+        />
+      )}
 
       {/* 조직도는 고르기만 하고 돌아온다 — 확정은 위 '적용하고 대화 시작'에서 도구·앱과 함께. */}
       {browse && (

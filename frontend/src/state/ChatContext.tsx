@@ -200,7 +200,7 @@ interface ChatContextValue {
   selectConversation: (id: string) => void;
   /** 서버에 이미 있는 대화(다른 화면이 만든 것 — 절차 실행을 챗으로 가져가기)를 목록에 넣고 연다. 메시지는 열 때 서버에서 읽는다
    *  ('열 때 최신 로드'). 이 제공자의 종류(serverKind)로 만든 대화여야 다음 새로고침의 목록 거름에도 남는다. */
-  openServerConversation: (serverId: string, title: string) => void;
+  openServerConversation: (serverId: string, title: string, pins?: OpenPins) => void;
   deleteConversation: (id: string) => void;
   renameConversation: (id: string, title: string) => void;
   // 보조 페이지(/apps, /launch)의 플로팅 독 상태
@@ -208,6 +208,15 @@ interface ChatContextValue {
   openDock: () => void;
   closeDock: () => void;
   toggleDock: () => void;
+}
+
+/** 서버 대화를 열 때 함께 둘 지정값 — 절차 실행을 챗으로 가져갈 때 그 절차의 전문가 팀 사본을 복사한다(docs/expert-teams 2-3). */
+export interface OpenPins {
+  agent: string;
+  agentName?: string;
+  helpers?: { key: string; name?: string }[];
+  apps?: string[];
+  tools?: string[];
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -1525,13 +1534,20 @@ export function ChatProvider({
     setActiveId(id);
   }, []);
 
-  const openServerConversation = useCallback((serverId: string, title: string) => {
+  const openServerConversation = useCallback((serverId: string, title: string, pins?: OpenPins) => {
     const now = Date.now();
     serverMetaRef.current.set(serverId, now);
+    // 지정값은 대화 칸에 그대로 복사한다(서버 사본을 읽어도 이 칸은 덮지 않는다 — 열 때는 제목 · 메시지 · 시각만 바꾼다). 상한은 설정 함수들과 같다.
+    const pinned = pins?.agent
+      ? { pinnedAgent: pins.agent, ...(pins.agentName ? { pinnedAgentName: pins.agentName } : {}),
+          ...(pins.helpers?.length ? { pinnedHelpers: pins.helpers.filter((h) => h.key && h.key !== pins.agent).slice(0, 4) } : {}),
+          ...(pins.apps?.length ? { pinnedApps: pins.apps.slice(0, 3) } : {}),
+          ...(pins.tools?.length ? { pinnedTools: pins.tools.slice(0, 12) } : {}) }
+      : {};
     setConversations((prev) =>
       prev.some((c) => (c.serverId ?? c.id) === serverId)
-        ? prev
-        : [{ id: serverId, serverId, title: title || '새 대화', messages: [], createdAt: now, updatedAt: now }, ...prev],
+        ? prev.map((c) => ((c.serverId ?? c.id) === serverId ? { ...c, ...pinned } : c))
+        : [{ id: serverId, serverId, title: title || '새 대화', messages: [], createdAt: now, updatedAt: now, ...pinned }, ...prev],
     );
     setActiveId(serverId);
   }, []);

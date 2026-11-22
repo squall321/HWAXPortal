@@ -41,6 +41,10 @@ interface ExpertPickerProps {
   onAugment?: (topic: string) => void;
   /** '온톨로지 먼저 보기'(docs/ontology-first M4) — 심의 주제의 과제 key 와 의장 틀. 없으면 패널을 그리지 않는다(기준일 심의 — 부모가 가른다). */
   onto?: { spTask: string; chair?: string };
+  /** 미리 채울 좌석 — 절차의 전문가 팀(docs/expert-teams 2-3). 주면 추천 대신 이 사람들로 시작하고 사람이 고친다. */
+  seedSeats?: Persona[];
+  /** 미리 채운 까닭 한 줄(팀 이름 · 빠진 사람) */
+  seedNote?: string;
 }
 
 const MIN_EXPERTS = 2; // 서버 심의는 전문가 2명 이상 필요
@@ -66,7 +70,7 @@ interface AddRow {
   rank: number;
 }
 
-export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job, onAugment, onto }: ExpertPickerProps) {
+export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job, onAugment, onto, seedSeats, seedNote }: ExpertPickerProps) {
   // 선택 집합 — key → persona. 관련도순 상위 autoCount 명을 기본 선택으로 시딩한다.
   const [chosen, setChosen] = useState<Record<string, Persona>>({});
   const [autoCount, setAutoCount] = useState(DEFAULT_COUNT);
@@ -98,7 +102,10 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
 
   useEffect(() => {
     if (seededRef.current || !experts) return;
-    setChosen(seed(DEFAULT_COUNT));
+    // 팀으로 미리 채우면 추천 상위 대신 그 사람들 — 인원 바꾸기 · 추천 단추는 그대로 쓸 수 있다(명시 동작)
+    setChosen(seedSeats?.length
+      ? Object.fromEntries(seedSeats.slice(0, MAX_EXPERTS).map((p) => [p.key, p]))
+      : seed(DEFAULT_COUNT));
     seededRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [experts]);
@@ -248,6 +255,7 @@ export function ExpertPicker({ topic, loading, experts, onConfirm, onCancel, job
         <p className="cx-ep-note">
           기본은 추천 전문가로 진행됩니다. 인원을 늘리거나, 아래에서 제외·직접 추가해 정합도를 높이세요.
         </p>
+        {seedNote && <p className="cx-ep-note cx-ep-seed" data-testid="ep-seed-note">{seedNote}</p>}
       </div>
 
       {/* 되묻기는 전문가 선정과 나란히 돈다 — 먼저 오면 먼저 보인다. 보강하면 부모가 다시 찾는다. */}

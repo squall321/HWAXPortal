@@ -229,6 +229,11 @@ class ProceduresStore:
             " ORDER BY version_no DESC LIMIT 1", (procedure_id,)).fetchone()
         return self.get_version(row["version_id"]) if row else None
 
+    def owner_of(self, procedure_id: str) -> str | None:
+        """절차의 주인 subject — 없으면 None. 볼 수 있는지는 부르는 쪽이 이미 확인했다(readable_version)."""
+        row = self._conn().execute("SELECT owner_sub FROM procedures WHERE id=?", (procedure_id,)).fetchone()
+        return row["owner_sub"] if row else None
+
     def readable_version(self, *, sub: str, procedure_id: str | None = None,
                          version_id: str | None = None) -> dict | None:
         """그 사람이 **볼 수 있는** 판본. 못 보면 None — 라우트가 404 로 낸다.

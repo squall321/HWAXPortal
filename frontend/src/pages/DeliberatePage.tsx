@@ -13,6 +13,7 @@ import { SubjectPicker } from '../components/chat/SubjectPicker';
 import { EMPTY_SUBJECT, candidatesFromConversation, subjectWire, type SubjectDraft } from '../components/chat/subject';
 import { IconFile, IconPanel, IconPencil, IconPlus, IconSpark } from '../components/chat/icons';
 import { fetchDeliberateExperts, type ExpertsResponse } from '../api/chat.api';
+import type { TeamSnapshot } from '../api/teams.api';
 import { JOB_BY_ID, JOB_GROUPS, JOB_ROUTING, jobsByGroup, type JobId } from '../components/chat/delibTaxonomy';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import '../styles/chat.css';
@@ -74,7 +75,17 @@ const RA_TIDY_PROMPT = '/보고서 정리';
  *  실행 id(delib_opts.procedure_run)만 실으면 포털이 그 사람의 실행 원장에서 근거로 싣는다. */
 type ProcedureRunRef = {
   run_id: string; title: string; count: number; dropped: number; failed: number; unknown: number; not_called: number;
+  /** 절차의 전문가 팀 사본(docs/expert-teams 2-3) — 좌석으로 미리 채운다. null 이면 못 풀었다(team_why) — 추천으로 채운다 */
+  team?: TeamSnapshot | null; team_why?: string;
 };
+
+/** 팀 사본 → 미리 채울 좌석(주 + 보조). 사람이 좌석 화면에서 고친다. 모양이 아니면 없음. */
+function teamSeats(t: TeamSnapshot | null | undefined): Persona[] | undefined {
+  if (!t || typeof t.lead?.key !== 'string') return undefined;
+  return [t.lead, ...(Array.isArray(t.helpers) ? t.helpers : [])]
+    .filter((m) => m && typeof m.key === 'string' && m.key)
+    .map((m) => ({ key: m.key, name: m.name || m.key, role: '' }));
+}
 
 function procedureRunOf(state: unknown): ProcedureRunRef | null {
   const r = (state as { procedureRun?: Partial<ProcedureRunRef> } | null)?.procedureRun;
@@ -91,6 +102,8 @@ function ProcedureRunChip({ run, onDrop }: { run: ProcedureRunRef; onDrop: () =>
     <p className="cx-hero-hint" data-testid="procedure-run-chip">
       절차 실행 «{run.title}» 의 단계 기록 {run.count}건을 근거로 싣습니다{marks.length ? ` — ${marks.join(' · ')}` : ''}. 화두를 적고 심의
       유형을 고르세요.{' '}
+      {run.team ? `좌석은 절차의 팀 「${run.team.name}」 으로 미리 채웁니다(고칠 수 있습니다). `
+        : run.team === null ? `절차의 팀을 쓰지 못해 좌석은 추천으로 채웁니다 — ${run.team_why || '까닭 모름'}. ` : ''}
       <button type="button" className="cx-chip" onClick={onDrop}>떼기</button>
     </p>
   );
@@ -248,6 +261,10 @@ export default function DeliberatePage() {
                   // '온톨로지 먼저 보기'(docs/ontology-first M4) — 주제 과제로 정본 허브의 한 걸음 이웃을 고른다. 기준일 심의는 오늘의 허브라 그리지
                   // 않는다(이 화면에는 리스크 심사 · 봉인 입구가 없다 — 서버가 리스크 심사 계열 의장을 한 번 더 거절한다).
                   onto={delibOpts.as_of ? undefined : { spTask: subject.spTask, chair: JOB_ROUTING[job].chair }}
+                  // 절차의 전문가 팀(docs/expert-teams 2-3) — 넘겨받은 사본으로 좌석을 미리 채운다. 이 화면에는 리스크 심사 입구가 없다(ET-5)
+                  seedSeats={teamSeats(procRun?.team)}
+                  seedNote={procRun?.team ? `절차의 팀 「${procRun.team.name}」 으로 좌석을 미리 채웠습니다 — 빼거나 더해서 시작하세요.` +
+                    (procRun.team_why ? ` ${procRun.team_why}` : '') : undefined}
                 />
               </div>
             ) : (

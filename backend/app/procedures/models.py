@@ -369,6 +369,17 @@ class ProcedureSpec(BaseModel):
     title: str
     vars: list[Var] = Field(default_factory=list)
     steps: list[Step] = Field(default_factory=list)
+    # 전문가 팀(선택, docs/expert-teams PLAN 2-3) — 도구 단계는 바꾸지 않는다(LLM 없이 고정 인자 그대로). 실행 화면의 「챗으로 가져가기」 ·
+    # 「심의로 넘기기」 가 그 사람의 시야로 푼 사본을 대화 지정값 · 심의 좌석으로 싣는다. 안 적으면 정규 모양에 칸이 없다(exclude_none)
+    team: str | None = None
+
+    @field_validator("team")
+    @classmethod
+    def _team(cls, v):
+        from app.agent.teams import TEAM_ID_RE
+        if v is not None and not TEAM_ID_RE.match(v):
+            raise ValueError("팀 칸은 팀 id(tm_…)다 — 팀 없이 두려면 칸을 뺀다")
+        return v
 
     @model_validator(mode="after")
     def _unique_vars(self):

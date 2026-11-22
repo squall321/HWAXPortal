@@ -10,6 +10,7 @@ import { ErrorBanner } from '../../components/common/ErrorBanner';
 import { Spinner } from '../../components/common/Spinner';
 import { useProcedures } from '../../state/ProceduresContext';
 import {
+  addProcedureVersion,
   cancelRun,
   getProcedure,
   draftGap,
@@ -40,6 +41,7 @@ import BuildView from './BuildView';
 import { RoutineDetailView, RoutineList, RoutineNew } from './RoutinesView';
 import { useCan } from '../../auth/useCan';
 import { RunSteps } from './RunSteps';
+import { listTeams, resolveTeam, type Team } from '../../api/teams.api';
 import '../../styles/procedures.css';
 
 export default function ProceduresPage() {
@@ -329,6 +331,7 @@ function ProcedureDetail() {
   const [vals, setVals] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reload, setReload] = useState(0);     // 새 판본(팀 정하기) 뒤에 다시 읽는다
 
   // ⚠ 절차를 갈아탈 때 **비운다.** 안 비우면 앞 절차에 입력한 값(`vals`)이 그대로 남아
   // 새 절차 id 로 제출된다 — 같은 이름의 변수면 화면상 아무 표시도 없다. 늦게 온 응답이
@@ -344,7 +347,7 @@ function ProcedureDetail() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, reload]);
 
   const go = async (mode: 'plan' | 'live') => {
     setBusy(true);
@@ -450,6 +453,8 @@ function ProcedureDetail() {
         </section>
       )}
 
+      <ProcedureTeam id={id} v={v} onSaved={() => setReload((n) => n + 1)} />
+
       <section className="pr-card pr-card-block">
         <h3 className="pr-h3 pr-mb-2">단계 {v.spec.steps.length}개</h3>
         <ol className="pr-bullets pr-fs-14">
@@ -489,6 +494,78 @@ function ProcedureDetail() {
       <ToolContract procedureId={id} />
       <ProcedureRuns procedureId={id} />
     </div>
+  );
+}
+
+/** 절차의 전문가 팀(docs/expert-teams 2-3) — 도구 단계는 바꾸지 않는다. 실행 화면의 「챗으로 가져가기」 · 「심의로 넘기기」 가 이 팀을 대화 지정값 ·
+ *  심의 좌석으로 싣는다. 판본은 불변이라 팀을 바꾸면 새 판본이다(주인만). */
+function ProcedureTeam({ id, v, onSaved }: { id: string; v: ProcedureVersion; onSaved: () => void }) {
+  const can = useCan();
+  const canTeam = can('feat:expert-chat');
+  const [label, setLabel] = useState<string | null>(null);
+  const [teams, setTeams] = useState<Team[] | null>(null);
+  const [pick, setPick] = useState(v.spec.team ?? '');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const tid = v.spec.team ?? '';
+
+  useEffect(() => {
+    setPick(tid);
+    setLabel(null);
+    if (!tid || !canTeam) return;
+    let alive = true;
+    resolveTeam(tid)
+      .then((r) => alive && setLabel(r.team ? `「${r.team.name}」${r.why ? ` — ${r.why}` : ''}` : `쓸 수 없음 — ${r.why}`))
+      .catch((e: Error) => alive && setLabel(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [tid, canTeam]);
+  useEffect(() => {
+    if (!v.mine || !canTeam) return;
+    listTeams().then((r) => setTeams(r.teams)).catch((e: Error) => setErr(e.message));
+  }, [v.mine, canTeam]);
+
+  if (!tid && !(v.mine && canTeam)) return null;
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const spec = { ...v.spec };
+      delete spec.team;       // 팀 없음이면 칸을 뺀다(정규 모양에 칸이 없다)
+      await addProcedureVersion(id, pick ? { ...spec, team: pick } : spec);
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="pr-card pr-card-block" data-testid="procedure-team">
+      <h3 className="pr-h3 pr-mb-2">전문가 팀</h3>
+      <p className="pr-meta pr-m-0">
+        {tid ? (label ?? '불러오는 중…') : '없음'} — 「챗으로 가져가기」 는 이 팀을 대화의 지정값으로, 「심의로 넘기기」 는 좌석으로 미리 채웁니다.
+        도구 단계는 바뀌지 않습니다.
+      </p>
+      {v.mine && canTeam && teams && (
+        <div className="pr-row pr-mt-1">
+          <select className="pr-input" value={pick} onChange={(e) => setPick(e.target.value)} aria-label="절차의 전문가 팀">
+            <option value="">팀 없음</option>
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.official ? '[공식] ' : ''}{t.name}
+              </option>
+            ))}
+            {tid && !teams.some((t) => t.id === tid) && <option value={tid}>(지금 팀 — 목록에 없음)</option>}
+          </select>
+          <button type="button" className="btn-secondary pr-btn-sm" disabled={busy || pick === tid} onClick={() => void save()}>
+            {busy ? '저장 중…' : '팀 정하기(새 판본)'}
+          </button>
+        </div>
+      )}
+      {err && <ErrorBanner message={err} />}
+    </section>
   );
 }
 
@@ -1029,6 +1106,8 @@ function RunDetailView() {
                         failed: h.items.filter((i) => i.state === 'failed').length,
                         unknown: h.items.filter((i) => i.state === 'unknown').length,
                         not_called: h.not_called.length,
+                        // 절차의 전문가 팀 — 심의 화면이 좌석으로 미리 채우고 사람이 고친다(못 풀었으면 까닭만, docs/expert-teams 2-3)
+                        ...(h.team !== undefined ? { team: h.team, team_why: h.team_why ?? '' } : {}),
                       } } });
                     })}>
               심의로 넘기기
@@ -1041,7 +1120,11 @@ function RunDetailView() {
                     title="이 실행의 단계 요약을 챗 대화로 만듭니다 — 이어서 물으면 단계 결과로 답합니다"
                     onClick={() => act(async () => {
                       const r = await runToChat(watched.id);
-                      nav('/', { state: { openConversation: { id: r.conversation_id, title: r.title } } });
+                      // 절차의 전문가 팀 사본은 대화의 지정값으로 복사한다(챗 화면에서 팀을 고른 것과 같은 복사 — docs/expert-teams 2-3)
+                      const t = r.team;
+                      const pins = t ? { agent: t.lead.key, agentName: t.lead.name, helpers: t.helpers, apps: t.apps, tools: t.tools }
+                        : undefined;
+                      nav('/', { state: { openConversation: { id: r.conversation_id, title: r.title, ...(pins ? { pins } : {}) } } });
                     })}>
               챗으로 가져가기
             </button>
