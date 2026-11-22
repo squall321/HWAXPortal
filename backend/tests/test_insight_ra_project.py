@@ -106,6 +106,14 @@ def test_꺼져_있으면_창구가_없는_것과_같고_읽기와_거두기의_
     got = ra.c.post(f"/insights-api/cards/{iid}/ra", headers=h)
     assert (got.status_code, got.content) == (nothing.status_code, nothing.content) and got.status_code == 404, \
         "꺼져 있으면 없는 창구와 같은 답이다"
+    for headers in ({}, {"X-CSRF-Token": "wrong"}):                      # CSRF 없이 · 틀린 CSRF — 로그인 · CSRF 를 보기 전에 404 다
+        a = ra.c.post(f"/insights-api/cards/{iid}/ra", headers=headers)
+        b = ra.c.post(f"/insights-api/cards/{iid}/zz-none", headers=headers)
+        assert (a.status_code, a.content) == (b.status_code, b.content), headers
+    ra.c.cookies.clear()
+    a, b = ra.c.post(f"/insights-api/cards/{iid}/ra"), ra.c.post(f"/insights-api/cards/{iid}/zz-none")
+    assert (a.status_code, a.content) == (b.status_code, b.content), "로그인하지 않은 사람에게도 같은 답이다"
+    h = ra.login("me@example.com")
     paths = ("/insights-api/mine", f"/insights-api/project?sp_task={KEY}", "/insights-api/review", f"/insights-api/cards/{iid}")
     off = {p: ra.c.get(p).content for p in paths}
     keep = IR._with_ra

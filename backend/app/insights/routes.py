@@ -750,13 +750,17 @@ async def withdraw(cid: str, request: Request, principal: Principal = Depends(_w
     return {"id": cid, "status": "withdrawn"}
 
 
+def _ra_switch(settings: Settings = Depends(get_settings)) -> None:
+    """RA 투영 스위치 — 꺼져 있으면 로그인 · CSRF 를 보기 전에 없는 창구와 같은 404 다(누가 부르든 같은 답 — 창구가 있다는 것도 말하지 않는다)."""
+    if not settings.insight_ra_project:
+        raise HTTPException(status_code=404)
+
+
 @router.post("/cards/{cid}/ra")
-async def project_to_ra(cid: str, request: Request, principal: Principal = Depends(_writer),
+async def project_to_ra(cid: str, request: Request, _on: None = Depends(_ra_switch), principal: Principal = Depends(_writer),
                         settings: Settings = Depends(get_settings)) -> dict:
     """RA 투영(M5) — 주인이 화면에서 누른다. 조직에 연 확인 카드의 RA 보고서에 SP 과제 객체(code = SP 키)를 그 사람의 RA 연결로 태그로 단다
     (app/insights/ra_project). 한 카드는 한 번만이다(원장에 줄이 있으면 RA 를 부르지 않는다). 스위치가 꺼져 있으면 없는 창구와 같은 404 다."""
-    if not settings.insight_ra_project:
-        raise HTTPException(status_code=404)
     r, v = await _mine_or_404(request, cid, principal)
     ensure(principal, "plat:reportarchive")
     st = _store(request)

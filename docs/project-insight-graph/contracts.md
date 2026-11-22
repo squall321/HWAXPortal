@@ -348,7 +348,8 @@ CREATE TABLE IF NOT EXISTS insight_meta (k TEXT PRIMARY KEY, v TEXT)   -- jobs_s
 - **무엇** — 카드 하나 → 그 카드의 RA 보고서(`card.report_id`) 하나에 SP 과제 객체 태그 하나. 객체를 만들거나 고치거나 잇지 않는다(RA 의 객체 ·
   별칭 · 관계 쓰기와 축 · 관계 정의는 시스템 관리자 전용이다 — REST `_require_admin` · MCP '[시스템 관리자 전용]').
 - **창구** — 세션 + CSRF 만(사람 PAT 로는 못 부른다) · 카드 주인만(관리자도 남의 카드는 못 단다) · `feat:insights` + `plat:reportarchive`. 스위치가
-  꺼져 있으면 없는 창구와 같은 404(`{"detail": "Not Found"}`)다.
+  꺼져 있으면 로그인 · CSRF 를 보기 전에 없는 창구와 같은 404(`{"detail": "Not Found"}`)다 — 누가 부르든 같은 답이다. 같은 길의 다른
+  메서드(GET 등)는 405 다(길이 있다는 것만 드러난다 — 본문은 없다).
 - **대상** — `status == "confirmed"`(반박이 달린 카드 · 초안은 아니다) · 범위가 정확히 `["org"]`(plat 토큰이 붙은 카드 · 소속 범위는 아니다) · 확인된
   주제(`subject.sp_state == "confirmed"` · `sp_task` 가 칸과 같다) · key 가 64자 이하 · `card.report_id` 가 양의 정수(정수 글 포함). 아니면 409 와
   까닭이고 RA 를 부르지 않는다.
