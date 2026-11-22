@@ -427,6 +427,10 @@ class ChatRequest(BaseModel):
     # 싣는다(캐시된 옛 화면은 싣지 않아 그대로다). 넓게 받고 좁게 옮긴다 — 다른 판의 글자도 422 로 막지 않지만, 에이전트 서버에는 박스 손잡이
     # (MCP_APPS_HOST) · feat:panels · 세션 쿠키 요청 · 정확한 글자가 다 맞을 때만 싣는다(_relay_ui_host). 에이전트 서버 ChatRequest 에도 같은 칸이 있다.
     ui_host: str | None = Field(default=None, max_length=32)
+    # 웹 챗 Claude 의 모델 · 생각 깊이(docs/chat-llm-claude CC-8) — 화면 입력창에서 사람이 고른 것. 꼴만 여기서 보고(모델 이름 꼴 · effort 다섯)
+    # 그대로 옮긴다. 고를 수 있는 사람인지 · 박스 목록 안인지는 에이전트 서버가 본다(밖이면 기본으로 돌고 답 아래에 알린다). Claude 턴이 아니면 읽히지 않는다.
+    claude_model: str | None = Field(default=None, max_length=64, pattern=r"^claude-[a-z0-9]+(?:-[a-z0-9]+)*$")
+    claude_effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -523,6 +527,28 @@ async def search_capability(
             return r.json()
     except Exception:  # noqa: BLE001 — agent-server 불통은 '알 수 없음'이지 '가능'이 아니다
         return {"sources": {}, "note": "agent-server 에 연결하지 못해 가용성을 확인할 수 없습니다."}
+
+
+@router.get("/chat-models")
+async def chat_models(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+) -> dict:
+    """웹 챗 입력창의 'Claude 모델 · 생각 깊이' 칸(docs/chat-llm-claude CC-8) — 이 사람이 Claude 대상(에이전트 서버 FOR=all 또는 개별 허가
+    feat:chat-claude)일 때만 고를 목록을 준다. 아니면 {"claude": {"eligible": false}} — 화면은 칸을 그리지 않는다. 에이전트 서버가 다시 본다."""
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=6) as client:
+            r = await client.get(f"{settings.agent_server_url}/chat-models")
+            r.raise_for_status()
+            got = (r.json() or {}).get("claude") or {}
+    except Exception:  # noqa: BLE001 — 에이전트 서버 불통(또는 이 창구가 없는 옛 판)이면 칸을 그리지 않는다(고른 값 없이 기본으로 돈다)
+        return {"claude": {"eligible": False}}
+    who = got.get("for")
+    if not got.get("enabled") or not (who == "all" or (who == "feat:chat-claude" and "feat:chat-claude" in principal.groups)):
+        return {"claude": {"eligible": False}}
+    return {"claude": {"eligible": True, "models": got.get("models") or [], "efforts": got.get("efforts") or [],
+                       "default_model": got.get("default_model"), "default_effort": got.get("default_effort")}}
 
 
 def _chat_user_pat(keystore, settings: Settings, principal: Principal) -> str | None:
@@ -1125,6 +1151,10 @@ async def _relay_stream(
         payload["search_sources"] = body.search_sources
     if body.thinking:  # 띵킹 모드 — 켠 것만 전달(끄면 agent-server 기본값 False)
         payload["thinking"] = True
+    if body.claude_model:  # 웹 챗 Claude 의 고른 모델 · 생각 깊이 — 고른 것만(비면 박스 기본, CC-8)
+        payload["claude_model"] = body.claude_model
+    if body.claude_effort:
+        payload["claude_effort"] = body.claude_effort
     if body.documents:  # 붙인 문서의 추출문 — 원본이 아니라 평문이다
         payload["documents"] = [d.model_dump() for d in body.documents]
     if body.images:  # 올린 그림 — 에이전트 서버가 저장하고 주소를 돌려준다(user_images)

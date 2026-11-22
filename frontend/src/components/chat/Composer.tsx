@@ -33,6 +33,7 @@ import { DocDispatchPanel } from './DocDispatchPanel';
 import { DocforgeResume } from './DocforgeResume';
 import { DeckResume } from './DeckResume';
 import { useOperatorGone } from './useOperatorGone';
+import { ClaudePicker } from './ClaudePicker';
 
 export interface ComposerHandle {
   focus: () => void;
@@ -665,6 +666,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           )}
           {can('plat:webresearch') && <SearchToggle />}
           {can('feat:thinking') && <ThinkToggle />}
+          <ClaudePicker />
           {showExpert && can('feat:expert-chat') && <ExpertToggle />}
           {routinePill && <RoutineToggle />}
           <span className="composer-tools-gap" />

@@ -38,6 +38,7 @@ import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import { panelPointer } from '../components/chat/panels';
 import { UI_HOST_TOKEN } from '../lib/mcpApps';
+import { claudePick } from '../components/chat/claudePick';
 import {
   decisionAsOf,
   delibOptsToWire,
@@ -1093,6 +1094,11 @@ export function ChatProvider({
         ...(routineReq ? { routine: routineReq } : {}),
         // MCP Apps 패널 표지(HA-20) — 이 화면에는 호스트 부품(McpAppPanel)이 있다. 권한이 없으면 싣지 않는다(포털이 손잡이 · 권한을 다시 본다)
         ...(can('feat:panels') ? { uiHost: UI_HOST_TOKEN } : {}),
+        // 웹 챗 Claude 의 고른 모델 · 생각 깊이(CC-8) — 입력창 칸이 목록을 받은 사람만(아니면 null — 싣지 않아 박스 기본)
+        ...((() => {
+          const p = claudePick();
+          return p ? { claudeModel: p.model, claudeEffort: p.effort } : {};
+        })()),
         // 심의 손잡이(웹 토글) — 켠 것만. 서버 트리거 프리픽스가 붙는 심의 첫 발화에만 의미가 있지만,
         // 이어가기(일반 챗)로 흘러도 agent-server 챗 경로가 무시하므로 항상 실어도 무해하다.
         ...(() => {
