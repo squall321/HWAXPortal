@@ -87,7 +87,7 @@ def test_개별_허가가_있는_사람에게만_목록을_준다(monkeypatch):
         seen.append(req.url.path)
         return httpx.Response(200, json=_ON)
     got = _models(monkeypatch, up, ["feat:chat-claude", "feat:thinking"])
-    assert seen == ["/chat-models"]
+    assert seen == ["/claude-models"]
     assert got == {"claude": {"eligible": True, "models": _ON["claude"]["models"], "efforts": _ON["claude"]["efforts"],
                               "default_model": "claude-opus-5-5", "default_effort": "medium"}}
     assert _models(monkeypatch, up, ["feat:thinking"]) == {"claude": {"eligible": False}}, "허가 없는 사람은 칸이 없다"

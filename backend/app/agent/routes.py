@@ -529,7 +529,7 @@ async def search_capability(
         return {"sources": {}, "note": "agent-server 에 연결하지 못해 가용성을 확인할 수 없습니다."}
 
 
-@router.get("/chat-models")
+@router.get("/claude-models")
 async def chat_models(
     request: Request,
     principal: Principal = Depends(principal_pat_or_session),
@@ -539,7 +539,7 @@ async def chat_models(
     settings = get_settings()
     try:
         async with httpx.AsyncClient(timeout=6) as client:
-            r = await client.get(f"{settings.agent_server_url}/chat-models")
+            r = await client.get(f"{settings.agent_server_url}/claude-models")
             r.raise_for_status()
             got = (r.json() or {}).get("claude") or {}
     except Exception:  # noqa: BLE001 — 에이전트 서버 불통(또는 이 창구가 없는 옛 판)이면 칸을 그리지 않는다(고른 값 없이 기본으로 돈다)

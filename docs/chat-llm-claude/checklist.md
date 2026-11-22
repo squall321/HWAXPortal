@@ -24,7 +24,7 @@
 
 ## 모델 · 생각 깊이 고르기(CC-8 — 사용자 요청 11-22)
 - [x] 에이전트 서버 — `CLAUDE_CHAT_MODELS` · `CLAUDE_CHAT_EFFORTS` · 요청 칸 `claude_model` · `claude_effort` · 쌍마다 지어 두기 · 목록 밖은 기본 + 알림 ·
-      Haiku 에는 서버 대체 모델을 싣지 않음 · 캐시 열쇠 칸 · 답 meta 에 고른 값 · `/chat-models` · 시험 열다섯
-- [x] 포털 — 요청 칸 둘(꼴만 보고 옮김) · `/agent/chat-models`(Claude 대상에게만 목록) · 입력창 칸 · 답 아래 표시 · 시험 열
+      Haiku 에는 서버 대체 모델을 싣지 않음 · 캐시 열쇠 칸 · 답 meta 에 고른 값 · `/claude-models` · 시험 열다섯
+- [x] 포털 — 요청 칸 둘(꼴만 보고 옮김) · `/agent/claude-models`(Claude 대상에게만 목록) · 입력창 칸 · 답 아래 표시 · 시험 열
 - [ ] dev — `.env` 에 `CLAUDE_CHAT_MODELS` 넷 · 재기동 · 고른 모델로 한 턴씩
 - [ ] cae00(사람 몫) — 넓히려면 `CLAUDE_CHAT_MODELS` 를 적는다(비용 · Fable 은 30일 보존 조직만)

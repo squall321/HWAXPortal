@@ -209,8 +209,8 @@ export interface ChatModels {
 }
 
 export async function fetchChatModels(signal?: AbortSignal): Promise<ChatModels> {
-  const r = await apiFetch('/agent/chat-models', { signal });
-  if (!r.ok) throw new Error(`chat-models ${r.status}`);
+  const r = await apiFetch('/agent/claude-models', { signal });
+  if (!r.ok) throw new Error(`claude-models ${r.status}`);
   return (await r.json()) as ChatModels;
 }
 
