@@ -80,6 +80,7 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
 
 - **O-3 도구 설명 예산 견주기** — 에이전트 서버 `.env` 에 `CHAT_TOOL_SCHEMA_BUDGET=30000` → 도는 심의가 없을 때 `./start.sh -d` → 같은 16문항. `40000` 으로 한 번 더.
   나은 값을 남기거나 줄을 지운다(비면 종전대로 챗 창의 45% — 호출마다 약 8.8만 토큰). 줄이면 `search_tools` → `invoke_tool` 왕복이 늘 수 있다.
+- **O-4 생각 강도 견주기(W-6 · 결정 D-4 — 11-22 에 값 · 차례를 메웠다)** — 아래 4-1.
 - **재시험** — 같은 정답표 16문항(OT-01 ~ 16). 보는 것은 OT-06 ~ 10 의 정본 허브 호출 · 첫 도구가 코어인지 · 자기검증 ms p95 · 숨은 탭 시간이다.
   결과로 4차의 남은 셋(E-2 앱 역할 순위 · E-4 개인 Claude 묶음 · E-5 페르소나 연결)을 정한다(결정 D-7).
 - **안 쓴 도구 보고(E-3)** — `cd ~/Projects/HWAXMcpGateway && python3 tool_usage_report.py --out ~/unused-tools-$(date +%F).md` → 앱 주인에게 넘긴다(부른 사람 · 주소는 싣지 않는다).
@@ -88,6 +89,63 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
   `APPTAINERENV_STEPFORGE_PUBLIC_BASE` ② MaterialTwin 주소의 정본(`.env` 그대로 · 허브가 `HEAX_APP_URL_<SLUG>` 로 넣기) ③ 게이트웨이 비밀 머리
   `X-Heax-Gateway-Secret`(막는 도구를 붙이기 전에 닫는다) — 와 알림 하나(이어 받기 시한 45초) · 확인 하나(cae00 챗 실사용 1건).
 
+### 4-1. O-4 생각 강도 — 무엇을 · 어떤 값 · 어떤 차례 · 몇 번 · 무엇을 기록
+
+**물음.** 챗 Qwen 의 생각 강도 `xhigh` 가 단순 조회에도 쓰여 10-29 시험에서 생각 글이 2,060 ~ 37,428자였다(요청서 [`../request_261029.md`](../request_261029.md)
+W-6). 낮추면 생성 토큰 · 걸린 시간은 준다 — **판정이 떨어지는가**를 잰다. 결과로 ① 강도를 내릴지 ② 질의 종류(조회 · 집계 · 분석)마다 강도를 달리하는
+길을 지을지(결정 D-4)를 정한다.
+
+**손잡이.** 에이전트 서버 `.env` 의 `CHAT_LLM_REASONING_EFFORT`. 에이전트 서버는 값을 고치거나 거르지 않고 챗 LLM 요청의
+`chat_template_kwargs.reasoning_effort` 에 그대로 싣는다 — 생각을 켰을 때(`CHAT_LLM_ENABLE_THINKING` 기본 1)만(`HWAXAgentServer/app.py`
+`_build_chat_llm`). 요청마다 바꾸는 길은 없다 — 재는 동안 이 박스의 **모든** Qwen 챗 턴에 걸린다. 웹 챗 Claude 턴(`CLAUDE_CHAT_*`)과 GLM 으로 넘긴
+턴에는 듣지 않는다.
+
+**값.** `xhigh`(지금 — 대조군) → `medium` → (medium 이 판정을 지키면) `low`. 모델 채팅 템플릿이 받는 값은 `xhigh` · `medium` · `low` 다
+([`../chat-depth-context/request.md`](../chat-depth-context/request.md) — 템플릿 `reasoning_effort|default('xhigh')`, 같은 문서의 실측 한 호출
+`medium` 16.6초 · 생각 691 토큰 대 `xhigh` 102.2초 · 13,052 토큰). 요청서 W-6 이 든 `high` 와 [`../chat-llm-stcx/server-setup.md`](../chat-llm-stcx/server-setup.md)
+표의 `high` 는 그 템플릿 목록에 없다 — 템플릿이 받는지 확인 필요(확인 전에는 넣지 않는다 — 에이전트 서버가 거르지 않아 모르는 값도 그대로 간다).
+
+**먼저.**
+
+- O-2(대화 고정)가 박스에 들고 O-3 의 값을 정해 둔다 — 손잡이는 한 번에 하나만 바꾼다(심의 T1 과 같은 관례 — [`../followups-1017/server-setup.md`](../followups-1017/server-setup.md) 7절).
+- `curl -s --noproxy '*' 127.0.0.1:9009/health | python3 -c 'import json,sys;d=json.load(sys.stdin)["chat_llm"];print(d.get("enabled"), d.get("thinking"), d.get("effort"))'`
+  → `True True xhigh`.
+- 시험 계정이 웹 챗 Claude 대상이 아니다 — 같은 `/health` 의 `claude_chat` 이 `enabled: true` 면 `for` 를 보고, 시험 답 아래 모델 표시가 챗 Qwen 이어야 한다.
+- 정답표 16문항과 점검기(cae00 `~/ontology-test/` — 리포에 없다)가 10-29 · 10-30 재시험과 같다.
+
+**언제.** 도는 심의가 없을 때(바꿀 때마다 에이전트 서버를 다시 띄운다 — `./start.sh -d` 는 도는 심의가 있으면 건너뛴다) · 챗을 쓰는 사람이 적은 때(밤 ·
+주말)에, 쓰는 사람들에게 미리 알린다(LLM 풀 용량 측정과 같은 관례 — [`../llm-pool/capacity.md`](../llm-pool/capacity.md) 1절).
+
+**차례 · 횟수.** 조건 하나를 몰아서 다 잰 뒤 다음 조건으로 간다(대조군 먼저 — T1 7-2 와 같다). 조건마다 재기 직전에 에이전트 서버를 다시 띄운다 —
+`/health` 의 `self_check` · `chat_llm.fallback` 수가 기동마다 0 에서 센다.
+
+1. `xhigh` — 줄이 없거나 `xhigh` 인 채로 `cd ../HWAXAgentServer && ./start.sh -d` → 16문항 × 3회.
+2. `medium` — `.env` 에 `CHAT_LLM_REASONING_EFFORT=medium`(줄 끝에 주석을 붙이지 않는다 — `start.sh` 는 주석까지 값으로 읽는다) → `./start.sh -d` →
+   위 `/health` 줄이 `True True medium` · 기동 로그에 `생각 켬(medium)` → 같은 16문항 × 3회.
+3. `low` — 2 가 판정을 지켰을 때만. 같은 걸음.
+4. 남길 값으로 `.env` 를 두고(`xhigh` 면 줄을 지운다) `./start.sh -d`.
+
+질문마다 3회는 심의 T1 의 관례(조건 둘 × 질문 셋 × 3회)를 따른 것이다 — 이 시험만의 근거가 있는 수가 아니다. 16문항 1회가 `xhigh` 로 약 1시간 반이었다
+(10-29 13:27 ~ 14:5x) — `xhigh` 3회는 4시간 남짓, `medium` 은 그보다 짧다.
+
+**기록 — 문항 · 회마다.**
+
+- 판정 PASS · PARTIAL · FAIL — 10-29 와 같은 기준(요청서 2절 — 시험 문서 5.5절).
+- 걸린 시간 — 보낸 때부터 자기검증 표시가 붙을 때까지(10-29 와 같은 정의).
+- 생각 칸의 글자 수.
+- 부른 도구 — 점검기(게이트웨이 감사).
+- 답한 모델 — 답 아래 표시. 챗 Qwen 이 아닌 턴(GLM 넘김 · Claude)은 이 손잡이 밖이라 따로 센다.
+- 문항의 종류(조회 · 집계 · 분석) — D-4 의 갈래를 정할 때 쓴다.
+
+**기록 — 조건마다.** `/health` 의 `self_check`(`counts` · `fixed_ratio` · `ms.p95`)와 `chat_llm.fallback.count` 를 조건 끝에 떠 둔다(그 시간 다른 사람의
+챗도 함께 센다). 챗 LLM 의 요청 수 · 프롬프트 · 생성 토큰은 10-29 와 같은 길(부하분산기 기록 · 점검기 — 리포 밖)로 잰다 — 그 명령은 이 리포에 없다.
+
+**판정.** 낮춘 조건이 판정을 지키고(PASS 수가 같거나 많고 `xhigh` 에서 PASS 였던 문항이 FAIL 로 떨어진 것 0) 걸린 시간 · 생각 글이 줄었으면 그 값을
+남긴다. 애매하면 `xhigh` 그대로 둔다(T1 7-3 의 '애매하면 켜지 않는다' 와 같은 쪽). 종류마다 갈리면(조회는 지키고 분석은 떨어진다) D-4 의 길로 넘긴다 —
+코드 변경이라 dev 세션 몫이다.
+
+**남기기.** 이 폴더 [checklist.md](checklist.md) 의 O-4 줄 · [context-notes.md](context-notes.md) 에 날짜 · 값 · 문항별 판정 · 수치. 되돌리기는 5절 표.
+
 ## 5. 되돌리기 — 손잡이
 
 | 무엇 | 끄는 법 | 반영 |
@@ -95,6 +153,7 @@ dev 는 StepForge · WebDesignAgents 의 SIF 를 GitHub 에서 받아 짓는다.
 | 챗 자기검증 전체 | 에이전트 서버 `.env` `CHAT_SELF_CHECK=0` | 에이전트 서버 재기동 |
 | 프롬프트 앞부분 고정(바뀌는 안내의 자리) | 에이전트 서버 `.env` `CHAT_STABLE_PREFIX=0`(종전 자리) — 재시험에서 지시를 따르는 정도가 떨어지면 | 에이전트 서버 재기동 |
 | 도구 설명 예산 | `CHAT_TOOL_SCHEMA_BUDGET` 줄을 지운다(종전 45%) | 에이전트 서버 재기동 |
+| 챗 생각 강도(O-4) | `CHAT_LLM_REASONING_EFFORT` 줄을 지운다(기본 `xhigh`) | 에이전트 서버 재기동 |
 | 챗 침묵 한도 | 포털 `backend/.env` `AGENT_CHAT_IDLE_TIMEOUT_S=<초>`(종전 46800) | 포털 재기동 |
 | 부하분산기 대화 고정 | nginx 의 `hash` 줄을 지우고 `nginx -s reload` | 즉시 |
 
