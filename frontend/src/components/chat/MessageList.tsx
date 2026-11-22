@@ -13,6 +13,7 @@ import { McpAppPanels } from './McpAppPanel';
 import { EmbedCards } from './EmbedCard';
 import { confirmState, type ConfirmState } from './confirm';
 import { DelibView } from './DelibView';
+import { DeckNoticeTools } from './DeckNoticeTools';
 import { DeckSpot } from './DeckSpot';
 import { deckReportOf } from './deck';
 import { RoutineView } from './RoutineView';
@@ -162,7 +163,16 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         {/* 챗 서버의 생각 글 — 접힌 칸. 답이 나오기 전엔 '생각 중' 으로(1~2분 동안 화면이 멈춰 보이지 않게, docs/chat-depth-context C2). */}
         {msg.reasoning && <ReasoningBlock text={msg.reasoning} live={Boolean(msg.streaming) && !msg.text} />}
         {/* 분석 루틴 — 단계 칩 · 고를 것 · 이어서 · 멈춤. 보고서는 아래 글 칸(token)이다(docs/analysis-routines R3 §6). */}
-        {msg.routine && <RoutineView msg={msg} />}
+        {msg.routine && (
+          <RoutineView
+            msg={msg}
+            // 발표자료로(docs/wda-deck M2) — 루틴 칸이 원장과 맞댄 실행을 넘긴다(초안 번호는 원장이 더 새것이다). 단추는 초안 줄 아래에 선다
+            raExtra={(rt) => {
+              const rep = deckReportOf({ ...msg, routine: rt });
+              return rep ? <DeckSpot report={rep} /> : null;
+            }}
+          />
+        )}
         {hasDelib ? (
           <DelibView msg={msg} />
         ) : hasThink ? (
@@ -203,8 +213,11 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         {!msg.streaming && msg.confirm && card && <ConfirmCard card={msg.confirm} state={card} />}
         {!msg.streaming && msg.meta?.self_check && <CheckNote check={msg.meta.self_check} />}
       </div>
-      {/* '/보고서' 저장 답 · RA 보내기 알림의 보고서를 발표자료로(docs/wda-deck) — 심의 결과는 DelibView 가 결과 카드 옆에 둔다 */}
-      {!hasDelib && deck && <DeckSpot report={deck} />}
+      {/* '/보고서' 저장 답 · RA 보내기 알림의 보고서를 발표자료로(docs/wda-deck) — 심의 결과는 DelibView 가 결과 카드 옆에, 분석 루틴의 RA 초안은
+          위의 루틴 칸 안(초안 줄 아래 — raExtra)에 둔다 */}
+      {!hasDelib && !msg.routine && deck && <DeckSpot report={deck} />}
+      {/* 발표자료 알림(서버가 남긴 끝 알림 — 새로고침 뒤에도 남는다) 아래의 도구 줄 — 미리보기 · 다시 시도 · 사본 지우기(M2) */}
+      {!msg.streaming && msg.deckJob && <DeckNoticeTools jobId={msg.deckJob} />}
       {!msg.streaming && msg.text && (
         <div className="msg-actions">
           <CopyAction text={msg.text} />

@@ -1,5 +1,5 @@
 // 분석 루틴 진행 — 어시스턴트 메시지 안(보고서 글 위)의 단계 칩 · 고를 것 · 이어서 · 멈춤 · 보고서 보기 · RA 초안 올리기. 흐르지 않는 메시지는 화면에 보일 때만 포털 원장에서 다시 읽는다(docs/analysis-routines R3 §6)
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { cancelRun, getRun, getRunReport, pickCandidate, type RunView } from '../../api/routines.api';
 import { useCan } from '../../auth/useCan';
 import { routineStopNote } from '../../lib/chatErrors';
@@ -56,7 +56,9 @@ function useOnScreen(ref: RefObject<HTMLElement>): boolean {
   return inView && tabShown;
 }
 
-export function RoutineView({ msg }: { msg: Message }) {
+/** `raExtra` — RA 초안 줄 아래에 부른 쪽이 끼우는 것(발표자료로 단추 — docs/wda-deck M2). 원장과 맞댄 실행을 넘긴다 — 초안 번호는 원장이 더
+ *  새것이라(끝에 묻는 루틴을 뒤에 올리면 원장에만 있다) 메시지만 보는 부른 쪽은 그 번호를 모른다. 받는 중에는 부르지 않는다. */
+export function RoutineView({ msg, raExtra }: { msg: Message; raExtra?: (rt: RoutineState) => ReactNode }) {
   const base = msg.routine as RoutineState;
   const live = Boolean(msg.streaming);
   const { streaming, resumeRoutine, streamLive } = useChat();
@@ -409,6 +411,7 @@ export function RoutineView({ msg }: { msg: Message }) {
           )}
         </div>
       )}
+      {!live && raExtra?.(rt)}
       {err && (
         <p className="rv-err" role="alert">
           {err}

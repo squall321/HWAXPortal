@@ -7,6 +7,8 @@
 2. 진행 — 화면이 묻는다. WDA 의 낱말 둘(파이프라인 · 렌더)을 하나로 접는다(`fold`, PLAN §7.2). 부작용이 없다.
 3. advance(POST · CSRF) — 잡 잠금 안에서 렌더 맡기기(WDA 가 이어서 렌더하지 않는 판) · 끝나면 알림 한 건(단추를 누른 그 대화의 서버 사본, 한 번만).
 4. 받기 — 기록의 주인만. **요청한 사람의** 이름으로 WDA 에서 받아 흘린다(WDA 가 주인을 다시 본다 — 두 겹).
+5. M2 — 다시 시도(실패한 잡의 WDA 실행을 끊긴 단계부터 다시 돌린다 — 보고서를 다시 넘기지 않는다 · 포털 잡은 새로 선다) · 지우기(WDA 의 사본을
+   그 사람 이름으로 지운다, W-17) · PDF 미리보기(받기와 같은 중계 — inline · 응답 머리 CSP sandbox). 셋 다 맡긴 사람만.
 
 브라우저는 WDA 의 run_id · 주소 · 서버 경로를 보지 않는다(WD-D7). 기록 · 로그 · 감사에는 보고서 본문을 남기지 않는다(번호 · 제목 · 수만).
 켜기 — 박스 스위치 wda_deck_enabled(기본 꺼짐) 와 WDA /api/health 의 features 에 owner(WD-D23 · D24). 심의(deliberation 템플릿) 보고서는
@@ -531,6 +533,47 @@ async def wda_render(base: str, token: str, run_id: str, rec: dict) -> None:
         raise _wda_error(r, "렌더")
 
 
+async def wda_resume(base: str, token: str, run_id: str) -> bool:
+    """WDA `POST /api/runs/{id}/resume` — 실패한 실행을 끊긴 단계부터 다시 돌린다(만들기의 render 칸은 재개에도 이어진다 — W-8).
+    재개했으면 True, 다시 돌릴 것이 없으면(모든 단계의 산출물이 이미 있다) False. 409 는 호출부가 가른다(이미 도는 중 · 원본 없음 — DeckError 409)."""
+    try:
+        async with _http(httpx.Timeout(30.0, connect=5.0)) as cli:
+            r = await cli.post(f"{base}/api/runs/{quote(run_id, safe='')}/resume", headers=_auth(token))
+    except httpx.HTTPError as exc:
+        raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}).", 502) from exc
+    if r.status_code >= 400:
+        raise _wda_error(r, "다시 시도")
+    d = _json(r).get("data")
+    return isinstance(d, dict) and d.get("resumed") is True
+
+
+async def wda_delete(base: str, token: str, run_id: str) -> None:
+    """WDA `DELETE /api/runs/{id}`(W-17) — 그 사람 이름으로 실행과 산출물(보고서 본문 사본 포함)을 지운다. WDA 가 이미 모르는 실행(봉투의
+    404 · 410)은 지운 것과 같다 — 사본이 없다. 허브의 404(봉투 아님)는 아니다(지워졌는지 모른다). 거절은 정해진 글의 DeckError(WD-D49)."""
+    try:
+        async with _http(httpx.Timeout(60.0, connect=5.0)) as cli:
+            r = await cli.delete(f"{base}/api/runs/{quote(run_id, safe='')}", headers=_auth(token))
+    except httpx.HTTPError as exc:
+        raise DeckError(f"WDA 에 연결하지 못했습니다({exc.__class__.__name__}) — 지워졌는지 모릅니다. 다시 누르세요.", 502) from exc
+    st = r.status_code
+    if st == 200:
+        return
+    if st in (404, 410):
+        if _wda_gone(r.content[:_ERR_BODY_MAX]):
+            return
+        logger.warning("발표자료 지우기 — WDA 봉투 없는 HTTP %s(허브 쪽일 수 있다) 까닭=%r", st, _why(r))
+        raise DeckError("허브에서 WebDesignAgents 에 닿지 못했습니다 — 지워졌는지 모릅니다. 잠시 뒤 다시 누르세요.", 502)
+    logger.warning("발표자료 지우기 — WDA 가 거절했다 HTTP %s 까닭=%r", st, _why(r))
+    if st == 409:
+        raise DeckError("WDA 가 아직 만드는 중이라 지우지 못했습니다 — 끝난 뒤 다시 누르세요.", 409)
+    if st == 405:
+        raise DeckError("이 박스의 WebDesignAgents 는 지우기를 지원하지 않는 판입니다 — 새 판으로 올린 뒤 다시 누르세요.", 409)
+    if st == 403 and _json(r).get("success") is False:
+        # 허브 게이트의 403 은 봉투가 아니다(detail 하나 · 몸 없음) — 이것은 WDA 의 거절이다(주인 없는 실행은 이 창구로 못 지운다)
+        raise DeckError("WDA 가 이 실행을 지우게 두지 않았습니다(주인 없는 실행) — WDA 관리자에게 알리세요.", 409)
+    raise _wda_error(r, "지우기")
+
+
 async def wda_artifacts(base: str, token: str, run_id: str) -> dict[str, int | None]:
     """WDA 산출물 크기 — {WDA kind: 바이트 | None(없음)}."""
     try:
@@ -555,7 +598,7 @@ def fold(run: dict | None, *, rec: dict, now: float, settings: Settings) -> dict
     돌려주는 것 — state · step · progress(단계 기준) · error · late · next(render | finish | None) · skipped. error 는 포털의 정해진 글이고 WDA 의
     예외 글(경로 · run_id 가 실린다)은 raw_error 로만 둔다 — 화면 · 알림에는 싣지 않고 끝을 적을 때 서버 로그에 남긴다(WD-D49)."""
     out: dict[str, Any] = {"state": "preparing", "step": "", "progress": 0, "error": None, "late": False, "next": None, "skipped": [],
-                           "raw_error": None}
+                           "raw_error": None, "gone": run is None}
     if run is None:
         out.update(state="failed", step="WDA 가 이 실행을 모릅니다(지웠거나 다른 박스)", error="WDA 가 이 실행을 모릅니다(지웠거나 다른 박스).")
     else:
@@ -620,13 +663,29 @@ def gave_up(rec: dict, *, now: float, settings: Settings) -> dict | None:
             "skipped": [], "raw_error": None}
 
 
+def retryable(rec: dict) -> bool:
+    """'다시 시도' 를 받는 잡인가 — 실패로 끝났고 그 WDA 실행을 다시 돌릴 수 있는 것(M2). WDA 가 모르는 실행(gone) · 주인 확인에 실패해 따라가지
+    않은 실행(owner_seen, WD-D57) · 지운 실행 · 이미 다시 시도한 잡은 아니다 — 그때는 '다시 만들기'(새 실행)뿐이다."""
+    fin, wda = rec.get("finished") or {}, rec.get("wda") or {}
+    return (fin.get("state") == "failed" and not fin.get("gone") and bool(wda.get("run_id")) and "owner_seen" not in wda
+            and not wda.get("deleted_at") and not rec.get("retried_by"))
+
+
+def preview_url(job_id: str) -> str:
+    return f"/agent/deck/jobs/{job_id}/preview"
+
+
 def view(rec: dict, f: dict | None = None, now: float | None = None) -> dict:
     """화면에 주는 잡 — 포털 잡 id · 보고서 · 옵션 · 상태. WDA 의 run_id · 주소는 싣지 않는다."""
     now = time.time() if now is None else now
     base = {"job_id": rec["job_id"], "report": rec["report"], "options": rec["options"], "conversation_id": rec.get("conversation_id"),
             "created_at": rec.get("created_at"), "elapsed_s": round(now - float(rec.get("created_at") or now)),
-            "dismissed": bool(rec.get("dismissed"))}
+            "dismissed": bool(rec.get("dismissed")),
+            # M2 — 다시 시도를 낼 잡인가 · WDA 의 사본을 지웠나 · PDF 미리보기 길(끝난 잡이 PDF 를 만들었고 지워지지 않았을 때만)
+            "can_retry": retryable(rec), "deleted": bool((rec.get("wda") or {}).get("deleted_at")), "preview": None}
     fin = rec.get("finished")
+    if fin and fin["state"] == "done" and not fin.get("expired") and any(x.get("kind") == "pdf" for x in fin.get("files") or []):
+        base["preview"] = preview_url(rec["job_id"])
     if fin:
         # 파일이 WDA 에서 지워졌으면(받기가 404 · 410 — WD-D62) 링크를 싣지 않는다 — 화면은 '다시 만들기' 를 보인다
         # 알림만 미뤄 둔 잡(WD-D75)은 next 가 finish 로 남는다 — 화면이 다음 걸음(advance)으로 알림을 남긴다
@@ -776,7 +835,9 @@ async def deck_status(
     elif "owner" not in caps.features:
         out["reason"] = "no_owner"
     else:
-        out.update(enabled=True, formats={t: format_ready(caps, f) for t, f in TEMPLATE_FORMAT.items()})
+        # delete — WDA 가 지우기(W-17)를 갖춘 판인가. 켜진 박스의 답에만 싣는다(꺼진 박스의 답은 종전 꼴 그대로)
+        out.update(enabled=True, formats={t: format_ready(caps, f) for t, f in TEMPLATE_FORMAT.items()},
+                   delete="delete" in caps.features)
     return out
 
 
@@ -1028,6 +1089,8 @@ async def step(request: Request, settings: Settings, job_id: str, who: Principal
         # 다음 걸음이 남긴다(pending — 화면에는 next 가 finish 로 남는다, 2차 적대 검토 D · WD-D75)
         rec["finished"] = {"state": state, "step": step_, "error": error, "files": files, "skipped": skipped,
                            "at": time.time(), "notice": n, "saved": False, "pending": True}
+        if f.get("gone"):
+            rec["finished"]["gone"] = True       # WDA 가 그 실행을 모른다 — 다시 시도(재개)할 것이 없다(retryable)
         await asyncio.to_thread(save, settings, rec)
         _audit(request, who, "deck_finish", "ok" if state == "done" else "failed", job_id=job_id, report_id=rec["report"]["id"],
                files=[x["kind"] for x in files], skipped=[s["target"] for s in skipped])
@@ -1119,6 +1182,174 @@ async def deck_dismiss(
     return {"job_id": job_id, "dismissed": True}
 
 
+# ── M2 — 다시 시도 · 지우기 ─────────────────────────────────────────────────────────────────────────────
+# WDA 가 재개를 받은 뒤 원장이 failed 를 벗을 때까지 기다리는 횟수 · 간격 — 옛 WDA 는 워커가 running 을 적기 전까지 failed 로 남는다. 그 틈에
+# 한 걸음(advance · 만들기 앞의 정리)이 오면 방금 다시 맡긴 잡을 실패로 닫는다. 새 WDA 는 재개를 받는 자리에서 running 을 적어 첫 물음에 벗는다.
+RETRY_SETTLE_TRIES = 8
+RETRY_SETTLE_S = 0.25
+_NO_RETRY = "이 잡은 다시 시도할 수 없습니다 — 그 보고서의 '발표자료로' 에서 '다시 만들기' 를 누르세요."
+
+
+async def _wda_rerun(base: str, token: str, run_id: str, rec: dict) -> bool:
+    """실패한 WDA 실행을 다시 돌린다 — 파이프라인에서 실패했으면 재개(끊긴 단계부터 · 렌더는 WDA 가 잇는다), 파일 만들기에서 실패했으면 렌더만
+    다시 맡긴다. 이미 돌고 있거나 그새 끝났으면 건드리지 않는다(따라가기만 — 새 잡이 곧 끝을 적는다). 렌더를 포털이 맡겼으면 True.
+    다시 돌릴 수 없으면 DeckError(WDA 가 모른다 404 · 재개할 것이 없다 409)."""
+    run = await wda_run(base, token, run_id)
+    if run is None:
+        raise DeckError("WDA 가 그 실행을 모릅니다(지웠거나 다른 박스) — '다시 만들기' 로 새로 만드세요.", 404)
+    if run.get("status") == "failed":
+        try:
+            resumed = await wda_resume(base, token, run_id)
+        except DeckError as exc:
+            if exc.status != 409:
+                raise
+            # 409 — 그새 누가 재개해 도는 중이거나(따라가면 된다) 원본이 없어 재개할 수 없다. 다시 물어 가른다
+            run = await wda_run(base, token, run_id)
+            if run is None or run.get("status") not in ("queued", "running"):
+                raise DeckError("WDA 가 이 실행을 다시 돌리지 못했습니다 — '다시 만들기' 로 새로 만드세요.", 409) from exc
+            return False
+        if resumed:
+            for _ in range(RETRY_SETTLE_TRIES):
+                run = await wda_run(base, token, run_id)
+                if run is None or run.get("status") != "failed":
+                    break
+                await asyncio.sleep(RETRY_SETTLE_S)
+            return False
+        run = await wda_run(base, token, run_id)       # 다시 돌릴 단계가 없다 — 렌더만 남았는지 본다
+        if run is None or run.get("status") != "done":
+            raise DeckError("WDA 에 다시 돌릴 것이 없습니다 — '다시 만들기' 로 새로 만드세요.", 409)
+    if run.get("status") == "done":
+        render = run.get("render") if isinstance(run.get("render"), dict) else None
+        if render is None or render.get("status") == "failed":
+            await wda_render(base, token, run_id, rec)
+            return True
+    return False
+
+
+@router.post("/jobs/{job_id}/retry", dependencies=[Depends(_knob)])
+async def deck_retry(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """실패한 내 잡을 다시 시도한다(M2) — 같은 WDA 실행을 끊긴 단계부터 다시 돌린다(RA 를 다시 읽지도, 보고서를 다시 넘기지도 않는다).
+    포털 잡은 **새로** 선다(잡 하나 = 시도 하나 = 알림 하나 — 알림의 메시지 id 가 잡 id 다, WD-D54). 옛 잡에는 retried_by 를 남겨 한 번만 받는다.
+    상한 · 중복은 만들기와 같이 본다(같은 보고서 · 옵션의 잡이 이미 돌면 그 잡을 준다)."""
+    ensure(principal, *NEEDS)
+    _write_capable(request)
+    owner = principal.subject
+    try:
+        old = await asyncio.to_thread(load, settings, job_id, owner)
+    except DeckError as exc:
+        raise _http_error(exc) from exc
+    if not retryable(old):
+        raise AuthError(_NO_RETRY, status_code=409)
+    store = request.app.state.conv_store
+    try:
+        whose = await asyncio.to_thread(store.owner_state, old["conversation_id"], owner)
+    except sqlite3.OperationalError as exc:
+        raise AuthError("대화 저장소가 바쁩니다 — 잠시 뒤 다시 누르세요.", status_code=503) from exc
+    if whose != "mine":
+        # 알림을 남길 대화가 없다(지웠다) — 다시 시도는 그 대화에 답을 남기는 일이다
+        raise AuthError("그 잡을 맡긴 대화가 없습니다 — 그 보고서의 '발표자료로' 에서 다시 만드세요.", status_code=409)
+    base = _base(request, settings)
+    await settle_open(request, settings, principal)
+    async with lock("create"):
+        now = time.time()
+        recs = await asyncio.to_thread(records, settings)
+        for r in recs:
+            if (r.get("owner_sub") == owner and r["report"]["id"] == old["report"]["id"] and r["options"] == old["options"]
+                    and inflight(r, settings, now)):
+                return {**(_reserved_view(r, now) if reserving(r) else view(r, now=now)), "created": False}
+        live = [r for r in recs if inflight(r, settings, now)]
+        if sum(1 for r in live if r.get("owner_sub") == owner) >= settings.wda_deck_inflight_max:
+            raise AuthError(f"만드는 중인 발표자료가 {settings.wda_deck_inflight_max}건입니다 — 끝난 뒤에 다시 누르세요.", status_code=429)
+        if sum(1 for r in live if box_counts(r, owner, now)) >= settings.wda_deck_inflight_box_max:
+            raise AuthError("지금 발표자료를 만드는 사람이 많습니다 — 잠시 뒤 다시 누르세요.", status_code=429)
+        async with lock(job_id):
+            old = await asyncio.to_thread(load, settings, job_id, owner)      # 잠금 안에서 다시 — 두 번 누른 둘째는 retried_by 를 본다
+            if not retryable(old):
+                raise AuthError(_NO_RETRY, status_code=409)
+            rec = {"job_id": secrets.token_hex(16), "owner_sub": owner, "owner_email": old.get("owner_email") or principal.email or owner,
+                   "conversation_id": old["conversation_id"], "report": dict(old["report"]), "options": dict(old["options"]),
+                   "wda": {"run_id": old["wda"]["run_id"], "format": old["wda"].get("format"), "version": old["wda"].get("version")},
+                   "state": "queued", "created_at": now, "render_submitted_at": None, "images_not_sent": old.get("images_not_sent") or 0,
+                   "finished": None, "dismissed": None, "retry_of": job_id}
+            await asyncio.to_thread(save, settings, rec)
+            old["retried_by"] = rec["job_id"]
+            await asyncio.to_thread(save, settings, old)
+    new_id = rec["job_id"]
+
+    async def undo() -> None:
+        """WDA 가 다시 돌리지 않았다 — 새 잡을 남기지 않고 옛 잡을 다시 누를 수 있게 되돌린다(끊긴 요청에서도 끝까지)."""
+        with anyio.CancelScope(shield=True):
+            async with lock(job_id):
+                await asyncio.to_thread(drop, settings, new_id)
+                cur = await asyncio.to_thread(load, settings, job_id, owner)
+                if cur.get("retried_by") == new_id:
+                    cur.pop("retried_by", None)
+                    await asyncio.to_thread(save, settings, cur)
+
+    try:
+        rendered = await _wda_rerun(base, _token(request, settings, principal), rec["wda"]["run_id"], rec)
+    except DeckError as exc:
+        await undo()
+        _audit(request, principal, "deck_retry", "failed", job_id=job_id, report_id=rec["report"]["id"], error=exc.message[:300])
+        raise _http_error(exc) from exc
+    except BaseException:
+        await undo()
+        raise
+    if rendered:
+        async with lock(new_id):
+            rec["render_submitted_at"] = time.time()
+            await asyncio.to_thread(save, settings, rec)
+    _audit(request, principal, "deck_retry", "ok", job_id=new_id, retry_of=job_id, report_id=rec["report"]["id"],
+           how="render" if rendered else "resume")
+    seen(new_id)
+    f = {"state": "rendering", "step": "렌더 맡김", "progress": 62} if rendered else {"state": "preparing", "step": "다시 돌리는 중", "progress": 5}
+    return {**view(rec, {**f, "error": None, "late": False, "next": None, "skipped": []}), "created": True}
+
+
+@router.delete("/jobs/{job_id}", dependencies=[Depends(_knob)])
+async def deck_delete(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """끝난 내 잡의 WDA 사본을 지운다(M2 · W-17) — RA 에서 보고서를 지운 사람이 WDA 에 남은 본문 · 산출물도 지울 수 있게. 그 사람 이름으로
+    WDA 에 청하고(WDA 가 주인을 다시 본다), 지운 것이 확인된 뒤에만 기록에 적는다. 포털 기록은 보존 기한까지 남는다 — 대화의 알림에 남은
+    받기 링크는 '지워졌다' 로 답한다. 끝나지 않은 잡은 받지 않는다(WDA 에 취소가 없다 — 도는 실행은 WDA 도 거절한다)."""
+    ensure(principal, *NEEDS)
+    _write_capable(request)
+    try:
+        await asyncio.to_thread(load, settings, job_id, principal.subject)       # 잠금보다 먼저(없는 · 남의 잡에 잠금을 만들지 않는다)
+    except DeckError as exc:
+        raise _http_error(exc) from exc
+    async with lock(job_id):
+        rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
+        wda, fin = rec.get("wda") or {}, rec.get("finished")
+        if wda.get("deleted_at"):
+            return view(rec)                                                    # 이미 지웠다 — WDA 를 다시 부르지 않는다
+        if not fin or fin.get("pending"):
+            raise AuthError("아직 끝나지 않은 잡은 지울 수 없습니다 — 끝난 뒤에 지우세요(진행을 그만 보려면 '숨기기').", status_code=409)
+        if not wda.get("run_id") or "owner_seen" in wda:
+            raise AuthError("포털이 따라가지 않은 실행이라 여기서 지울 수 없습니다 — WDA 관리자에게 알리세요.", status_code=409)
+        try:
+            await wda_delete(*_base_and_token(request, settings, principal), wda["run_id"])
+        except DeckError as exc:
+            _audit(request, principal, "deck_delete", "failed", job_id=job_id, report_id=rec["report"]["id"], error=exc.message[:300])
+            raise _http_error(exc) from exc
+        now = time.time()
+        rec["wda"]["deleted_at"] = now
+        fin["expired"] = fin.get("expired") or now          # 받기 링크를 걷는다 — 같은 보고서를 다시 누르면 새로 만든다(WD-D62 와 같은 칸)
+        rec["dismissed"] = rec.get("dismissed") or now
+        await asyncio.to_thread(save, settings, rec)
+    _audit(request, principal, "deck_delete", "ok", job_id=job_id, report_id=rec["report"]["id"])
+    return view(rec)
+
+
 # 받기의 답이 그 꼴의 WDA 파일인가(2차 적대 검토 E, WD-D77) — 허브 Caddy 는 앱 경로가 없으면 SPA 의 index.html 을 200 으로 준다(HEAXHub
 # caddy_bootstrap.json try_files). 머리의 꼴(WDA app.py _DOWNLOAD_META — 꼴마다 정해진 media type, 일반 바이너리도 받는다)과 앞 바이트(zip PK ·
 # %PDF · mp4 ftyp)를 본다. HTML 은 html 출력에만이고 바이트로는 허브의 index.html 과 가를 수 없어 WDA 가 늘 다는 내려받기 머리(FileResponse
@@ -1177,6 +1408,31 @@ async def deck_file(
     settings: Settings = Depends(get_settings),
 ):
     """맡긴 사람만 — 요청한 사람의 이름으로 WDA 에서 받아 그대로 흘린다(attachment · nosniff · no-store · HTML 은 CSP sandbox, WD-D14)."""
+    return await _relay_file(job_id, kind, request, principal, settings, inline=False)
+
+
+# 미리보기의 응답 머리 — 격리는 **응답 머리**가 한다(계획서 M2 'PDF 미리보기(CSP sandbox)'). sandbox 에 allow-* 를 하나도 주지 않으므로 그 문서는
+# 출처가 불투명하고 스크립트가 돌지 않는다(혹시 PDF 가 아닌 것이 실려도 포털 쿠키 · CSRF 값에 닿지 못한다 — 앞 바이트 %PDF 와 nosniff 가 먼저
+# 막는다). frame-ancestors 'self' — 이 길을 틀에 끼울 수 있는 것은 포털 화면뿐이다.
+# ⚠ 화면의 <iframe> 에는 sandbox **속성**을 달지 않는다 — 속성이 있으면 Chromium 의 내장 PDF 보기가 서지 않는다(빈 틀). 머리의 sandbox 는 PDF 보기를
+#   막지 않는다(Chromium 148 실측 11-21 — docs/wda-deck WD-D91).
+PREVIEW_CSP = "sandbox; frame-ancestors 'self'"
+
+
+@router.get("/jobs/{job_id}/preview", dependencies=[Depends(_knob)])
+async def deck_preview(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+):
+    """PDF 미리보기(M2) — 받기와 같은 중계(맡긴 사람만 · 그 사람 이름으로 WDA 에서 받아 흘린다 · 브라우저는 WDA 를 보지 않는다)를 inline 으로.
+    PDF 만이다 — HTML 은 끼우지 않는다(WD-D14)."""
+    return await _relay_file(job_id, "pdf", request, principal, settings, inline=True)
+
+
+async def _relay_file(job_id: str, kind: str, request: Request, principal: Principal, settings: Settings, *, inline: bool):
+    """받기(attachment) · 미리보기(inline)의 몸통 — 기록의 주인 · 끝난 잡 · 만든 파일인지 보고 WDA 의 답을 꼴 · 앞 바이트까지 본 뒤 흘린다."""
     ensure(principal, *NEEDS)
     try:
         rec = await asyncio.to_thread(load, settings, job_id, principal.subject)
@@ -1185,6 +1441,9 @@ async def deck_file(
     fin = rec.get("finished") or {}
     if kind not in _FILE or fin.get("state") != "done" or kind not in {x["kind"] for x in fin.get("files") or []}:
         raise AuthError("그 파일이 없습니다.", status_code=404)
+    if (rec.get("wda") or {}).get("deleted_at"):
+        # 맡긴 사람이 WDA 의 사본을 지웠다(M2) — WDA 에 묻지 않는다
+        raise AuthError("파일이 지워졌습니다 — 그 보고서의 '발표자료로' 에서 '다시 만들기' 를 누르세요.", status_code=404)
     base, token = _base_and_token(request, settings, principal)
     cli = _http(httpx.Timeout(300.0, connect=10.0))
     try:
@@ -1243,13 +1502,17 @@ async def deck_file(
         await cli.aclose()
         raise AuthError("WebDesignAgents 가 아닌 곳의 답을 받았습니다 — 허브에서 앱 경로가 바뀌었거나 내려가 있습니다. 잠시 뒤 다시 받으세요.",
                         status_code=502)
-    headers = {"Content-Disposition": f"attachment; filename=\"deck{_FILE[kind][0]}\"; filename*=UTF-8''{quote(_filename(rec['report'].get('title') or '', kind))}",
+    headers = {"Content-Disposition": f"{'inline' if inline else 'attachment'}; filename=\"deck{_FILE[kind][0]}\"; "
+                                      f"filename*=UTF-8''{quote(_filename(rec['report'].get('title') or '', kind))}",
                "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"}
-    if kind == "html":
+    if inline:
+        headers["Content-Security-Policy"] = PREVIEW_CSP
+    elif kind == "html":
         headers["Content-Security-Policy"] = "sandbox"
     if up.headers.get("content-length") and not up.headers.get("content-encoding"):
         headers["Content-Length"] = up.headers["content-length"]
-    _audit(request, principal, "deck_download", "ok", job_id=job_id, kind=kind, bytes=up.headers.get("content-length"))
+    _audit(request, principal, "deck_preview" if inline else "deck_download", "ok", job_id=job_id, kind=kind,
+           bytes=up.headers.get("content-length"))
 
     async def body() -> AsyncIterator[bytes]:
         if first:
