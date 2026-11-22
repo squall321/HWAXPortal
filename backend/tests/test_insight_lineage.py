@@ -495,4 +495,4 @@ def test_안쪽_기한의_합이_게이트웨이_인사이트_도구의_기한�
     assert m and m.group(1) == m.group(2)
     outer = float(m.group(1))
     assert 0 < L.CALL_TIMEOUT_S < L.READ_BUDGET_S and 2 * L.READ_BUDGET_S + 5 <= outer, (L.CALL_TIMEOUT_S, L.READ_BUDGET_S, outer)
-    assert X.LAY_TIMEOUT_S >= 2 * L.READ_BUDGET_S
+    assert X.CALL_TIMEOUT_S == L.CALL_TIMEOUT_S and X.LAY_TIMEOUT_S >= 2 * L.READ_BUDGET_S
