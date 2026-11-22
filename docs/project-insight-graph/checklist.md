@@ -68,6 +68,7 @@
 - [x] 엔진 — 리스크 좌석의 RA 온톨로지 읽기에 같은 과제 거름(투영보다 먼저 — PLAN §12-2) — 에이전트 서버 `beb73d8`(11-02) `_risk_hide_prior_findings`, 11-21 코드로 확인
 - [x] 사용자 결정 — RA 투영을 열지 · 포털이 RA 시스템 관리자 자격을 새로 쥘지 — **11-21 코드만 지어 두고 기본은 끈다**(RA 최신판 기준 — 객체를 id 로 다는 길 · SP 에서 받은 객체는 `code` = SP 키). 관리자 자격은 쥐지 않는다(`docs/leftovers-1121/context-notes.md` L21-6)
 - [x] RA — org 로 넓힌 인사이트만 · SP 키로 선 RA 과제 객체에 — **스위치 뒤(기본 꺼짐)로 지음 11-22**(사용자 결정 L21-6 ③): 조직에만 연 확인 카드의 RA 보고서에 code = SP 키인 과제 객체 하나를 그 사람의 RA 연결로 태그로 단다(`POST /insights-api/cards/{id}/ra` · 주인이 화면에서 누른다 · 한 카드 한 번 · 거두면 원장 표지만 — 태그는 남는다), 관리자 쓰기(객체 · 관계 · 축)는 짓지 않음, 포털 `9c758ce2` · `ee39a85c` · `8235f561`, 시험 39 · 변이 서른하나(PG-53 ~ PG-60 · contracts §11)
-- [ ] cae00 — RA 투영 켜기(server-setup 1절: SP 받기가 `plm_task` 를 code = key 로 싣는가 확인 → `INSIGHT_RA_PROJECT=true` → 카드 하나로 RA 과제 객체 화면에 그 보고서가 서는지) · 사용자가 정할 것 둘 — 거둘 때 태그 떼기(PG-55 (가) ~ (다)) · 리스크 좌석의 `get_object` 관련 보고서 거름(PG-58)
+- [ ] cae00 — RA 투영 켜기(server-setup 1절: SP 받기가 `plm_task` 를 code = key 로 싣는가 확인 → `INSIGHT_RA_PROJECT=true` → 카드 하나로 RA 과제 객체 화면에 그 보고서가 서는지) · 거둘 때 태그는 남기고 RA 에 떼기 창구를 청함(사용자 결정 11-22 — PG-55) · 리스크 좌석의 `get_object` 관련 보고서는 L21-5 ① 을 따라 거르지 않음(PG-58)
+- [ ] RA 가 `entities/remove` 를 올리면 거두기에 태그 떼기를 붙인다(`../leftovers-1121/ra-request-1122.md` 4 — RA 담당 답 기다림)
 - [ ] MX 백서 — 사람이 위키에 남기기로 고른 심의 원천에 `subject_hints`(그 세션 답 뒤 · cae00 위키 켜기는 그 세션과 사용자)
 - [ ] SP `caegroupdatahub` — 그 팀이 받겠다고 할 때만(Q17)
