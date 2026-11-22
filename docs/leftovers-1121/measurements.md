@@ -32,6 +32,10 @@
 - **심의 손잡이의 기본값** — 절차서는 「손잡이는 전부 기본 꺼짐」 이라 적지만 엔진은 `DELIB_REBUT_QUOTE` · `DELIB_CROSS_EXAM` 의 기본이 1(켜짐)이다. T2 · T6 의 A/B 는
   「끔 대 켬」 으로 돌려 대조군이 끈 쪽이 된다 — 러너는 대조군을 0 으로 보내므로 그대로 돌리면 된다. 결과를 읽을 때 「운영 기본 = 실험군」 임을 적는다.
 - **조합 QA 의 점검 스크립트 자리** — 계획서는 `scripts/rr_gateway_check.py` 라 적지만 실제는 `HWAXRisk/backend/scripts/rr_gateway_check.py` 다.
-- **20만 창 A/B** — 리스크 앱이 임시 에이전트 서버를 보게 하는 법이 절차서에 없다. 재기 전에 그 절을 채워야 한다.
-- **10-29 O-4** — 손잡이 이름(`CHAT_LLM_REASONING_EFFORT`)만 있고 값과 차례가 없다.
-- **문서 변환의 기준선 둘**(포털 「Report Archive 로 보내기」 · AIDataHub `convert_file`)을 금 표본에 돌리는 명령이 없다.
+- **20만 창 A/B** — 메움(11-22) — `../risk-200k/server-setup.md` 4-1 ~ 4-4. 리스크 앱은 엔진을 포털 중계(`HWAXRISK_PORTAL_BASE` → 포털
+  `AGENT_SERVER_URL`)로만 보고 잡마다 고르는 칸이 없어 **박스 전체**다 — 임시 서버(원장 따로 · `LLM_CONTEXT_TOKENS=200000`)를 띄우고 사람이 없는 때
+  포털만 그쪽으로 다시 띄웠다가 되돌린다(운영 에이전트 서버는 내리지 않는다).
+- **10-29 O-4** — 메움(11-22) — `../request-1029/server-setup.md` 4-1. `xhigh`(대조군) → `medium` → `low`, 조건마다 16문항 × 3회(T1 관례). `high` 는
+  모델 템플릿이 받는지 확인 필요.
+- **문서 변환의 기준선 둘** — 메움(11-22) — `../doc-to-ra/server-setup.md` §8. 돌리는 명령은 포털 업로드 창구 둘(목적지 `reportarchive` · `aidatahub`)과
+  DocForge `edits.py snap` 이다. **채점기는 아직 없다** — DocForge `run.py` 가 DocForge 패키지만 읽어 지어야 한다(DocForge 몫).

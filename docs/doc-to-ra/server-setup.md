@@ -102,3 +102,83 @@ python3 infra/scripts/sync-he-personas.py --apply   # 반영
 | 리소스 'RA 상한을 넘어 올리지 않았습니다' 경고 | 25MB 넘는 그림 · 원본 첨부 — 보고서의 그 칸이 비었다. RA 에서 원본을 직접 붙인다 |
 
 되돌리기 — 게이트웨이에서 내리려면 HEAXHub 등록 사본의 `status: draft` 로 update-all(DocForge `docs/DEPLOY.md` §8). 정밀 변환 목적지만 숨기려면 §4 의 허가를 거둔다.
+
+## 8. 금 표본 기준선 둘 — 돌리는 명령 · 채점은 아직 없다(11-22)
+
+> PLAN §10 · DocForge `docs/EVAL.md` §3 · `docs/M0.md` §9 의 기준선 ① 포털 'Report Archive 로 보내기' ② AIDH `convert_file` 을 금 표본에 돌리는 법이다.
+> 대조 — 포털 `09693c6f`(`backend/app/agent/routes.py` `_dispatch_inner` · `upload.py`) · AIDataHub `b2f1b72`(`mcp_runtime.convert_file` →
+> `mcp_write_svc.run_convert`) · DocForge `21ec48c`(`scripts/eval/run.py` · `edits.py`). 코드로 맞춘 명령이고 실호출로 돌려 보지는 않았다 — 금 표본 첫 회에
+> 문서 하나로 먼저 돌린다.
+
+### 8-1. 무엇이 있고 무엇이 없나
+
+| | 돌리기(변환 결과 받기) | 채점(EVAL §2 지표) |
+|---|---|---|
+| ① 'Report Archive 로 보내기' | **있다** — 챗 업로드와 같은 포털 창구 둘(`POST /agent/upload` → `POST /agent/upload/dispatch`, 목적지 `reportarchive`). PPTX 만(RA `/api/imports/pptx` 가 받는 것이 이것뿐) | **없다** |
+| ② AIDH `convert_file` | **있다** — 같은 창구, 목적지 `aidatahub`(포털이 파일을 AIDH inbox 에 두고 그 사람 PAT 로 `convert_file` 을 부른다 — 저장하지 않는다). PPTX · DOCX · XLSX | **없다** |
+| 사람 편집량(EVAL §5) | ① 만 — 가져오기 **직후** `edits.py snap` | 있다 — `edits.py diff`(갈래 `baseline`) |
+
+채점이 없는 까닭 — DocForge `scripts/eval/run.py` 는 DocForge 패키지만 읽는다(`Delivered` 가 `report.json` · `conversion.json` · `ir.json` 을 함께 연다).
+①의 결과는 RA 보고서(저장 꼴 — `snap` 사본), ②의 결과는 AIDH record(`sections` · `tables` · `figures` · `meta`)라 그대로는 못 넣는다.
+**지어야 할 것**(DocForge 몫 — 그쪽 `docs/checklist.md` 의 `[ ] 기준선 — 포털 RA 보내기 · AIDH convert_file`) —
+
+- 기준선 채점기 — 같은 `<파일>.truth.json`(`scripts/m0/truth.py`)과 `run.py` 머리의 견주는 규칙으로 RA 보고서 사본 · AIDH record 를 잰다.
+- 셀 수 있는 지표 — 글(text) · 수치(nums) · 표 칸(cells) · 병합(merges) · 차트 값(chart) · 그림(pics · emf) · 시간(아래 `seconds.tsv`).
+- 기준선에 없는 지표 — 글 회계(acct)와 무음 누락(unacc)은 DocForge 변환 보고서의 회계로 센다. 기준선에는 그 보고서가 없다(①은 RA 가져오기의
+  경고 `warnings` 만 있다 — 그것으로 셀지는 확인 필요). ②는 RA 보고서를 만들지 않아 RA 저장 검증 · 배치를 셀 것이 없다.
+- 규칙을 새로 정할 곳 — XLSX 표 칸은 `run.py` 가 IR 범위(`Locator.path`)로 RA 표를 시트 좌표에 놓는데 기준선에는 IR 이 없다(확인 필요 — 표를
+  어떻게 시트에 맞출지).
+- DRM 5 — EVAL 에 기준선 · 정답 규칙이 없다(확인 필요).
+
+### 8-2. 준비
+
+- 돌리는 사람 — 포털 PAT(`/auth/pat`) 하나. 그 사람이 `feat:upload` · `plat:reportarchive`(①) · `plat:aidatahub`(②)를 가져야 하고, RA 를 그 사람
+  명의로 부를 수 있어야 한다(위임 `RA_SSO_SECRET` 또는 '외부 연결' 토큰 — §2 의 'RA 명의' 줄과 같다).
+- ①은 RA 에 **보고서를 실제로 만든다**(PPTX 하나에 하나). 자리는 그 사람의 RA 연결이 정한다 — 위임 토큰이면 RA 가 홈 부서 → 첫 조직 → 개인 공간 순으로
+  고른다(포털 `_ra_workspace`). 금 표본이 부서 공간에 보이면 안 되면 돌리기 전에 정한다(사람). 이 RA 에서 가져오기를 한 번도 안 썼으면 §7 의
+  `__import_blank__` 줄을 먼저.
+- ②는 AIDH 에 저장하지 않는다. 포털이 inbox 에 둔 사본은 `AIDH_INBOX_TTL_HOURS`(기본 24시간) 뒤 지운다. 포털 스테이징은 `UPLOAD_STAGING_TTL_HOURS`
+  (기본 6시간) 뒤.
+- 시간 한도 — ②의 `convert_file` 과 ①의 보고서 만들기(`create_report_draft`)는 포털의 MCP 한 번 한도(90초 — `upload.mcp_call` 기본), ①의 RA 가져오기는
+  600초에 걸린다. 넘으면 그 문서는 실패로 남는다(사람이 겪는 것과 같다 — 기준선의 몫이다). ①의 크기 한도는 `RA_IMPORT_MAX_MB`(기본 25).
+- 파일 이름에 `;` · `,` · `"` 가 들면 `curl -F` 가 옵션으로 읽는다 — 그런 이름은 먼저 바꾼다.
+
+### 8-3. 돌리기
+
+포털 리포 루트에서. 결과 폴더는 리포 밖이고 파일 이름이 든다(EVAL §4 와 같이 표에는 지문만).
+
+```bash
+G=../DocForge/var/dev-data/gold                      # 금 표본(DocForge docs/M0.md §2) — 사람이 다른 곳에 두었으면 그 경로
+O="$HOME/docforge-baseline-$(date +%Y%m%d)"; mkdir -p "$O/ra" "$O/aidh"; chmod 700 "$O"
+H="$O/auth.hdr"; ( umask 077; printf 'Authorization: Bearer %s\n' "$HWAX_GATEWAY_PAT" > "$H" )   # PAT 는 명령줄에 싣지 않는다
+P=http://127.0.0.1:8723/agent/upload
+send() {   # send <파일> <목적지> <결과 폴더> — 올리기 → 보내기, 답과 걸린 초를 남긴다
+  local f="$1" n t0; n=$(basename "$1"); t0=$(date +%s)
+  curl -s --noproxy '*' -H @"$H" -F "file=@$f" "$P" > "$3/$n.upload.json"
+  python3 -c 'import json,sys; u=json.load(open(sys.argv[1])); print(json.dumps({"staging_id": u["staging_id"], "filename": u["filename"], "destination": sys.argv[2]}))' \
+    "$3/$n.upload.json" "$2" > "$3/$n.req.json"
+  curl -s --noproxy '*' -H @"$H" -H 'Content-Type: application/json' --data-binary @"$3/$n.req.json" "$P/dispatch" > "$3/$n.json"
+  printf '%s\t%s\n' "$n" "$(( $(date +%s) - t0 ))" >> "$3/seconds.tsv"
+}
+find "$G" -type f -name '*.pptx' | sort | while IFS= read -r f; do send "$f" reportarchive "$O/ra"; done                        # ①
+find "$G" -type f \( -name '*.pptx' -o -name '*.docx' -o -name '*.xlsx' \) | sort | while IFS= read -r f; do send "$f" aidatahub "$O/aidh"; done   # ②
+```
+
+- 답 — ①은 `<이름>.json` 에 `stage: done` · `report_id` · `pages` · `blocks` · `warnings`, ②는 `stage: done` · `result.record`(AIDH 변환 결과).
+  실패는 `stage: failed` · `error`, 포털 오류 본문 `{"detail": …}`(MCP 호출 실패는 502), 또는 `<이름>.upload.json` 의 오류(권한 · 크기)다.
+- `send` 의 머리 파일 · 요청 꼴은 dev 의 가짜 받는 쪽으로 확인했다(11-22 — 머리 `Bearer` · 여러 부분 `file` · JSON 본문). 포털 · RA · AIDH 실호출은 아니다.
+
+①의 RA 보고서를 **누가 고치기 전에** 사본으로 받는다 — 편집량(EVAL §5)의 처음 것이자 채점기의 입력이다. DocForge 리포에서(길 A — 길 B 면
+`.venv/bin/python` 대신 `bash scripts/dev-in-sif.sh python` 이고 `--to` 는 `var/dev-data` 아래 — DocForge `docs/CAE00-DEV.md`). RA 주소 · 읽기 토큰은
+DocForge 의 `DOCFORGE_EVAL_RA_URL` · `DOCFORGE_EVAL_RA_TOKEN`(EVAL §5 — 명령줄에 쓰지 않는다)이고, 토큰은 보고서를 만든 그 사람의 것이다.
+
+```bash
+cd ../DocForge
+for j in "$O"/ra/*.pptx.json; do
+  rid=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("report_id") or "")' "$j")
+  [ -n "$rid" ] && .venv/bin/python scripts/eval/edits.py snap --report "$rid" --to "${j%.json}.report.json"
+done
+```
+
+끝나면 `rm -f "$H"`. 수치는 DocForge `docs/m0-results.md` 에(EVAL §4 처럼 이름 대신 지문), 결정은 DocForge `docs/context-notes.md` 와 이 폴더
+context-notes 에 한 줄.

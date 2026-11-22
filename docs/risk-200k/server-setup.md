@@ -2,6 +2,7 @@
 
 > 계획 [PLAN.md](PLAN.md) · 결정 [context-notes.md](context-notes.md) · 체크리스트 [checklist.md](checklist.md).
 > 대조 시점 2026-10-21 — 엔진 `27d7d8c` · 리스크 앱 W3 커밋 · 포털 이 문서의 커밋. 박스 상태는 적지 않는다(그때그때 본다).
+> 4절(A/B)의 4-1 ~ 4-4 는 2026-11-22 에 리스크 앱 `699bba8` · 에이전트 서버 `a996b69` · 포털 `09693c6f` 의 코드로 다시 대조해 메웠다.
 
 ## 0. 무엇이 바뀌나 — 스위치는 없다
 
@@ -56,11 +57,130 @@
 1M 으로 돈다(10-22 대조). 임시 서버를 띄운 뒤 그 `/health` 의 `context_tokens` 가 200000 이고 `context.source` 가 `env` 인지 먼저 본다.
 
 1. 대상 하나를 고른다 — 긴 카드를 가진 전문가가 범위에 드는 것(dev 표본에서 passive-fuse-protection · mech-tim 같은 영역).
-2. 1M 으로 검토 잡 한 번(지금 그대로).
-3. 임시 에이전트 서버(빈 포트, `LLM_CONTEXT_TOKENS=200000`)를 띄우고 리스크 앱이 그쪽을 보게 해 같은 대상을 새 잡으로 한 번 더. 끝나면
-   임시 서버를 그 PID 로만 내린다(포트킬 금지 — docs/gotchas.md).
-4. 견줄 것 — 셀마다 걸림(FAIL · WARNING) 카드 집합의 일치율, 판정 호출 · 훑기 · 카드 밖 호출 수, 잡 시간, `[누락 0 증명]` 줄.
+2. 지금 그대로 검토 잡 한 번(A) — **끝날 때까지**(열린 셀 0). 그 창을 적는다 — 운영 `curl -s --noproxy '*' http://127.0.0.1:9009/health` 의
+   `context_tokens` · `context.source`. `docs/delib-ops` 로 `LLM_CONTEXT_TOKENS`(섞인 풀의 작은 창)를 적은 박스면 A 는 1M 이 아니라 그 값이다 —
+   200000 이하면 A 와 B 의 창이 같아 잴 것이 없다.
+3. 같은 대상 · 같은 범위를 20만 창으로 새 잡 한 번(B) — 4-2 의 때에 4-3(임시 서버) → 4-4(포털 중계를 임시 서버로 · B 잡 · 되돌리기). 리스크 앱이
+   엔진을 고르는 칸이 없어 이 길이 박스 전체에 걸린다(4-1).
+4. 견줄 것 — 셀마다 걸림(FAIL · WARNING) 카드 집합의 일치율, 판정 호출 · 훑기 · 카드 밖 호출 수, 잡 시간, `[누락 0 증명]` 줄. 엔진 로그의
+   `조각 n개` · `쪽 n개` 줄은 A 가 운영 로그(`../HWAXAgentServer/agent-server.log`), B 가 임시 서버 로그(`$D/agent.log` — 4-3)에 있다.
 5. 결과는 이 폴더의 context-notes 에 W-D 로 적는다(수치 · 대상 · 날짜). 그 배수로 호출 어림(W-D19)을 보정한다.
+
+### 4-1. 리스크 앱은 엔진을 어디서 찾나 — 박스 전체 설정이다(11-22 코드 대조)
+
+- 리스크 앱은 에이전트 서버를 직접 부르지 않는다. 카드 대조 넷(`limits` · `pack` · `plan` · `run`)과 패널(`/agent/chat`)은 `HWAXRISK_PORTAL_BASE`
+  (리스크 앱 매니페스트 `.portal/manifest.yaml` 의 `launch.env` — 정문 nginx 오리진)의 포털로 간다(리스크 앱 `backend/app/engine_client.py`
+  `PortalReviewEngine` · `PortalPanelEngine`). 포털은 그것을 자기 `AGENT_SERVER_URL`(포털 `backend/.env`, 기본 `http://127.0.0.1:9009`) 하나로
+  중계한다(포털 `backend/app/agent/routes.py` `_cr_unary` · `card_review_run`). 게이트웨이는 거치지 않는다.
+- 리스크 앱의 `HWAXRISK_AGENT_URL`(비면 `http://127.0.0.1:9009`)은 `/health` 만 읽는다 — 패널의 모델 스냅숏과 비우기 깃발. 카드 대조의 창은 여기서
+  오지 않는다.
+- 둘 다 환경변수다 — `<데이터>/knobs.env` 의 손잡이(`config.BOX_KNOBS`)가 아니다. 잡마다 엔진을 고르는 칸도 없다.
+- 그래서 리스크 앱이 임시 서버를 보게 하는 길은 **포털의 중계 주소를 임시 서버로 바꾸는 것** 하나다. 그동안 이 포털의 챗 · 띵킹 · 웹 심의 ·
+  리스크 패널 · 카드 대조가 **모두** 임시 서버로 간다(창 20만 · 임시 서버의 원장). 게이트웨이를 거친 MCP 심의(`deliberate_*`)는 게이트웨이
+  설정의 에이전트 서버 백엔드(`hwax-deliberation` — 예제는 `:9009/mcp/`)로 가므로 운영 서버에 남는다. 운영 에이전트 서버는 내리지 않는다 —
+  포털만 두 번(바꿀 때 · 되돌릴 때) 다시 띄운다.
+- 포털이 같은 주소로 묻는 뒤 일(이용 통계 접기 `usage_fold` · 알림 폴러 · 인사이트 접수)도 그동안 임시 서버에 묻는다. 이용 통계의 에이전트 서버
+  몫은 오늘 · 아직 안 닫힌 날이면 되돌린 뒤 다음 접기가 운영 값으로 다시 쓰지만, 그 사이 닫히는(사흘째) 날이 있으면 임시 서버의 수로 닫힌다 —
+  되돌린 뒤 관리 '이용 통계' 의 접기 기록을 본다(닫힌 날을 다시 여는 길은 대조하지 않았다 — 확인 필요).
+- 리스크 앱만 따로 돌리는 길(포털을 하나 더 띄우고 리스크 앱의 `HWAXRISK_PORTAL_BASE` 를 그쪽으로)은 쓰지 않는다 — 리스크 앱을 다시 배치해야
+  하고(그동안 그 앱의 다른 잡도 그쪽으로 간다), 두 번째 포털이 같은 원장으로 뒤에서 도는 일(알림 폴러 · 이용 통계 접기 같은 것)을 함께 돌리는지
+  대조하지 않았다(확인 필요).
+
+### 4-2. 언제 — 사람이 없는 때
+
+1. A 잡이 끝났다(열린 셀 0). 판(`limits_rev`)이 바뀌면 도는 잡의 남은 셀은 새 창으로 계획을 다시 받는다(2절 3) — 끝나지 않은 A 의 셀이 20만으로
+   섞인다. 되돌릴 때도 같다 — B 잡이 끝나기 전에 되돌리면 B 의 남은 셀이 A 의 창으로 돈다.
+2. 운영 에이전트 서버가 한가하다 — 셋 다 0 이다(`../llm-pool/capacity.md` 1절과 같은 줄). 리스크 앱 화면에서도 A/B 말고 돌거나 기다리는 잡이 없다.
+
+   ```bash
+   curl -s --noproxy '*' http://127.0.0.1:9009/health \
+     | python3 -c 'import json,sys; d=json.load(sys.stdin); print("카드 대조", d.get("review_active"), "· 심의", d.get("delib_active"), "· 줄 선 심의", d.get("delib_queued"))'
+   ```
+
+3. 챗 · 심의를 쓰는 사람에게 미리 알린다 — 바꾼 동안 시작한 웹 심의는 임시 서버의 원장에 남아, 되돌린 뒤에는 포털이 운영 서버에 묻으므로 화면에서
+   이어지지 않는다. 밤이나 주말처럼 아무도 쓰지 않는 때를 고른다.
+4. 재는 동안 update-all 을 돌리지 않는다 — 포털을 다시 띄우면 그 순간 운영 주소로 돌아간다(1 의 섞임).
+
+### 4-3. 임시 에이전트 서버 띄우기
+
+`start.sh` 로 띄우지 않는다. `start.sh` 는 `.env` 를 명령줄 환경보다 **뒤에** 읽어(`.env` 가 이긴다) 운영 `.env` 에 `LLM_CONTEXT_TOKENS`(4절 2)가
+있으면 이 실행의 20만을 덮고, `AGENT_PORT` 가 있으면 그 포트(운영 서버)를 내리고 다시 띄운다. `-d` 면 기본 로그(`agent-server.log`)를 비우고 새로
+쓴다. 그리고 같은 리포 자리의 잡 원장(`delib-jobs` — `artifacts` 의 형제)을 함께 쓴다 — 기동 때 원장의 줄 선 심의를 다시 세우므로
+(`delib_jobs._requeue`) 운영 서버의 줄이 두 번 돈다. 아래는 `.env` 를 `start.sh` 와 같은 규칙으로 읽은 **뒤에** 이 실행의 값을 덮고, 원장 · 그림 ·
+비우기 깃발 · 기준선 자리 · 토큰 장부를 따로 둔다.
+
+```bash
+cd ../HWAXAgentServer                     # 포털 리포 루트에서
+T=9019                                    # 빈 포트 — 허브 앱 포트 풀(9100 ~ 9999) 밖
+D="$HOME/agent-ab-200k"                   # 이 실행의 몫(원장 · 그림 · 깃발 · 로그) — 운영 자리와 겹치지 않게
+ss -ltn | grep ":$T " || echo "· :$T 비었다"   # 줄이 찍히면 누가 쓴다 — T 를 바꾼다
+mkdir -p "$D"
+(
+  while IFS= read -r l || [ -n "$l" ]; do   # start.sh 와 같은 규칙 — KEY=값 줄만, 양끝 따옴표만 벗긴다
+    case "$l" in ''|'#'*) continue ;; esac
+    printf '%s' "$l" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=' || continue
+    k="${l%%=*}"; v="${l#*=}"
+    case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
+    export "$k=$v"
+  done < .env
+  export VLLM_BASE_URL="${VLLM_BASE_URL:-http://127.0.0.1:8000/v1}" VLLM_MODEL="${VLLM_MODEL:-qwen2.5-7b-dev}"
+  export LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S="${LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S:-300}"
+  export MCP_CONFIG="${MCP_CONFIG:-$(pwd)/mcp_servers.json}"
+  export LLM_CONTEXT_TOKENS=200000 ARTIFACT_DIR="$D/artifacts" DELIB_JOB_DIR="$D/delib-jobs" \
+         DRAIN_STATE_PATH="$D/review-drain.json" SEAT_EVAL_DIR="$D/seat-eval" USAGE_TOKENS_DIR="$D/usage"
+  mkdir -p "$ARTIFACT_DIR"
+  nohup .venv/bin/uvicorn app:app --host 127.0.0.1 --port "$T" --timeout-graceful-shutdown 1 > "$D/agent.log" 2>&1 &
+  echo $! > "$D/pid"
+)
+```
+
+- LLM 주소 · 키 · 모델 · 출력 상한(`CARD_REVIEW_MAX_TOKENS` 등)은 운영 `.env` 그대로다 — 창만 다르다. 임시 서버의 사람별 LLM 토큰은 운영
+  장부가 아니라 `$D/usage` 에 쌓인다.
+- 확인 — 몇 초 뒤 둘 다 `200000 env` 다(`limits` 의 `features` 는 `['chunk', 'must_full']`).
+
+  ```bash
+  curl -s --noproxy '*' http://127.0.0.1:$T/health | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["context_tokens"], d["context"]["source"])'
+  curl -s --noproxy '*' http://127.0.0.1:$T/card-review/limits | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["ctx_tokens"], d["ctx_source"], d["features"])'
+  ```
+
+- dev 에서 이 블록 그대로 띄워 확인했다(11-22 — 둘 다 `200000 env`, PID 로 내린 뒤 포트가 빈다). cae00 에서는 처음이다.
+
+### 4-4. 포털 중계를 임시 서버로 · B 잡 · 되돌리기
+
+```bash
+cd ../HWAXPortal                          # 4-3 과 같은 셸 — T · D 가 그대로 있어야 한다
+apptainer instance stop hwax_portal && APPTAINERENV_AGENT_SERVER_URL="http://127.0.0.1:$T" ./infra/scripts/start.sh
+```
+
+- apptainer 는 `--env` > `APPTAINERENV_*` > 호스트 환경 순이고(`infra/scripts/start.sh` 의 NO_PROXY 주석 — 실측 1.3.6), 포털 설정은 환경변수가
+  `backend/.env` 를 이긴다(pydantic-settings). `start.sh` 는 `AGENT_SERVER_URL` 을 `--env` 로 넘기지 않으므로 이 한 줄이 컨테이너에 든다.
+  `export` 하지 않는다 — 셸에 남으면 되돌릴 때도 실린다.
+- 확인 — 포털을 거친 창이 임시 서버의 것이다(`feat:deliberation` 이 있는 사람의 포털 PAT — 명령줄에 싣지 않게 머리 파일로).
+
+  ```bash
+  H=$(mktemp); printf 'Authorization: Bearer %s\n' "$HWAX_GATEWAY_PAT" > "$H"     # mktemp 는 0600 이다
+  curl -s --noproxy '*' -H @"$H" http://127.0.0.1:8723/agent/card-review/limits \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("ctx_tokens"), d.get("ctx_source"))'   # 200000 env
+  ```
+
+- B 잡 — 리스크 앱 쪽은 할 일이 없다. 앱이 창 · 판을 60초 동안 들고 있으므로(`review_runner.LIMITS_CACHE_S`) 확인 뒤 1분 넘게 지나 같은 대상 · 같은
+  범위로 **새** 검토 잡을 만든다. scope 로 전문가 몇 명만 고른 잡이면 마감 범위가 닫히지 않아 쟁점 패널 · 영역 요약이 돌지 않는다
+  (`../risk-review-redesign/server-setup-m3.md` 의 9명 파일럿과 같다). 쟁점 패널이 도는 범위면 그 패널도 임시 서버로 간다 — 견줄 것(4)은 셀 ·
+  전문가 보고서까지라, 셀이 다 닫히면 되돌리기 전에 잡을 멈춘다(`risk_job_action(action='pause')` 또는 화면).
+- 되돌리기 — B 의 셀이 다 닫힌 뒤. 운영 값이 돌아왔는지(4절 2 에서 적은 창 · 출처) 보고 임시 서버를 **그 PID 로만** 내린다(포트킬 금지 —
+  docs/gotchas.md).
+
+  ```bash
+  apptainer instance stop hwax_portal && ./infra/scripts/start.sh            # APPTAINERENV_ 없이
+  curl -s --noproxy '*' -H @"$H" http://127.0.0.1:8723/agent/card-review/limits \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("ctx_tokens"), d.get("ctx_source"))'   # 운영 값
+  kill "$(cat "$D/pid")"
+  ps -p "$(cat "$D/pid")" >/dev/null && echo "아직 산다 — 몇 초 뒤 다시 본다" || echo "내렸다"
+  ss -ltn | grep ":$T " || echo "· :$T 비었다"
+  rm -f "$H"
+  ```
+
+- `$D` 는 결과(4 · 5)를 적은 뒤 지운다 — 로그에 대상 정보가 남는다.
 
 ## 5. dev 에서 미리 본 것
 
