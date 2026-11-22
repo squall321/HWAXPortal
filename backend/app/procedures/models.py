@@ -421,6 +421,25 @@ def omit_empty_optionals(spec: ProcedureSpec, scope: dict) -> dict:
     return scope
 
 
+def ungated_write(st: "Step") -> bool:
+    """사람 확인 없이 도는 쓰기 · 잡 단계인가 — 자원을 쓰거나 잡을 만드는 부류(WARN_EXACT · WARN_PREFIX)인데 `gate: human` 이 없다.
+
+    저장 검증이 '게이트를 권한다' 고 경고하는 바로 그 판정이다(`validate_spec`). 거절이 아니라 경고라 이런 단계는 gate 없이 저장되고
+    live 실행에서 확인 없이 나간다 — 게이트웨이 도구로 시작하는 live 실행은 이 판정으로 선다(routes `start_run`, W-117).
+    자기 dry_run 을 가진 도구(DRY_RUN_TOOLS)에 **리터럴** `dry_run: true` 가 박힌 미리보기 단계는 아무것도 만들지 않는다. 템플릿
+    (`"{{dry_run}}"`)은 실행 때 무엇이 올지 모르므로 쓰기로 센다.
+    """
+    if not (st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX)):
+        return False
+    preview = st.tool in DRY_RUN_TOOLS and st.args.get("dry_run") is True
+    return st.gate != "human" and not preview
+
+
+def ungated_writes(spec: "ProcedureSpec") -> list[str]:
+    """이 절차에서 사람 확인 없이 도는 쓰기 · 잡 단계의 도구 이름(단계 차례 그대로 — 같은 도구가 두 번이면 둘)."""
+    return [st.tool for st in spec.steps if ungated_write(st)]
+
+
 def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
     """절차를 저장해도 되는지 본다. 문제를 **전부** 모아 돌려준다(첫 건에서 멈추지 않는다).
 
@@ -450,12 +469,8 @@ def validate_spec(spec: ProcedureSpec, *, max_steps: int = 30) -> list[str]:
             # 챗 기록(미리보기 → 게시)을 편 초안에 남는다. 그 결과의 토큰은 실행기가 기록에서 가린다(runner `_one`).
             errs.append(f"warn:{at}: 게시 단계({publish_at}단계)가 게이트 앞뒤로 스스로 미리보기를 받는다 — 이 단계는 지운다"
                         f"(남기면 Report Archive 를 한 번 더 부를 뿐이고, 그 결과의 확인 토큰은 기록에서 가린다)")
-        if st.tool in WARN_EXACT or st.tool.startswith(WARN_PREFIX):
-            # 자기 dry_run 을 가진 도구(DRY_RUN_TOOLS)에 **리터럴** `dry_run: true` 가 박힌 미리보기 단계는
-            # 아무것도 만들지 않는다. 템플릿(`"{{dry_run}}"`)은 실행 때 무엇이 올지 모르므로 계속 경고한다.
-            preview = st.tool in DRY_RUN_TOOLS and st.args.get("dry_run") is True
-            if st.gate != "human" and not preview:
-                errs.append(f"warn:{at}: 자원을 쓰거나 잡을 만든다 — 게이트를 권한다")
+        if ungated_write(st):
+            errs.append(f"warn:{at}: 자원을 쓰거나 잡을 만든다 — 게이트를 권한다")
 
         # ② 게이트웨이 백스톱에 걸리는 이름은 애초에 못 부른다
         if st.tool.startswith(GW_DENY_PREFIX) or st.tool.endswith(GW_DENY_SUFFIX):

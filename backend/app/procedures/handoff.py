@@ -112,9 +112,19 @@ def run_evidence(store, run: dict) -> dict:
     return {"evidence": items, "brief": brief, "called": len(called), "dropped": dropped, "not_called": not_called}
 
 
+def busy(run: dict) -> bool:
+    """도는 실행인가 — running, 또는 실행기를 기다리는 절차 실행의 queued.
+
+    빈 실행(한 단계씩 돌린 실행 — 판본이 없다)의 queued 는 도는 것이 아니다. 단계가 끝나면 다음 단계를 받는 자리로 queued 에 쉰다
+    (runner `step_once`) — 단계를 붙이는 창구는 요청 때 곧바로 running 으로 잡으므로(W-112) 쉬는 queued 와 도는 running 이 갈린다.
+    그것을 도는 실행으로 읽으면 성공한 빈 실행은 영영 못 넘긴다(반대 검토 M2)."""
+    state = run.get("state")
+    return state == "running" or (state == "queued" and bool(run.get("procedure_version_id")))
+
+
 def refuse_unfinished(run: dict) -> None:
-    """도는 실행은 넘기지 않는다 — 원장이 아직 바뀐다. 끝나거나 멈춘(확인 대기 · 실패 · 중단) 실행만 넘긴다."""
-    if run.get("state") in ("queued", "running"):
+    """도는 실행은 넘기지 않는다 — 원장이 아직 바뀐다. 끝나거나 멈춘(확인 대기 · 실패 · 중단 · 단계 사이에 쉬는 빈 실행) 실행만 넘긴다."""
+    if busy(run):
         raise AuthError("아직 도는 실행입니다 — 끝나거나 멈춘 뒤에 넘깁니다", status_code=409)
 
 

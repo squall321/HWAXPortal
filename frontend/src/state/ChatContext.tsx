@@ -522,6 +522,10 @@ export function ChatProvider({
   // 실행이 서버에 생겼는지 모른다 — 중계는 브라우저가 떠나도 상류를 끝까지 읽고 실행기는 구독이 끊겨도 돈다(R3-design D7 · D9). '다시 시도' 는 같은
   // 요청을 또 보내기 전에 그 실행을 찾는다(retryLast).
   const routineUnknownRef = useRef<Set<string>>(new Set());
+  // 절차 실행의 단계 기록을 실어 보낸 발화(사람 발화 id → 그때의 일회성 심의 손잡이) — '다시 시도' 가 같은 손잡이로 다시 보내게 한다. 그 근거는
+  // 서버가 그 칸(procedure_run)으로만 싣는다 — 글만 다시 보내면 단계 근거 없는 심의가 아무 말 없이 돈다(docs/procedures W-117 · 반대 검토 M3).
+  // 그 칸이 든 발화만 기억한다(다른 발화의 다시 시도는 종전 그대로다). 화면 세션 동안만 쥔다(루틴의 routineSentRef 와 같다).
+  const procedureSentRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   // 계정이 바뀌면(로그아웃 · 다른 사람의 로그인) 앞 사람이 켜 둔 루틴과 그 입력 · 다시 보낼 요청을 버린다 — 이메일 로그인 · 로그아웃은 페이지를
   // 다시 읽지 않아 루트 ChatProvider 가 그대로 살고, 앞 사람의 루틴이 다음 사람의 발화에 실렸다(R3 반대 검토 #36). 계정별 캐시 네임스페이스
   // (scopedPrefix)가 바뀌는 때다 — 같은 사람의 /auth/me 다시 받기(창 포커스)는 바뀌지 않는다. 세는 값은 보낸 뒤 계정이 바뀐 턴이 실패해도
@@ -532,6 +536,7 @@ export function ChatProvider({
     setArmedRoutine(null);
     routineSentRef.current.clear();
     routineUnknownRef.current.clear();
+    procedureSentRef.current.clear();
   }, [scopedPrefix, setArmedRoutine]);
   // 붙인 문서도 전송 시점 읽기다(같은 스테일 함정). 보내도 비우지 않는다 — 대화에 본문을 남기지 않으므로 칩을 떼기 전까지 매 발화에
   // 다시 실려 뒤따르는 질문을 받는다(그림과 다르다 — 그림은 서버 주소가 이력으로 다시 간다). 처음부터 그 동작이었고 주석만 낡았다(PP-D6).
@@ -913,6 +918,7 @@ export function ChatProvider({
       };
       const botId = newId();
       if (routineReq) routineSentRef.current.set(userMsg.id, routineReq);
+      if (extraDelibOpts?.procedure_run) procedureSentRef.current.set(userMsg.id, extraDelibOpts);
       // 이 답이 누구 것인지는 **보낼 때** 찍는다 — 나중에 전문가를 바꿔도 과거 답의 주인이
       // 바뀌지 않고, 새로고침해도 남는다(대화 상태만 보면 둘 다 깨진다).
       // 루틴 턴의 답은 지정 전문가의 것이 아니다 — 루틴 가지가 먼저라 그 발화에 전문가가 쓰이지 않는다.
@@ -1387,8 +1393,9 @@ export function ChatProvider({
     const trig = sendPrefix.trim();
     // 이미 심의 트리거로 시작하는 발화(/시뮬심의 · /시험계획 …)는 그대로 — 첫 발화와 같은 규칙(sendMessage)
     const text = trig && !lastUser.text.startsWith(trig) && !startsWithDelibTrigger(lastUser.text) ? sendPrefix + lastUser.text : lastUser.text;
-    // 다시 보내는 것은 그 발화 그대로다 — 그새 켜 둔 루틴을 싣지 않는다(null)
-    sendMessage(text, undefined, null);
+    // 다시 보내는 것은 그 발화 그대로다 — 그새 켜 둔 루틴을 싣지 않는다(null). 절차 실행의 단계 기록을 실었던 발화면 그때의 손잡이
+    // (실행 id · 유형 · 좌석)를 다시 싣는다 — 빼면 근거 없는 심의가 조용히 돈다.
+    sendMessage(text, procedureSentRef.current.get(lastUser.id), null);
   }, [conversations, activeId, streaming, sendMessage, sendPrefix, resumeRoutine, can, setArmedRoutine]);
 
   // 지정 도구 갱신 — 활성 대화가 있으면 대화에 저장(localStorage 영속), 대화 전(랜딩)이면
