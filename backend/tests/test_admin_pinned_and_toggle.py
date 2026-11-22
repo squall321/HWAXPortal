@@ -101,7 +101,7 @@ def test_고정_목록은_원장_행의_이메일로만_견준다():
     pol = AccessPolicy(Settings(_env_file=None)).get()
     pinned = frozenset({"pin@corp.com"})
     on = compute(pol, groups=[], row={"email": "pin@corp.com", "groups": [], "status": "active"}, admin_emails=pinned)
-    assert on.is_admin is True and on.keys == set(pol.keys) and set(on.reasons.values()) == {"admin"}
+    assert on.is_admin is True and on.keys == pol.broad_keys and set(on.reasons.values()) == {"admin"}
     # 목록을 안 넘긴 호출부는 관리자로 보지 않는다(잊으면 닫히는 쪽)
     assert compute(pol, groups=[], row={"email": "pin@corp.com", "groups": []}).is_admin is False
     # 원장에 행이 없으면 목록에 있어도 아니다 — 토큰이 무엇을 들고 와도

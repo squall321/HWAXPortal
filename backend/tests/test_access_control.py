@@ -104,13 +104,44 @@ def test_CAEG_는_전부_기본은_일반_챗():
     )
 
 
+# ── 이름을 적어 준 사람에게만 열리는 키(grant_only — 웹 챗 Claude 모델, 사용자 지시 2026-11-22) ─────────────────────────
+def test_grant_only_키는_별표와_관리자_전권에_딸려_오지_않고_개별_허가로만_열린다():
+    pol = _policy()
+    key = "feat:chat-claude"
+    assert pol.item(key) is not None and pol.item(key).grant_only, "표에 개별 허가 전용으로 있어야 한다"
+    assert key in pol.keys and key not in pol.broad_keys
+    assert pol.direct(["*"]) == pol.broad_keys
+    caeg = compute(pol, groups=[], row={"affiliation": "CAEG", "grants": [], "groups": []})
+    admin = compute(pol, groups=[], row={"groups": ["portal-admin"], "grants": []})
+    assert key not in caeg.keys and key not in admin.keys, "비용 · 반출이 걸린 키가 소속 전체 · 관리자에게 저절로 열렸다"
+    one = compute(pol, groups=[], row={"affiliation": "CAEG", "grants": [key], "groups": []})
+    assert key in one.keys and one.reasons[key] == "grant"
+    me = compute(pol, groups=[], row={"groups": ["portal-admin"], "grants": [key]})
+    assert key in me.keys and me.reasons[key] == "grant" and me.is_admin, "관리자도 자기에게 개별 허가로 준다"
+    # 합성 그룹으로 들고 와도 권한이 되지 않는다(요청마다 원장에서 다시 셈 — D-2)
+    assert key not in compute(pol, groups=[key], row={"affiliation": "CAEG", "grants": []}).keys
+    # 소속 grants 에 키 이름을 글자로 적으면 그 소속 전체다 — 운영자가 일부러 고른 것
+    raw = load_raw(_BACKEND / "config" / "access.yaml")
+    raw["affiliations"] = [{"id": "PILOT", "label": "시범", "grants": [key]}]
+    assert key in compute(parse_policy(raw), groups=[], row={"affiliation": "PILOT", "grants": []}).keys
+    # 정지 계정은 0 이다(개별 허가가 있어도)
+    assert compute(pol, groups=[], row={"status": "disabled", "grants": [key]}).keys == set()
+
+
+def test_grant_only_키는_함의로_열지_않는다():
+    raw = load_raw(_BACKEND / "config" / "access.yaml")
+    raw["features"] = [*raw["features"], {"id": "x-wide", "label": "넓은 것", "implies": ["feat:chat-claude"]}]
+    with pytest.raises(ValueError, match="grant_only"):
+        parse_policy(raw)
+
+
 # ── 권한 계산 ────────────────────────────────────────────────────────────────
 def test_계산_관리자·소속·개별·함의_그리고_들어온_합성그룹은_버린다():
     pol = _policy()
     admin = compute(pol, groups=[], row={"groups": ["portal-admin"]})     # 관리자는 원장만(test_admin_ledger_only)
-    assert admin.keys == set(pol.keys) and admin.is_admin
+    assert admin.keys == pol.broad_keys and admin.is_admin
     caeg = compute(pol, groups=[], row={"affiliation": "CAEG", "grants": [], "groups": []})
-    assert caeg.keys == set(pol.keys) and caeg.reasons["feat:deliberation"] == "affiliation"
+    assert caeg.keys == pol.broad_keys and caeg.reasons["feat:deliberation"] == "affiliation"
     none = compute(
         pol, groups=["feat:deliberation", "plat:stepforge"], row={"affiliation": "", "grants": []}
     )
