@@ -1,4 +1,4 @@
-# 운영 현황 — cae00 절차(LLM/GPU 현황 1 ~ 9절 · 이용 통계 M2 10절)
+# 운영 현황 — cae00 절차(LLM/GPU 현황 1 ~ 9절 · 이용 통계 M2 10절 · 11-22 결정분 11절)
 
 > 이 문서는 cae00 에서 LLM/GPU 현황 수집기(M1)와 관리자 화면(M2)을 켜는 사람 몫을 적는다. 계획은 [PLAN.md](PLAN.md) §3, 까닭은
 > [context-notes.md](context-notes.md)(OD-2 ~), 할 일은 [checklist.md](checklist.md). 명령은 따로 적지 않으면 포털 리포 루트(cae00 은
@@ -252,3 +252,82 @@ ls -la "$(dirname "$(readlink -f ../HWAXMcpGateway/audit.jsonl)")"/usage-rollup.
   않는다.
 - '끝까지 간 턴의 종류 · 답한 모델' 은 이 판의 포털이 뜬 뒤 끝난 턴부터 적힌다 — 그 전의 턴은 '종류를 적기 전의 턴' 으로 보인다.
 - MCP 심의 칸은 잡 원장에 남는 심의(MCP 로 맡긴 잡 · 심의 묶음)만 센다. 웹 챗에서 연 심의는 '턴의 종류' 의 '심의(웹)' 로 본다.
+
+## 11. 2026-11-22 결정분 — 누구의 일 · 사람별 LLM 토큰 · 사람별 표
+
+> 까닭은 [context-notes.md](context-notes.md) OD-52 ~ OD-56. 세 서비스(포털 · 게이트웨이 · 에이전트 서버)가 이 판으로 뜬 뒤의 확인이다. 새로 적을 설정은
+> 없다 — 손잡이 하나(`LLM_STREAM_USAGE`)만 확인 뒤 사람이 켠다(11.3).
+
+### 11.1 바뀌는 것
+
+- **에이전트 서버** — 사람의 챗 · 심의 · 심의 준비에서 나온 서비스 자격 도구 로딩에 감사 전용 머리(`X-HWAX-Audit-For`)를 싣는다. 모든 LLM 호출의 토큰을
+  사람 × 날 × 종류 × 모델로 세어 `usage/`(잡 원장의 형제 — `/data` 쪽, 0700/0600)에 30초마다 더한다. `/health` 에 `usage_tokens` 칸.
+- **게이트웨이** — 그 머리를 감사 줄의 `audit_for` 칸에만 적는다(호출자 칸이 빈 줄만). 권한 · 결과 · 캐시는 그대로다. 이용 통계 창구의 접은 표는 처음 물을 때
+  판이 바뀌어 원장 처음부터 다시 접는다(10.2 의 '접는 중' 이 한 번 더 보일 수 있다 — 기다리면 된다).
+- **포털** — 심의 준비 · 카탈로그 중계 일곱이 로그인한 사람의 이메일을 에이전트 서버에 싣는다. 관리 › 이용 통계에 'LLM 토큰(에이전트 서버)' 카드 · 타일과
+  '사람별 이용' 카드(이메일이 나오는 유일한 칸)가 는다. 쓴 사람 · MCP 도구 · RA 초안 칸에 '엔진이 그 사람의 일로' 줄이 는다.
+- 세 서비스의 판이 섞여 있는 동안 — 게이트웨이가 옛 판이면 `audit_for` 가 적히지 않아 엔진 줄은 '누구의 일인지도 모르는 줄' 로 남고, 에이전트 서버가 옛 판이면
+  토큰 카드가 '아직 토큰을 내지 않았다' 다. 둘 다 새 판이 뜬 뒤부터 쌓인다(지난 날은 되채우지 못한다 — 그때는 적지 않았다).
+
+### 11.2 확인
+
+```bash
+# 게이트웨이 감사 — 엔진 줄에 누구의 일이 적히는지(값은 화면에 찍지 않고 수만 센다)
+python3 - "$(readlink -f ../HWAXMcpGateway/audit.jsonl)" <<'PY'
+import json, sys
+n = f = 0
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    try:
+        r = json.loads(line)
+    except ValueError:
+        continue
+    if r.get("via") == "gw-token" and not r.get("caller") and r.get("ts", "") >= "2026-11-22":
+        n += 1
+        f += bool(r.get("audit_for"))
+print("이름 없는 엔진 줄", n, "· 그 가운데 누구의 일이 적힌 줄", f)
+PY
+# 에이전트 서버 — 센 호출 · 더한 줄 · 실패
+curl -s --noproxy '*' http://127.0.0.1:9009/health | python3 -c 'import json,sys; print(json.load(sys.stdin).get("usage_tokens"))'
+```
+
+- 게이트웨이 — 심의 준비(전문가 고르기 미리보기 등)를 한 번 쓴 뒤 '누구의 일이 적힌 줄' 이 는다. 0 이면 에이전트 서버 · 포털이 아직 옛 판이다.
+- 에이전트 서버 — `recorded` 가 챗 · 심의 뒤에 늘고, `errors` 가 0 이고, `last_flush` 가 30초 안쪽이다. `errors` 가 늘면 `last_error` 를 본다(자리 · 디스크).
+- 화면 — 'LLM 토큰' 카드의 '사용량을 모르는 호출' 이 대부분이면 흘려 받는 호출이다(11.3). '사람별 이용' 카드에서 시험 · 서비스 계정이 보이면
+  `backend/.env` 의 `USAGE_EXCLUDE_ACCOUNTS` 에 적는다(10.2 와 같다).
+
+### 11.3 흘려 받는 호출의 사용량 — 확인 뒤 켠다(`LLM_STREAM_USAGE`)
+
+흘려 받는 LLM 호출(챗 서버가 스트리밍이면 챗 턴)은 사용량을 따로 청해야 온다. 켜면 요청에 `stream_options.include_usage` 가 실린다 — 요청 꼴이 바뀌는 일이라
+먼저 그 서버가 받는지 한 번 본다(키 · 주소는 에이전트 서버 `.env` 의 값을 셸 변수로만 쓴다 — 화면 · 기록에 남기지 않는다).
+
+```bash
+cd ../HWAXAgentServer
+set -a; . ./.env; set +a      # set -x 를 켠 셸에서 하지 않는다(키가 찍힌다)
+for U in "${CHAT_LLM_BASE_URL:-}" "${VLLM_BASE_URL:-}"; do
+  [ -n "$U" ] || continue
+  M=$([ "$U" = "${CHAT_LLM_BASE_URL:-}" ] && echo "$CHAT_LLM_MODEL" || echo "$VLLM_MODEL")
+  K=$([ "$U" = "${CHAT_LLM_BASE_URL:-}" ] && echo "${CHAT_LLM_API_KEY:-EMPTY}" || echo "${VLLM_API_KEY:-EMPTY}")
+  curl -sN --noproxy '*' -m 60 "$U/chat/completions" -H "Authorization: Bearer $K" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"$M\",\"stream\":true,\"max_tokens\":5,\"stream_options\":{\"include_usage\":true},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+    | grep -c '"usage":{' | sed "s|^|$(echo "$U" | sed 's|//[^/]*@|//|; s|/v1.*||') 사용량 조각 수: |"
+done
+unset K
+```
+
+- 서버마다 '사용량 조각 수' 가 1 이상이면 받는다. 0 이거나 오류면 켜지 않는다(그 서버의 토큰은 '모름' 으로 남는다).
+- 받으면 에이전트 서버 `.env` 에 `LLM_STREAM_USAGE=1` 을 적고 update-all(도는 심의가 있으면 재기동이 미뤄진다 — 심의가 끝난 뒤 다시). `/health.usage_tokens.stream_usage`
+  가 `true` 다. 챗 화면이 그대로인지(답 · 생각 칸 · 도구) 한 번 써 본다. 문제가 보이면 그 줄을 지우고 다시 띄운다.
+
+### 11.4 손잡이 · 알아 둘 것
+
+| 키 | 자리 | 기본 | 언제 |
+|---|---|---|---|
+| `LLM_STREAM_USAGE` | 에이전트 서버 `.env` | 없음(꺼짐) | 11.3 확인 뒤 `1` |
+| `USAGE_TOKENS_DIR` | 에이전트 서버 `.env` | 잡 원장의 형제 `usage/` | 토큰 기록을 다른 자리에 둘 때만(바꾸면 재기동) |
+
+- '누구의 일' 은 **검증하지 않은 주장**이다 — 공유 비밀을 쥔 쪽이 아무 이름이나 적을 수 있고, 그러면 이용 통계의 그 칸만 틀린다. 권한 · 결과에는 닿지 않는다.
+- 사람별 토큰 · 사람별 표의 줄은 관리자만 본다 · 400일 뒤 지운다. 토큰 기록 파일(에이전트 서버 `usage/llm-tokens.sqlite`)과 포털 감사 원장 파일 안의
+  `usage_llm_daily` 둘 다 사람별 줄이 든다 — 백업 · 접근 권한을 감사 원장과 같게 다룬다.
+- 외부 응답자(Claude 워크플로)로 돈 판단 호출은 사용량을 주지 않아 '모름' 이다. 다른 서비스가 같은 LLM 을 바로 부른 토큰은 들지 않는다(LLM/GPU 현황의 서버 지표와
+  맞지 않는 것이 정상이다).
+
