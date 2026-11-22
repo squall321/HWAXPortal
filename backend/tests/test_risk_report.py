@@ -805,3 +805,18 @@ def test_계약_RA_호출_하나의_기한이_리스크_앱의_낡음_기한보�
     assert stale == _Risk.STALE_S
     assert M._RA_TIMEOUT.read < stale and M._RA_TIMEOUT.connect < stale
     assert M.MATERIAL_TIMEOUT_S < stale and M.RECORD_TIMEOUT_S < stale
+
+
+def test_계약_두_창구는_게이트웨이의_응답_캐시에_담기지_않는다():
+    """게이트웨이는 이름 접두(list_ · get_ · report_ …)로 읽기 도구의 답을 300초 담는다. 재료 내주기가 담기면 다시 누른 호출이 옛 원장(초안 번호
+    없음)을 받아 초안을 또 만든다 — 두 창구의 원래 이름은 그 접두에 걸리지 않아야 한다."""
+    gw = Path(__file__).resolve().parents[2].parent / "HWAXMcpGateway" / "gateway.py"
+    if not gw.is_file():
+        pytest.skip(f"형제 리포 HWAXMcpGateway 가 곁에 없다({gw.parent})")
+    tree = ast.parse(gw.read_text(encoding="utf-8"))
+    (cacheable,) = [ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == "_CACHEABLE" for t in n.targets)]
+    assert "report_" in cacheable, "가짜가 아니라 진짜 목록을 읽었다"
+    for tool in (M.TOOL_MATERIAL, M.TOOL_RECORD):
+        original = tool.removeprefix("heaxhwax_risk_")
+        assert original.startswith("risk_report_ra_") and not original.startswith(tuple(cacheable)), original
