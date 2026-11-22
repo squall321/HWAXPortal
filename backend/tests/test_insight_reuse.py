@@ -145,8 +145,10 @@ def test_근거_항목은_표지_출처_상태_판을_달고_도구_칸에_카�
                  "이 심의의 판(bb22)과 다르다", "이 심의와 같은 판", "이 심의의 주제에 없는 설계 자료", "낡았을 수 있다", "표결: 동의 2 · 조건부 0 · 반대 1",
                  "주장:\n리브를 보강한다"):
         assert want in body, want
-    assert C.insight_sources({"card": {"calls": [{"tool": it["tool"], "args": it["args"]}]}}) == ([row["id"]], ""), \
-        "깐 항목이 낳는 근거 표지에서 읽은 카드 id 를 되찾는다"
+    mark = {"tool": it["tool"], "args": it["args"], "ok": True}        # 엔진이 근거 표지에 적는 꼴(_insight_calls — ok 는 결과 글의 성패다)
+    assert C.insight_sources({"card": {"calls": [mark]}}) == ([row["id"]], ""), "깐 항목이 낳는 근거 표지에서 읽은 카드 id 를 되찾는다"
+    for bad in ({**mark, "ok": False}, {"tool": it["tool"], "args": it["args"]}, {**mark, "ok": 1}):
+        assert C.insight_sources({"card": {"calls": [mark, bad]}})[0] is None, "실패했거나 성패를 모르는 표지는 그 카드를 읽었다는 증거가 아니다(L2)"
 
 
 def test_근거_항목의_꼴과_상한은_엔진과_맞는다():
@@ -158,8 +160,9 @@ def test_근거_항목의_꼴과_상한은_엔진과_맞는다():
     assert R.DelibOpts.model_fields["evidence"].metadata[0].max_length == X.EVID_ITEMS
     assert re.search(rf"^_INSIGHT_CALLS_MAX = {C.CALLS_MAX}\b", src, re.M)
     assert f'_INSIGHT_TOOL_HEAD = "{C.INSIGHT_TOOL_HEAD}"' in src and X.TOOL.startswith(C.INSIGHT_TOOL_HEAD)
-    m = re.search(r'^_INSIGHT_EV_TOOL_RE = re\.compile\(r"([^"]+)" \+ _INSIGHT_TOOL_HEAD\)$', src, re.M)
+    m = re.search(r'^_INSIGHT_EV_TOOL_RE = re\.compile\(r"([^"]+)" \+ _INSIGHT_TOOL_HEAD, re\.I \| re\.A\)$', src, re.M)
     assert m and m.group(1) + C.INSIGHT_TOOL_HEAD == C._INSIGHT_NAME_RE.pattern, "리스크 심사의 받침과 같은 이름 규칙"
+    assert C._INSIGHT_NAME_RE.flags & re.I and C._INSIGHT_NAME_RE.flags & re.A, "같은 깃발(같은 입력에 같은 답은 test_insight_workflows 가 맞댄다)"
     key_max = int(re.search(r"^_EVID_KEY_MAX = (\d+)$", src, re.M).group(1))
     assert len(f"ins-{X.LAY_MAX}") <= key_max and re.fullmatch(r"[A-Za-z0-9_.-]+", f"ins-{X.LAY_MAX}")
     args_max = int(re.search(r'^_EVID_ARGS_MAX = _env_int\("DELIB_EVID_ARGS_MAX", (\d+)\)', src, re.M).group(1))
@@ -421,7 +424,32 @@ def test_읽은_카드를_다_알_때만_id_를_낸다():
                  _derived(["ins:wf:z"], extra_calls=[{"tool": "find_part", "args": "{}"}] * (C.CALLS_MAX - 1))):
         ids, why = C.insight_sources({"card": card})
         assert ids is None and why, card["tools"]
-    assert C.insight_derived({"card": {"tools": ["mcp__hwax__insight_find"]}}) and not C.insight_derived({"card": {"tools": ["get_insight_x"]}})
+    assert C.insight_derived({"card": {"tools": ["mcp__hwax__insight_find"]}}) and not C.insight_derived({"card": {"tools": ["getinsight_x"]}})
+    assert C.insight_derived({"card": {"tools": ["get_insight_x"]}}), "낱말 경계 — 앞이 영숫자가 아니면 인사이트 도구로 본다(닫힌 쪽)"
+
+
+def test_이름만_있는_인사이트_도구가_섞이면_읽은_카드를_다_안다고_하지_않는다():
+    """반대 검토 11-22 L1 — 근거 표지(calls)는 카드 하나를 읽은 것뿐인데 도구 이름(tools)에 표지 없는 인사이트 도구가 더 있으면(같은 심의의 앞 단이
+    찾기 결과를 넘겼다) 그 도구가 무엇을 읽었는지 모른다. 계약 §10.3 — 이름만 있으면 모른다(주인만)."""
+    one = _derived(["ins:web:a:r1:default"])
+    assert C.insight_sources({"card": one})[0] == ["ins:web:a:r1:default"]
+    for more in (["insight_find"], ["mcp__hwax__insight_find"], ["mcp__hwax__insight_get"], ["hwax-insight_get"]):
+        ids, why = C.insight_sources({"card": {**one, "tools": [*one["tools"], *more]}})
+        assert ids is None and "도구 이름만" in why, more
+    assert C.insight_sources({"card": {**one, "tools": [*one["tools"], "find_part", "risk_get_diff"]}})[0] == ["ins:web:a:r1:default"], \
+        "인사이트 도구가 아닌 이름은 따지지 않는다"
+    assert C.insight_sources({"card": {**one, "tools": []}})[0] == ["ins:web:a:r1:default"], "도구 이름 칸이 비면 표지만 본다"
+
+
+def test_범용_실행기로_부른_표지는_앞선_인사이트를_쓴_것으로_치되_읽은_카드는_모른다():
+    """반대 검토 11-22 M3 — invoke_tool 껍데기에 든 insight_get 도 앞선 인사이트를 근거로 쓴 것이다(확인이 주인만으로 닫힌다). 엔진은 껍데기를 벗겨
+    안쪽 이름 · 인자로 표지를 적으므로(deliberation._ev_unwrap) 껍데기째 남은 표지는 풀지 못한 것이다 — 읽은 카드를 안다고 하지 않는다."""
+    wrapped = {**CARD, "tools": ["mcp__hwax__invoke_tool"], "apps": ["_gateway"],
+               "calls": [{"ref": "call:1", "tool": "mcp__hwax__invoke_tool", "ok": True, "sha256": "0" * 64,
+                          "args": '{"name": "insight_get", "arguments": {"id": "ins:web:a:r1:default"}}'}]}
+    assert C.insight_derived({"card": wrapped}) and C.insight_sources({"card": wrapped})[0] is None
+    other = {**wrapped, "calls": [{**wrapped["calls"][0], "args": '{"name": "find_part", "arguments": {"q": "insight_get"}}'}]}
+    assert not C.insight_derived({"card": other}), "껍데기 안의 도구가 인사이트가 아니면 아니다"
 
 
 @pytest.mark.parametrize("base, sources, want", [

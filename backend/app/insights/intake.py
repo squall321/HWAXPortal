@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from urllib.parse import unquote
@@ -217,6 +218,28 @@ async def confirm_async(settings, *, subject: dict, principal, pat: str, chair_t
         return None, f"에이전트 서버에 닿지 못했다({type(exc).__name__})"
 
 
+WORKFLOW_INSIGHTS_MAX = 60       # 게이트웨이 CONV_INSIGHTS_MAX 와 같다(시험이 견준다)
+INSIGHTS_KEY, INSIGHTS_UNKNOWN = "insights", "unknown"
+
+
+def workflow_marks(subject_raw: dict) -> tuple[dict, dict]:
+    """워크플로가 주제 안에 실어 온 읽은 인사이트(subject.insights — contracts §10.3) → (그 칸을 뗀 주제, 카드에 더할 근거 칸 {calls, tools}).
+    워크플로 카드에는 엔진의 근거 표지가 없다 — 읽은 카드 id 들을 표지 꼴(insight_get + 카드 id)로 적어 두면 확인이 다른 카드와 같은 길로 그
+    카드들의 범위를 이어받는다(cards.insight_sources). 다 알 수 없다고 왔거나("unknown") 꼴이 틀리면 도구 이름만 적는다 — 확인해도 주인만 본다
+    (닫힌 쪽). 칸이 없으면(앞선 인사이트를 근거로 쓰지 않았다) 아무것도 더하지 않는다."""
+    subj = dict(subject_raw)
+    if INSIGHTS_KEY not in subj:
+        return subj, {}
+    ins = subj.pop(INSIGHTS_KEY)
+    known = (isinstance(ins, list) and len(ins) <= WORKFLOW_INSIGHTS_MAX
+             and all(isinstance(x, str) and C.INSIGHT_ID_RE.fullmatch(x) for x in ins))
+    if known and not ins:
+        return subj, {}
+    calls = [{"ref": "", "tool": C.INSIGHT_GET, "app": "_gateway", "args": json.dumps({"id": x}, ensure_ascii=False), "sha256": "", "ok": True}
+             for x in dict.fromkeys(ins)] if known else []
+    return subj, {"calls": calls, "tools": [C.INSIGHT_GET]}
+
+
 def from_workflow(store, settings, *, principal, pat: str | None, cid: str, kind: str, source: str, subject_raw: dict,
                   chair_template: str | None, messages: list) -> dict:
     """워크플로 대화 → 원장(ins:wf:<cid>). 답의 insight 칸 — {id, status} 또는 {skipped: 까닭}. 저장을 막지 않는다(부르는 쪽이 예외를 삼킨다)."""
@@ -228,6 +251,7 @@ def from_workflow(store, settings, *, principal, pat: str | None, cid: str, kind
         return {"skipped": "리스크 심사는 인사이트로 들이지 않는다 — 리스크 판정은 리스크 앱에 있다"}
     if not pat:
         return {"skipped": "사람 자격(PAT)을 만들지 못해 주제를 다시 풀지 못했다"}
+    subject_raw, marks = workflow_marks(subject_raw)
     rec, why = confirm_sync(settings, subject=subject_raw, principal=principal, pat=pat, chair_template=chair_template)
     if rec is None:
         return {"skipped": why}
@@ -236,7 +260,7 @@ def from_workflow(store, settings, *, principal, pat: str | None, cid: str, kind
     claim, src = C.claim_of(C.workflow_decision(messages))
     row = _row(cid=C.wf_id(cid), path="mcp-workflow", source_id=cid, stage=(chair_template or "default"), owner_email=principal.email,
                owner_sub=principal.subject, subject=rec, claim=claim, claim_from=src,
-               card={**_card_fields({}), "apps_unknown": ["(workflow)"]})
+               card={**_card_fields({}), "apps_unknown": ["(workflow)"], **marks})
     store.ingest(row)
     return {"id": row["id"], "status": row["status"]}
 

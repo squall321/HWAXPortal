@@ -3,6 +3,7 @@
 시험(tests/test_insights.py)이 형제 리포의 원본과 글자마다 견준다. 확인(SP key 다시 풀기)은 여기 없다 — 에이전트 서버 하나가 한다(PG-19)."""
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -201,44 +202,76 @@ def evidence_known(row: dict) -> bool:
 INSIGHT_TOOL_HEAD = "insight_"
 INSIGHT_GET = "insight_get"
 CALLS_MAX = 60      # 근거 표지 수 상한 — 엔진 deliberation._INSIGHT_CALLS_MAX 와 같다(시험이 견준다). 차면 뒤 표지가 끊겼을 수 있다
-# 호출자가 도구 칸에 적는 꼴(맨 이름 · mcp__<서버>__<도구> · <앱>.<도구> · <앱>:<도구>) — 엔진 deliberation._INSIGHT_EV_TOOL_RE 와 같다(시험이 견준다)
-_INSIGHT_NAME_RE = re.compile(r"(?:^|__|[.:/])" + INSIGHT_TOOL_HEAD)
-_INSIGHT_GET_RE = re.compile(r"(?:^|__|[.:/])" + INSIGHT_GET + "$")
-# 근거 표지의 인자에서 카드 id — JSON 글('{"id": "ins:…"}')과 엔진이 사전을 글로 옮긴 꼴("{'id': 'ins:…'}") 둘 다 읽는다
-_INSIGHT_ID_RE = re.compile(r"""^\s*\{\s*['"]id['"]\s*:\s*(['"])(ins:(?:web|delib|wf):[^'"\\]{1,290})\1\s*\}\s*$""")
+# 과제 인사이트 도구인가 — 도구 이름(낱말 경계 — insight_ 앞이 영숫자가 아니면: 맨 이름 · mcp__<서버>__<도구> · <앱>.<도구> · <앱>-<도구> · <앱>_<도구> ·
+# 괄호 · 머리의 BOM 같은 글자)과, 그 이름이 게이트웨이의 범용 실행기(invoke_tool)면 인자 글에 든 name 값으로 가린다. 영문자는 ASCII 로만 대소문자를
+# 접는다. ⚠ 같은 규칙이 세 곳에 있다 — 여기 · 엔진 deliberation._insight_evidence_tool · 워크플로 hwax-deliberate.js isInsightEvidence. 시험
+# (tests/test_insight_workflows.py)이 같은 입력에 셋이 같은 답을 내는지 맞댄다(반대 검토 11-22 M3).
+_INSIGHT_NAME_RE = re.compile(r"(?<![A-Za-z0-9])" + INSIGHT_TOOL_HEAD, re.I | re.A)
+_INVOKE_TOOL_RE = re.compile(r"(?<![A-Za-z0-9])invoke_tool(?![A-Za-z0-9])", re.I | re.A)
+_INVOKE_NAME_RE = re.compile(r"""["']name["']\s*:\s*["']([^"']*)["']""")
+# 카드 하나를 읽은 표지의 꼴 — 도구가 insight_get 으로 끝나고 인자가 카드 id 하나다. 인자는 JSON 글('{"id": "ins:…"}')과 엔진이 사전을 글로 옮긴
+# 꼴("{'id': 'ins:…'}") 둘 다 읽는다
+_INSIGHT_GET_RE = re.compile(r"(?<![A-Za-z0-9])" + INSIGHT_GET + r"\s*$", re.I | re.A)
+_INSIGHT_ID_RE = re.compile(r"""^\s*\{\s*['"]id['"]\s*:\s*(['"])(ins:(?:web|delib|wf):[^\s'"\\]{1,290})\1\s*\}\s*$""")
+INSIGHT_ID_RE = re.compile(r"ins:(?:web|delib|wf):[^\s'\"\\]{1,290}")     # 카드 id 의 꼴 — 게이트웨이 _CONV_INSIGHT_ID_RE 와 같다
 
 
-def insight_tool(name) -> bool:
-    """도구 이름이 과제 인사이트 도구인가(머리 insight_ — 호출자가 적는 여러 꼴)."""
-    return isinstance(name, str) and bool(_INSIGHT_NAME_RE.search(name.strip().lower()))
+def insight_tool(name, args=None) -> bool:
+    """과제 인사이트 도구를 부른 것인가 — 이름으로, 이름이 범용 실행기(invoke_tool)면 인자 글의 name 값(어느 깊이든 — 닫힌 쪽)으로."""
+    if not isinstance(name, str):
+        return False
+    if _INSIGHT_NAME_RE.search(name):
+        return True
+    if not _INVOKE_TOOL_RE.search(name):
+        return False
+    text = args if isinstance(args, str) else "" if args is None else json.dumps(args, ensure_ascii=False, default=str)
+    return any(_INSIGHT_NAME_RE.search(m) for m in _INVOKE_NAME_RE.findall(text))
+
+
+def insight_card_id(tool, args) -> str | None:
+    """근거 항목 · 표지가 카드 하나를 읽은 꼴(insight_get + 카드 id 하나)이면 그 id, 아니면 None. 인자는 사전이거나 글(JSON · 사전을 글로 옮긴 꼴)이다.
+    범용 실행기(invoke_tool)에 사전 인자면 그 name · arguments 로 본다."""
+    if isinstance(tool, str) and _INVOKE_TOOL_RE.search(tool) and isinstance(args, dict):
+        tool, args = args.get("name"), args.get("arguments")
+    if not (isinstance(tool, str) and _INSIGHT_GET_RE.search(tool)):
+        return None
+    if isinstance(args, dict):
+        cid = args.get("id") if len(args) == 1 else None
+        return cid if isinstance(cid, str) and INSIGHT_ID_RE.fullmatch(cid) else None
+    m = _INSIGHT_ID_RE.match(args) if isinstance(args, str) else None
+    return m.group(2) if m else None
 
 
 def insight_derived(row: dict) -> bool:
     """앞선 인사이트를 근거로 썼나 — 근거 도구 · 표지에 insight_ 도구가 있다."""
     card = row.get("card") or {}
-    names = [*(card.get("tools") or ()), *(c.get("tool") for c in card.get("calls") or () if isinstance(c, dict))]
-    return any(insight_tool(n) for n in names)
+    return (any(insight_tool(n) for n in card.get("tools") or ())
+            or any(insight_tool(c.get("tool"), c.get("args")) for c in card.get("calls") or () if isinstance(c, dict)))
 
 
 def insight_sources(row: dict) -> tuple[list[str] | None, str]:
     """앞선 인사이트를 근거로 쓴 카드가 읽은 카드 id 들 — (id 목록, "") 또는 (None, 까닭). 읽은 카드를 **다** 알 때만 목록을 낸다(틀릴 거면 닫힌
-    쪽으로) — 인사이트 표지가 전부 insight_get 이고 인자가 카드 id 하나일 때다. 찾기 결과를 묶음째 넘겼거나(insight_find) · 표지가 상한에서
-    끊겼거나 · 도구 이름만 있고 표지가 없으면(같은 심의의 앞 단이 넘긴 것) 모른다."""
+    쪽으로) — 인사이트 표지가 전부 성공한 insight_get 이고 인자가 카드 id 하나이며, 도구 이름(tools)에 든 인사이트 도구가 다 그 표지로 덮일 때다.
+    모르는 때 — 찾기 결과를 묶음째 넘겼다(insight_find) · 범용 실행기로 불러 풀리지 않은 표지다 · 실패한 표지다(그 카드를 읽었다는 증거가 아니다) ·
+    표지가 상한에서 끊겼다 · 도구 이름만 있고 표지가 없다(같은 심의의 앞 단이 넘긴 것 · 이름만 있는 insight_find 가 섞였다 — 반대 검토 11-22 L1)."""
     card = row.get("card") or {}
     calls = [c for c in card.get("calls") or () if isinstance(c, dict)]
     if len(calls) >= CALLS_MAX:
         return None, f"근거 표지가 상한({CALLS_MAX}건)에 차 읽은 카드를 다 알 수 없다"
     ids: list[str] = []
+    marked: set = set()
     for c in calls:
-        if not insight_tool(c.get("tool")):
+        tool, args = c.get("tool"), c.get("args")
+        if not insight_tool(tool, args):
             continue
-        m = _INSIGHT_ID_RE.match(str(c.get("args") or ""))
-        if m is None or not _INSIGHT_GET_RE.search(str(c.get("tool")).strip().lower()):
-            return None, "앞선 인사이트를 카드 하나씩(insight_get + 카드 id)이 아닌 꼴로 넘겨 어느 카드를 읽었는지 알 수 없다"
+        m = _INSIGHT_ID_RE.match(str(args or ""))
+        if m is None or c.get("ok") is not True or not _INSIGHT_GET_RE.search(tool):
+            return None, "앞선 인사이트를 카드 하나씩(insight_get + 카드 id)이 아닌 꼴로 넘겼거나 그 읽기가 실패해 어느 카드를 읽었는지 알 수 없다"
+        marked.add(tool)
         if m.group(2) not in ids:
             ids.append(m.group(2))
-    if not ids:
-        return None, "앞선 인사이트를 근거로 썼다는 표지만 있고 어느 카드인지 적힌 근거 표지가 없다"
+    if not ids or not {t for t in card.get("tools") or () if insight_tool(t)} <= marked:
+        return None, "앞선 인사이트를 근거로 썼다는 도구 이름만 있고 어느 카드인지 적힌 근거 표지가 없는 것이 있다"
     return ids, ""
 
 
