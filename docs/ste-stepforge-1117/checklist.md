@@ -19,6 +19,7 @@
 - [x] ste(`smarttwinexplorer-06`)에 ST-1 ~ ST-17 보냄 — ste 코어 몫 ST-4 · ST-5(틀) · ST-12 · ST-14 · ST-16 은 지어 로컬 main 에 있음(origin 보다 22커밋 앞 · Drive 는 1e53260 그대로 — 그쪽 사용자 확인 뒤 나간다). ST-5 는 `report_url` 대신 경로 · 크기 · `job_url`(저장형 XSS). ST-3 은 그쪽 사용자에게 묻는다(11-18 ST-R1 결정을 다시 여는 일). 나머지는 브리지 몫
 - [x] 브리지(`koosolvercontainer-da`)에 BG-1 · BG-2 · BG-6 과 앱 래퍼 몫 보냄 — 받음 · 11-17 의 19 항목과 겹쳐 Phase 7 차례(ST-2 · ST-1 · BG-1 · BG-2 먼저), 반영은 Drive 동결 해제와 그쪽 사용자 확인 뒤. BG-2 를 합성 판으로 재현해 고침(KooSolverContainer `0296fab` · `41c2cc9`, 미배포 — 운영 진단기 숫자로 원인 확정). 새로 찾은 결함 — part-study 레디쉬 길이 mm 좌표를 m 로 읽어 1000배 판을 풀었다(단독 reddish 잡은 영향 없음)
 - [x] SF-5 ↔ ST-7 어느 쪽이 규약 변환을 맡는지 — StepForge 가 geometry 절 변환(축 · 원점 · 변 4묶음 · UV 창), ST-7 은 그 절을 손대지 않고 싣고 검사 · 메시 크기 · placeholders 만(두 세션 합의 11-22)
+- [x] 브리지 P0 셋을 dev 에 넣음(11-22, 미배포 — 반입은 Drive 동결 해제 · 그쪽 사용자 확인 뒤): ST-2 사유 opening_unmatched · no_outlet · no_inlet · flux_imbalance(기본 50 %) → 결로 단계 fail · 잡 FAILED(KooSolverContainer `85256df`) · ST-1 개구부를 원 안의 면만 패치로(합성 상자 반경 4 mm → 50.24 mm², `6b54715` · `843e22d` — 옛 꼴은 `"patch": "face"`) · BG-1 (가)(다) 주소를 짐작하지 않고 실패를 갈라 fetch.json 에(`2b1946f`, 주소 · 토큰 전달은 ST-3 결정 뒤). 운영의 1ddbdd7cd769 와 같은 입력의 재확인은 반입 뒤 운영 박스에서
 - [ ] SF-11 운영 박스에서 맨 이름 `leak_report` 의 서명에 `parts` 가 왜 안 보였나(받은 편지함 2026-11-22 Q8) — 게이트웨이는 스키마 변화를 지문으로 알아채 다시 모은다(소스 확인)
 - [ ] StepForge 2차 물음 — SF-10 테이프 이름 꼴 · SF-6 인쇄 도면 그림(받은 편지함 Q9 · Q10), SF-4 material_id 는 MaterialTwin 재료 id 라고 답함, SF-2 의 ST-8 쪽 물음은 브리지에 전함
 - [ ] BG-3 큰 파일(100 MB 급) · cavity_step 을 dev 에서 한 번 옮겨 보기
