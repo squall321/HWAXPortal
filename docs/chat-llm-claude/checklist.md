@@ -20,7 +20,10 @@
 - [x] 재기동 · 웹 챗 한 턴(2.9초 · 답 meta `models: {claude-opus-5-5: 1}`) · 사람별 LLM 토큰에 세짐(고침 `a996b69` — 기록기가 Claude LLM 에 안 붙어 있었다)
 
 ## cae00(사람 몫 — 받은 편지함)
-- [ ] 키 파일 · 설치 · `.env` 의 `CLAUDE_CHAT_FOR=feat:chat-claude` · 사람에게 개별 허가 · 한 사람으로 한 턴
+- [x] 켜는 절차 [server-setup.md](server-setup.md)(정책 확인 · 점검 · 설치 · 키 · `.env` · 재기동 · 사람 지정 · 확인 · 되돌리기 · 돌려받을 것) — CC-9
+- [x] 키 없는 점검 `infra/scripts/claude-chat-check.sh`(바깥 연결 · 파이썬 인증서 · 꾸러미 · 키 파일 권한 · /health — 주소 · 키를 찍지 않는다), dev 에서 통과 · 막힌 프록시 · 인증서 흉내 둘
+- [x] 꾸러미 묶음 Drive `tools/claude-chat-wheels/`(바퀴 넷 · SHA256SUMS — 내려받아 대조함, 11-22)
+- [ ] 사람 — 회사 정책 확인 · 점검 · 설치 · 키 파일 · `.env` 의 `CLAUDE_CHAT_FOR=feat:chat-claude` · 사람에게 개별 허가 · 한 사람으로 한 턴(다음 update-all 라운드 뒤)
 
 ## 모델 · 생각 깊이 고르기(CC-8 — 사용자 요청 11-22)
 - [x] 에이전트 서버 — `CLAUDE_CHAT_MODELS` · `CLAUDE_CHAT_EFFORTS` · 요청 칸 `claude_model` · `claude_effort` · 쌍마다 지어 두기 · 목록 밖은 기본 + 알림 ·

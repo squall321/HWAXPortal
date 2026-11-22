@@ -72,3 +72,18 @@
 - **창구 이름** — 처음엔 `/agent/chat-models` 였는데 포털 전체 회귀에서 루틴 화면 시험 20건이 붉었다. 화면 시험의 가짜 서버들이 `startsWith('/agent/chat')` 로
   챗 요청을 세어 목록 읽기를 챗 한 턴으로 셌다. 정문 접속 기록 · 이용 통계도 앞부분으로 가를 수 있어 시험을 고치지 않고 이름을 `/agent/claude-models`
   (에이전트 서버 `/claude-models`)로 바꿨다 — `/agent/chat` 으로 시작하는 새 경로를 만들지 않는다.
+
+## CC-9 (11-22) cae00 — 기본은 그대로, 지정한 사람만 · 켜기 전 점검과 꾸러미 묶음
+- **사용자 물음 · 결정** — 「cae00 에서 기본 LLM 은 그대로, 지정하는 계정만 Claude API 로 쓰게 할 수 있나」 — 지은 그대로 된다(`CLAUDE_CHAT_FOR=feat:chat-claude` ·
+  사람마다 개별 허가 — `grant_only` 라 「전부」 · 관리자 전권에 딸려 오지 않는다). 사용자 결정 — **확인 절차 · 설치 묶음부터 준비**(권장안), 실제로 켜는 것은
+  점검이 통과한 뒤 사람이. 업데이트 라운드 자체는 ste 결정 뒤 한 번에(`../leftovers-1121/` L21-22).
+- **cae00 이 dev 와 다른 셋** — ① TLS 를 가로채는 사내 프록시 — curl 은 시스템 묶음(사내 루트 포함)을 쓰지만 파이썬 httpx(anthropic SDK 의 기본 클라이언트)는
+  certifi 를 써서 인증서 오류가 날 수 있다 → 에이전트 서버 `.env` 의 `SSL_CERT_FILE=<시스템 묶음>`. 그 프로세스의 모든 httpx 가 그 묶음을 쓰지만 시스템 묶음이라
+  공개 루트도 들어 있다. ② 프록시가 셸에만 있으면 update-all(비로그인 셸)이 다시 띄울 때 빠진다 → `.env` 에 `HTTPS_PROXY`, 그리고 `NO_PROXY` 의 사내 목적지를
+  그대로 둔다(07-16 사고 — 사내 LLM 호출이 프록시로 가서 챗이 죽었다). ③ pip 가 PyPI 에 못 닿을 수 있다 → Drive 묶음.
+- **점검을 스크립트로** — 키 없이 401 을 받으면 「닿는다」 다(키를 쓰지 않으므로 비용 · 반출이 없다). 에이전트 서버 `.env` 의 프록시 · 인증서 칸만 같은 규칙으로 읽어
+  실제 서버와 같은 환경으로 본다. curl 오류 글에는 프록시 주소가 섞여 찍지 않고 끝 코드로 갈래만 말한다 — 결과 줄을 받은 편지함 답에 그대로 옮기게.
+  파이썬 3.10 의 f-string 은 역슬래시를 못 받아(dev 에서 걸림) 그 단계는 환경변수로 넘긴다.
+- **묶음은 셋 + 하나** — requirements-anthropic.txt 가 새로 까는 것은 anthropic · langchain-anthropic · docstring-parser 셋이다(나머지 의존은 requirements.txt 의
+  openai · langchain-core 가 이미 깐다 — dev venv 메타데이터로 확인). typing-extensions ≥ 4.14 를 요구해 옛 venv 를 위해 4.15.0 을 함께 넣었다. 모두 순수 파이썬
+  바퀴라 cae00 의 파이썬 판과 상관없다. `--no-index --find-links` 마른 설치로 풀림을 봤다. 자리는 age 묶음과 같은 꼴(Drive `tools/<이름>/` + `SHA256SUMS`).

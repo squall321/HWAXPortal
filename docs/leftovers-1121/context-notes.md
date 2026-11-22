@@ -379,3 +379,15 @@ AIDataHub 794(기준선 실패 35 그대로 — 지문으로 견줌). 포털은 
 - **RA 에 청하는 것 넷** — [ra-request-1122.md](ra-request-1122.md)(사용자가 RA 담당에게 전한다). ① outline 답의 `revision` ② ai-draft 의 `expected_revision`
   ③ ai-draft 쓰기의 행 잠금(경합은 이것으로만 닫힌다) ④ `entities/remove`. 포털 쪽 ① · ② 의 길은 이미 지어 두어 RA 가 올리면 저절로 켜진다.
 - **켜지 않은 것** — M5 는 박스 스위치 `INSIGHT_RA_PROJECT` 기본 꺼짐, T7 은 요청 칸 `undecided` 기본 꺼짐. dev 에서도 켜지 않았다.
+
+## L21-22 cae00 업데이트 라운드는 ste 결정 뒤 한 번에 · cae00 Claude 는 준비만(11-22)
+
+- **점검(읽기 전용, 11-22 저녁)** — update-all 이 받는 리포는 모두 원격과 같다(HEAXHub · KooRemapper · StepForge · SignalForge 는 그 세션의 커밋 안 한
+  작업이 있다 — cae00 에는 안 간다). Drive 드리프트 다섯 — 포털 화면 dist(Drive 가 11-17 판) · Laminate · MaterialTwin SIF(dev 가 지은 main 끝이 Drive 보다
+  새것) · ste 스테이징(로컬 main 54커밋 — ste 세션의 결정 ①) · AIDH 조각 목록이 11-14 에서 멈춤(dev 의 하루 한 번 내기 — cron 은 사용자 몫. 이대로면 cae00 은
+  전체 덤프 길로 받는다) · app-data(올리지 않는 것이 맞다).
+- **사용자 결정** — 라운드는 **ste 결정까지 기다렸다 한 번에**. 그때 할 것 — 작업 중인 허브 앱 세션에 main · Drive 동결을 걸고(해제 조건은 「cae00 이 받았다고
+  알릴 때까지」) · 포털 화면 dist(`build-all-to-drive.sh portal`) · Laminate · MaterialTwin 은 그 세션에 판을 물은 뒤 SIF · ste 는 결정대로 · 받은 편지함에 받을
+  판 표. 그 전까지는 Drive 에 올리지 않는다.
+- **cae00 Claude** — 사용자 결정 「확인 절차 · 설치 묶음부터」. 지은 것은 `../chat-llm-claude/` CC-9(키 없는 점검 · Drive 꾸러미 묶음 · 켜는 절차). 실제로 켜는 것은
+  회사 정책 확인과 점검 통과 뒤 사람이 한다.
