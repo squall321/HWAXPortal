@@ -380,11 +380,15 @@ def test_뺄_계정_목록이_바뀌면_게이트웨이는_닫힌_날도_다시_
     box = _box(tmp_path)
     rem = Remote(tmp_path)
     rem.audit.write_text("".join(_audit_line("2026-11-10T01:00:00+00:00", "t", "app", via="pat", caller=who)
-                                 for who in ("tester@example.com", "real@example.com")), encoding="utf-8")
+                                 for who in ("tester@example.com", "real@example.com"))
+                         # 엔진이 뺄 계정의 일로 만든 RA 초안(누구의 일 — OD-52) — 다시 접으면 그 사람 줄(ra-for)도 지워진다
+                         + _audit_line("2026-11-10T01:00:01+00:00", "create_report_draft", "reportarchive", via="gw-token",
+                                       audit_for="tester@example.com"), encoding="utf-8")
     _conv(box, "c1", "tester@example.com", int(_at(date(2026, 11, 10))))
     _fold(box, handler=rem)
     key, conv = ("2026-11-10", "calls", '{"app":"app","tool":"t","via":"pat"}'), ("2026-11-10", "conversations", '{"kind":"chat","source":"web"}')
     assert _daily(box, "gateway")[key] == 2 and _daily(box, "portal")[conv] == 1 and _folds(box, "gateway")["2026-11-10"][0] == 1
+    assert [s for _d, _e, s, _n, _a in _actors(box, "%-for%")] == ["mcp-for-gw-token", "ra-for"]
     box.s = box.s.model_copy(update={"usage_exclude_accounts": "tester@example.com"})
     rem.asked.clear()
     _fold(box, handler=rem)
@@ -393,6 +397,7 @@ def test_뺄_계정_목록이_바뀌면_게이트웨이는_닫힌_날도_다시_
     assert _daily(box, "portal")[conv] == 1, "포털 쪽 닫힌 날은 그대로다(사라진 줄을 잃지 않게)"
     assert _folds(box, "gateway")["2026-11-10"][1] == usage_fold.fingerprint(["tester@example.com"])
     assert [e for _d, e, _s, _n, _a in _actors(box, "mcp%")] == ["real@example.com"]
+    assert _actors(box, "%-for%") == [], "다시 접은 날의 누구의 일 줄(mcp-for · ra-for)도 지우고 넣는다"
 
 
 def test_게이트웨이가_원장을_다_못_접었으면_그_답은_쓰지_않고_다_접을_때까지_다시_묻는다(tmp_path):

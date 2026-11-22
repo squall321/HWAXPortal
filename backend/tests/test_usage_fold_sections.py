@@ -350,6 +350,15 @@ def test_토큰_줄은_다시_접어도_같고_400일_뒤_지운다(decided):
     assert "old@example.com" not in json.dumps(dump())
 
 
+def test_무기한_합계_표에는_이메일이_없다(decided):
+    """이메일은 사람 줄 · 사람별 토큰(400일)에만 있다 — 합계(usage_daily)와 접기 기록(usage_fold)은 무기한이라 사람을 싣지 않는다."""
+    box, _ = decided
+    assert _q(box, "SELECT COUNT(*) FROM usage_llm_daily WHERE email != ''")[0][0] > 0
+    assert _q(box, "SELECT COUNT(*) FROM usage_actor_daily WHERE source LIKE '%-for%'")[0][0] > 0
+    for table in ("usage_daily", "usage_fold"):
+        assert "@" not in json.dumps(_q(box, f"SELECT * FROM {table}"), ensure_ascii=False), table  # noqa: S608 — 고정 글자
+
+
 def test_옛_에이전트_서버는_토큰_칸이_없어도_접고_토큰_카드는_적기_전이다(tmp_path):
     box = _box(tmp_path)
     rem = Remote(tmp_path)
