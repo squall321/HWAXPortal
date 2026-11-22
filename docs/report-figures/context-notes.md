@@ -62,7 +62,8 @@
 - ⚠ 이 잠금은 **포털을 지나는 to-report 끼리만** 줄 세운다(반대 검토 F3 — 가짜 RA 로 재현). 같은 보고서에 게이트웨이의 `update_report_draft` 같은 다른
   쓰기가 겹치면(포털의 PATCH 가 읽은 뒤 · 쓰기 전에 그쪽이 읽고, 포털 뒤에 쓰면) 포털이 이미 ok 를 돌려준 그림 칸을 그 쓰기가 지운다. RA 의 ai-draft
   PATCH 는 revision 검사 · 행 잠금이 없다(`update_report(expected_revision=None, require_lock=False)`). 포털만으로는 닫지 못한다 — 게이트웨이가
-  보고서마다 RA 쓰기 도구와 그림 넣기를 줄 세우거나, RA 가 ai-draft 에 expected_revision 을 받아야 한다(게이트웨이 · RA 몫).
+  보고서마다 RA 쓰기 도구와 그림 넣기를 줄 세우거나, RA 가 ai-draft 에 expected_revision 을 받아야 한다(게이트웨이 · RA 몫). 11-22 다시 본 것은 RF-41
+  — RA v0.186.3 의 ai-draft 는 그 칸을 버리고, 받게 되어도 닫는 자리는 RA 의 행 잠금이다.
 - 편집 권한은 RA 가 정한다 — 포털은 권한 규칙을 다시 짓지 않는다. 올리기 **전에** 같은 PATCH 를 `dry_run` 으로 물어(RA 는 권한 · 발행 · 편집 잠금
   가드를 지난 뒤에만 미리보기를 내고 아무것도 바꾸지 않는다) 거절이면 파일을 올리지 않는다(반대 검토 F7 — 고아 파일). 거절은 403(`not_editable`),
   편집 화면이 열려 있으면 409(`report_locked`). 가드 뒤의 거절(검증 400 · 그 사이 잠금 409)만 '올린 파일이 RA 에 남았다' 고 말한다.
@@ -79,7 +80,8 @@
 | outline 404 | 404 `report_not_found` |
 | outline · PATCH(dry_run · 진짜) 403 | 403 `not_editable`(RA 의 까닭을 붙인다) |
 | 올리기 403 | 403 `forbidden_by_ra` |
-| PATCH 409 | 409 `report_locked` |
+| PATCH 409(편집 잠금 — `revision_mismatch` 가 아닌 것) | 409 `report_locked` |
+| PATCH 409 `revision_mismatch` 가 세 번 잇달아 | 409 `revision_conflict`(다시 읽어 다시 붙이다 멈춤, RF-41) |
 | 401(다시 받은 뒤에도) | 502 `ra_token_rejected` — 부른 쪽의 포털 자격이 아니라 그 사람의 RA 토큰 문제다 |
 | 413 · 415 | 413 `too_large` · 415 `unsupported_media_type` |
 | 그 밖 4xx | 422 `ra_rejected` |
@@ -380,4 +382,37 @@ REST `GET /api/projects/{id}/section-atlas` 에 format · viewer, svg_live 는 i
   도구에 모르는 인자를 넣으면 실패한다). 짝 저장 · 모델 안내는 단면 도구 다섯(`section_batch_result` 포함 — StepForge D-690 이 그림을 그쪽으로 낸다)에서만 한다.
   `/보고서` 는 SVG 자리에 짝 PNG 를 올리고, 앞 대화의 답에 SVG 만 있어도 판독은 짝 PNG 를 본다(`vision.svg_pair_urls`). 판독기는 원래 SVG 를 읽지 않는다.
 - StepForge 가 일곱째 묶음에 넣었다(D-690 — 계약 셋 그대로). 착지 알림에 실제 응답 하나와 두 그림 합 실측을 싣는다.
+
+**RF-41 판 번호(expected_revision)로 RA 쓰기 경합을 — RA v0.186.3 소스로 확인 · 포털 그림 칸은 판을 받으면 싣는다(11-22 KST, docs/leftovers-1121 L22).**
+RF-6 · F3(포털 잠금 밖의 RA 쓰기가 그림 칸을 지운다)을 RA 의 판 번호 확인으로 막으려 했다. RA 리포(v0.186.3 `b552f09`)는 읽기만 했고, dev RA(:3000)의
+openapi 로 같은 꼴인지 견줬다.
+- RA 에서 판을 받는 창구는 셋이다 — `PATCH /api/reports/{id}/ai-draft/rows`(본문 `expected_revision` — AiRowOps, MCP `append_rows` · `patch_cells` ·
+  `remove_rows`), `PATCH /api/reports/{id}`(ReportUpdate — 편집 잠금을 쥔 사람만), `POST /api/reports/{id}/versions/{vid}/restore`(쿼리 `expected_revision`,
+  MCP `restore_version`).
+- **그림 칸을 붙이는 `PATCH /api/reports/{id}/ai-draft`(AiDraftUpdate)에는 그 칸이 없다.** 보내도 pydantic 기본(extra=ignore)으로 버리고 `_apply_ai_draft` 는
+  `update_report(expected_revision=None, require_lock=False)` 그대로다. MCP `update_report_draft` 도 그 인자가 없다.
+- 판을 주는 읽기는 `GET /api/reports/{id}`(ReportRead.revision)와 쓰기 답의 `data.report.revision` 이다. `GET …/outline` 은 주지 않는다.
+- 어긋남 답은 409 `{success:false, message, errors:[{code:"revision_mismatch", message}]}`(rows · PATCH /{id} — routes._lock_conflict_response)다. 같은 409
+  의 편집 잠금은 `errors[0].code` 가 `lock_held_by_other` 라 이 칸으로 가른다. restore 의 어긋남은 409 에 message 만 있다(errors 없음).
+- 판 검사는 요청 처음에 읽은 행과 견주는 파이썬 비교다(`report.revision != expected_revision`). 행 잠금(`with_for_update`)도 SQLAlchemy `version_id_col` 도 없다.
+- 그래서 F3 은 이번에도 포털만으로 닫히지 않는다. 지금 RA 의 ai-draft 는 판을 버린다. RA 가 받게 되어도 F3 은 **남의 쓰기가 포털의 그림 칸을 덮는** 방향이라
+  포털이 싣는 판이 남의 쓰기를 막지 못하고, RA 안에서 두 요청이 같은 행을 읽은 뒤 차례로 쓰는 틈은 요청 처음의 비교로 잡히지 않는다. 포털이 싣는 판이 막는 것은
+  outline 을 읽은 뒤 쪽 구성이 바뀌는 것(마지막 쪽이 달라짐 · 쪽이 줄어 끝 다음 쪽이 새로 생김)뿐이다. 닫는 자리는 RA — ai-draft 쓰기에서 보고서 행을
+  `FOR UPDATE` 로 읽거나 `UPDATE … WHERE revision = :읽은 판` 으로 쓴다.
+- 지은 것 — `_to_report` 는 outline 답에 revision(1 이상의 정수)이 있으면 진짜 PATCH 에 `expected_revision` 으로 싣고, 409 `revision_mismatch` 면 다시 읽어
+  다시 붙인다. 세 번(`_REV_TRIES`)까지이고 넘으면 409 `revision_conflict`(올린 파일이 RA 에 남았다고 말한다). dry_run 가드와 파일 올리기는 첫 번에만 한다.
+  다시 읽은 쪽에 같은 그림 칸(같은 id)이 이미 있으면 붙이지 않고 `deduped: true` 로 답한다 — `file_id` 는 null 이다(outline 이 칸의 파일을 주지 않는다).
+  첫 번에 같은 그림이 있으면 갈아 끼우는 RF-5 계약(캡션을 바꿔 다시 보내는 길 · `replaced`)은 그대로다.
+- 판을 주지 않는 RA(v0.186.3)에는 싣지 않는다 — 요청 · 동작이 종전과 같다. 그래서 지금 이 길은 쉰다. 켜지려면 RA 에 둘이 필요하다 — outline 답의 `revision`,
+  AiDraftUpdate 의 `expected_revision`(`_apply_ai_draft` 가 update_report 에 넘김). 행 잠금까지 셋을 RA 담당에게 건넬 몫이다(RA 리포에는 쓰지 않는다 — 사용자를 거쳐).
+- 우리 쪽의 다른 RA 쓰기(포털 · 에이전트 서버를 grep).
+  - 에이전트 서버 심의 이어붙이기(`deliberation.py` — `get_report` 로 쪽 수를 읽고 `update_report_draft(page=쪽 수+1)`)는 읽고 쓰는 꼴이다. 그 사이 남이 쪽을
+    더하면 남의 새 쪽에 합쳐져 같은 id 칸(recommendation · minutes …)을 갈아 끼운다. MCP `update_report_draft` 가 판 인자를 받지 않고 ai-draft 도 버려 고치지 않았다.
+  - 포털 리스크 보고서 RA 초안(`risk_report.py`)은 방금 만든 초안에 쪽을 차례로 더하는 ai-draft PATCH 다. 만들기 흐름이고 ai-draft 가 판을 버려 고치지 않았다.
+  - 포털 DocForge 배달 · 챗 파일 올리기 · PPT 가져오기 · 에이전트 서버 `/보고서` · 심의 새 보고서는 만들기라 대상이 아니다.
+  - 판을 받는 RA 창구(rows · PATCH /{id} · restore)를 부르는 우리 코드는 없다. 개인 Claude 가 게이트웨이로 부르는 RA MCP 의 `append_rows` 등은 모델이 판을
+    넘긴다(게이트웨이는 그대로 통과).
+- 시험 — 가짜 RA 의 기본은 v0.186.3 꼴(outline 에 판 없음 · ai-draft 는 판을 버림 · 진짜 PATCH 마다 판 +1 · 편집 잠금 409 는 `lock_held_by_other`)이고,
+  `rev_outline` · `rev_check` 는 RA 가 바뀐 뒤의 가정 꼴이다(어긋남 답은 RA 가 다른 창구에서 내는 꼴 그대로). 새 시험 여섯, 사본 변이 일곱(늘 싣기 · 다시 안 함 ·
+  매번 올림 · 같은 칸 막기 뺌 · 상한 1 · 아무 409 나 다시 · 앞 판을 다시 씀)이 모두 붉었다.
 

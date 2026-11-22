@@ -10,6 +10,8 @@
     sha256 이 다르면 400.
   · RA 오류는 맞는 상태로(RF-8 표), RA 가 칸을 경고로 버리면 502, 같은 그림을 다시 넣으면 칸을 갈아 끼운다, 같은 보고서에 동시에 넣어도 칸이
     사라지지 않는다(보고서 잠금).
+  · 판 번호(RF-41) — RA 가 outline 에 판을 주면 expected_revision 으로 싣고 어긋나면 세 번까지 다시 읽어 다시 붙인다(파일은 한 번 · 같은 칸이 생겼으면
+    붙이지 않음). 판을 주지 않는 RA(v0.186.3)에는 싣지 않는다.
 """
 import asyncio
 import hashlib
@@ -51,13 +53,21 @@ class _RA:
     """가짜 RA — 보고서 한 건(쪽마다 blocks_order). ai-draft PATCH 는 진짜처럼 읽고 · 합치고 · 쓴다(같은 id 는 교체, 새 id 는 끝에).
     dry_run PATCH 는 가드(권한 · 발행 · 편집 잠금)만 보고 바꾸지 않는다(RA _apply_ai_draft 와 같다). status 로 단계의 답을 바꾼다 —
     outline · files · patch(가드 — dry_run 과 진짜 PATCH 둘 다) · patch_real(진짜 PATCH 만 — 가드를 지난 뒤의 검증 거절). delay 는 PATCH 의
-    읽기와 쓰기 사이를 벌린다(동시 호출 시험)."""
+    읽기와 쓰기 사이를 벌린다(동시 호출 시험).
+    판 번호(RF-41) — 진짜 PATCH 마다 revision 이 1 오른다(services.update_report). 기본은 RA v0.186.3 그대로 — outline 답에 revision 이 없고
+    ai-draft PATCH 는 expected_revision 을 모르는 칸으로 버린다(AiDraftUpdate 에 그 칸이 없다 · pydantic 기본 extra=ignore). rev_outline ·
+    rev_check 는 RA 가 요청대로 바뀐 뒤의 꼴(가정)이다 — 어긋남 답은 RA 가 이미 다른 창구(ai-draft/rows · PATCH /{id})에서 내는 꼴 그대로
+    (409 · errors[0].code revision_mismatch — routes._lock_conflict_response). others 는 우리 PATCH 앞에 끼어드는 남의 쓰기 횟수, other_block
+    은 그 쓰기가 같은 쪽에 넣는 칸 id."""
 
-    def __init__(self, pages: int = 2, *, status: dict | None = None, drop: bool = False, delay: float = 0.0, rid: int = 41):
+    def __init__(self, pages: int = 2, *, status: dict | None = None, drop: bool = False, delay: float = 0.0, rid: int = 41,
+                 rev_outline: bool = False, rev_check: bool = False, others: int = 0, other_block: str | None = None):
         self.rid, self.status, self.drop, self.delay = rid, status or {}, drop, delay
         self.pages = [{"blocks_order": ["background", "results"], "content": {}} for _ in range(pages)]
         self.calls: list[httpx.Request] = []
         self.files: list[dict] = []
+        self.revision = 1
+        self.rev_outline, self.rev_check, self.others, self.other_block = rev_outline, rev_check, others, other_block
 
     def _st(self, step: str, ok: int) -> int:
         return self.status.get(step, ok)
@@ -72,7 +82,7 @@ class _RA:
             return httpx.Response(200, json={"success": True, "data": {
                 "report_id": self.rid, "title": "심의", "phase": "drafting", "page_count": len(self.pages),
                 "pages": [{"page": i + 1, "blocks": [{"block_id": b} for b in p["blocks_order"]]} for i, p in enumerate(self.pages)],
-                "issues": [], "mounted_to": []}})
+                "issues": [], "mounted_to": []} | ({"revision": self.revision} if self.rev_outline else {})})
         if path == "/api/files" and req.method == "POST":
             st = self._st("files", 201)
             if st >= 400:
@@ -90,11 +100,22 @@ class _RA:
             body = json.loads(req.content)
             st = self._st("patch", 200) if body.get("dry_run") else self._st("patch_real", self._st("patch", 200))
             if st >= 400:
-                return httpx.Response(st, json={"success": False, "message": f"patch {st}"})
+                # 편집 잠금의 409 는 RA 가 errors[0].code 를 싣는다(_ai_edit_gate → LockHeldByOtherError)
+                lock = {"errors": [{"code": "lock_held_by_other", "message": f"patch {st}"}]} if st == 409 else {}
+                return httpx.Response(st, json={"success": False, "message": f"patch {st}"} | lock)
             if body.get("dry_run"):
                 return httpx.Response(200, json={"success": True, "data": {"dry_run": True, "report_id": self.rid, "title": "심의",
                                                                          "page_diff": [], "metadata_changes": {}, "warnings": [],
                                                                          "mounted_to": [], "note": "적용하지 않았습니다."}})
+            if self.others:                                   # 남의 쓰기가 먼저 저장됐다 — 판이 오른다
+                self.others -= 1
+                self.revision += 1
+                if self.other_block:
+                    self.pages[body["page"] - 1]["blocks_order"].append(self.other_block)
+            exp = body.get("expected_revision")
+            if self.rev_check and exp is not None and exp != self.revision:
+                msg = f"Report has been modified by someone else (client revision {exp}, server revision {self.revision})."
+                return httpx.Response(409, json={"success": False, "message": msg, "errors": [{"code": "revision_mismatch", "message": msg}]})
             p = self.pages[body["page"] - 1]
             order = list(p["blocks_order"])                   # 읽기
             await asyncio.sleep(self.delay)
@@ -107,8 +128,9 @@ class _RA:
                     order.append(b["id"])
                 p["content"][b["id"]] = b["content"]
             p["blocks_order"] = order                         # 쓰기
+            self.revision += 1
             return httpx.Response(200, json={"success": True, "data": {
-                "report": {"id": self.rid, "pages": [{"template_id": "deliberation", "template_version": 1,
+                "report": {"id": self.rid, "revision": self.revision, "pages": [{"template_id": "deliberation", "template_version": 1,
                                                       "blocks_order": q["blocks_order"], "content": q["content"]} for q in self.pages]},
                 "warnings": warnings, "url": f"/w/personal-5/reports/{self.rid}", "mounted_to": []}})
         raise AssertionError(f"가짜 RA 가 모르는 요청 — {req.method} {path}")
@@ -509,6 +531,85 @@ def test_같은_보고서에_그림_둘을_한꺼번에_넣어도_칸이_사라�
     assert {f"fig_{_sha(PNG)[:16]}", f"fig_{_sha(raw2)[:16]}"} <= set(ra.pages[1]["blocks_order"]), "앞 칸이 덮였다"
     assert a["ok"] and b["ok"]
     F._LOCKS.clear()
+
+
+# ── 판 번호(expected_revision, RF-41) ──────────────────────────────────────────────────────────────────────────────
+_FLOW = ["GET /api/reports/41/outline", "PATCH /api/reports/41/ai-draft", "POST /api/files", "PATCH /api/reports/41/ai-draft"]
+
+
+def _patches(ra: _RA) -> list[dict]:
+    """진짜 PATCH(dry_run 이 아닌 것)의 본문들."""
+    return [b for b in (json.loads(q.content) for q in ra.calls if q.method == "PATCH") if not b.get("dry_run")]
+
+
+def test_RA_가_판_번호를_주지_않으면_싣지_않고_종전과_같다(portal):
+    """RA v0.186.3 — outline 답에 revision 이 없다. expected_revision 을 싣지 않는다(옛 판에서는 지금과 같은 동작). 남의 쓰기가 끼어도 한 번에 붙인다."""
+    c, ra, _s, _tok = portal
+    ra.others = 1
+    r = _post(c, _meta())
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert ra.paths() == _FLOW
+    assert ["expected_revision" in b for b in _patches(ra)] == [False]
+
+
+def test_판_번호를_주면_싣고_RA_가_그_칸을_무시해도_한_번에_붙인다(portal):
+    """outline 이 revision 을 주고 ai-draft PATCH 는 그 칸을 버리는 RA(v0.186.3 의 ai-draft 가 그렇다) — 실어 보내되 동작은 종전과 같다."""
+    c, ra, _s, _tok = portal
+    ra.rev_outline, ra.others = True, 1
+    r = _post(c, _meta())
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert ra.paths() == _FLOW
+    assert [b.get("expected_revision") for b in _patches(ra)] == [1], "읽은 판으로 싣는다"
+
+
+def test_판이_어긋나면_다시_읽어_다시_붙이고_그림은_한_번만_올린다(portal):
+    c, ra, _s, _tok = portal
+    ra.rev_outline, ra.rev_check, ra.others = True, True, 1
+    sid = f"fig_{_sha(PNG)[:16]}"
+    r = _post(c, _meta())
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["ok"] is True and out["file_id"] == "f1" and out["block_id"] == sid and out["replaced"] is False
+    assert ra.paths() == _FLOW + ["GET /api/reports/41/outline", "PATCH /api/reports/41/ai-draft"], "어긋나면 다시 읽고 다시 붙인다"
+    assert [b.get("expected_revision") for b in _patches(ra)] == [1, 2], "다시 읽은 판으로 다시 싣는다"
+    assert len(ra.files) == 1, "그림 파일은 한 번만 올린다"
+    assert ra.pages[1]["blocks_order"].count(sid) == 1
+    (row,) = app.state.agent_audit.rows
+    assert row["status"] == "ok"
+
+
+def test_판이_상한만큼_잇달아_어긋나면_정해진_글로_실패하고_올린_파일을_말한다(portal):
+    c, ra, _s, _tok = portal
+    ra.rev_outline, ra.rev_check, ra.others = True, True, 99
+    r = _post(c, _meta())
+    assert r.status_code == 409 and r.json()["error"] == "revision_conflict", r.text
+    assert len(_patches(ra)) == F._REV_TRIES == 3, "짧은 상한 — 세 번까지"
+    assert len(ra.files) == 1 and "f1" in r.json()["detail"] and "남았습니다" in r.json()["detail"]
+    assert f"fig_{_sha(PNG)[:16]}" not in ra.pages[1]["blocks_order"]
+    (row,) = app.state.agent_audit.rows
+    assert row["status"] == "failed" and row["meta"]["error"] == "revision_conflict"
+
+
+def test_다시_읽었을_때_같은_그림_칸이_이미_있으면_다시_붙이지_않는다(portal):
+    """어긋난 사이에 남의 쓰기가 같은 그림 칸(같은 id)을 그 쪽에 넣었다 — 다시 붙이지 않고 그 칸을 알린다. 올린 파일은 남았다고 말한다."""
+    c, ra, _s, _tok = portal
+    sid = f"fig_{_sha(PNG)[:16]}"
+    ra.rev_outline, ra.rev_check, ra.others, ra.other_block = True, True, 1, sid
+    r = _post(c, _meta())
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["ok"] is True and out["deduped"] is True and out["block_id"] == sid and out["page"] == 2 and out["block_index"] == 2
+    assert out["file_id"] is None and out["replaced"] is False and "f1" in out["detail"]
+    assert len(_patches(ra)) == 1, "칸 id 가 이미 있으면 붙이지 않는다"
+    assert ra.pages[1]["blocks_order"].count(sid) == 1
+
+
+def test_편집_잠금의_409_는_판_어긋남이_아니라_다시_하지_않는다(portal):
+    c, ra, _s, _tok = portal
+    ra.rev_outline, ra.rev_check, ra.status = True, True, {"patch_real": 409}
+    r = _post(c, _meta())
+    assert r.status_code == 409 and r.json()["error"] == "report_locked"
+    assert len(_patches(ra)) == 1
 
 
 # ── 에이전트 서버와의 계약 ─────────────────────────────────────────────────────────────────────────────────────
