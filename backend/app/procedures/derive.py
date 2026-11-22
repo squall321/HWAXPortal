@@ -173,7 +173,12 @@ def draft(steps: list[dict], *, tool_backend: dict[str, str] | None = None,
                 args_out[key] = val
             reasons.append({"step": ix + 1, "tool": st["tool"], "arg": key, **src})
 
-        out_steps.append({"backend": backend, "tool": st["tool"], "args": args_out})
+        # 단계는 **원래 이름**을 싣는다(Step.tool — 실행기는 `<앱키>_<원래 이름>` 별칭으로 부른다). 챗 기록의 이름은 노출 이름이라
+        # 이름이 겹친 도구는 `ste_submit_job` 처럼 앱 접두가 붙어 온다 — 그대로 두면 별칭이 `ste_ste_submit_job` 이 되어 못 부르고
+        # 저장 검증(접두 · 관문 목록)도 비켜 간다(W-119). 화면(BuildView)과 같은 규칙으로 뗀다.
+        p = backend.replace("-", "") + "_"
+        tool = st["tool"][len(p):] if backend and st["tool"].startswith(p) else st["tool"]
+        out_steps.append({"backend": backend, "tool": tool, "args": args_out})
 
     # 같은 값이 여러 단계에 쓰였으면 **어디 어디에 쓰이는지**를 설명에 모은다 —
     # 한 칸이 세 단계를 움직이는데 한 단계만 적혀 있으면 사람이 영향 범위를 오해한다.

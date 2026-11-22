@@ -167,3 +167,37 @@ def test_health_down_은_false_로_적힌_백엔드만_고른다(monkeypatch):
         raise OSError("연결 거부")
     monkeypatch.setattr(m.urllib.request, "urlopen", boom)
     assert m.health_down() == set()
+
+
+def test_pull_은_접두가_붙은_노출_이름에_원래_이름을_싣는다(monkeypatch, tmp_path):
+    """W-119 — 절차 단계와 관문 목록은 원래 이름으로 판정한다. 게이트웨이 `/tools-map` 의 `orig`(이름이 겹쳐 접두를 붙인 것만)를
+    줄에 싣고, 접두가 없는 줄에는 칸을 두지 않는다."""
+    m = _mod()
+    monkeypatch.setattr(m, "CENSUS", tmp_path / "없음.json")
+    monkeypatch.setattr(m, "_gateway_token", lambda: "시험")
+    tools = [{"name": "ste_submit_job", "inputSchema": {"properties": {"app": {}}}},
+             {"name": "list_apps", "inputSchema": {}}]
+
+    def rpc(url, headers, body, timeout=90.0):
+        return "data: " + json.dumps({"result": {"tools": tools}}) if body.get("method") == "tools/list" else ""
+
+    class R:
+        headers = {"mcp-session-id": "s"}
+
+        def __init__(self, body: bytes = b""):
+            self._b = body
+
+        def read(self):
+            return self._b
+
+    tm = {"map": {"ste_submit_job": "ste", "list_apps": "ste"}, "orig": {"ste_submit_job": "submit_job"}}
+
+    def urlopen(req, timeout=0):
+        u = req if isinstance(req, str) else req.full_url
+        return R(json.dumps(tm).encode()) if u.endswith("/tools-map") else R()
+
+    monkeypatch.setattr(m, "_rpc", rpc)
+    monkeypatch.setattr(m.urllib.request, "urlopen", urlopen)
+    rows = {r["name"]: r for r in m.pull()["tools"]}
+    assert rows["ste_submit_job"]["orig"] == "submit_job" and rows["ste_submit_job"]["backend"] == "ste"
+    assert "orig" not in rows["list_apps"]

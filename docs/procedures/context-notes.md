@@ -2951,3 +2951,40 @@ W-113 ~ W-116 의 반대 검토(높음 0 · 중간 5 · 낮음 5 · 시험이 �
 - **시험.** 포털 전체 5,024 통과 · 붉은 셋은 알려진 것(main 에서도 붉은 `test_HA29_StepForge_…` · 워크트리에서만 붉은 `test_ste_doctor_and_drive` ·
   `test_tlscert`). 게이트웨이 전체 1,184 통과(가지 `wt1122/census` `c7aff49` — 워크트리에는 박스 설정이 없어 `GATEWAY_CONFIG` 에 예시 설정을 줬다).
   올리기 · 병합 · 재기동은 하지 않았다 — 포털(저장 검증 목록)과 게이트웨이(거절 목록)는 재기동해야 먹는다.
+
+## W-119. 목록 · 인구조사 대조를 원래 이름으로 — 노출 이름과 단계 이름이 어긋나던 것(11-22, 조정 세션 요청)
+
+W-118 에서 짚은 어긋남을 고쳤다. 절차 단계는 **원래 이름**을 싣는다(`Step.tool` — 화면 BuildView 가 `<앱키>_` 접두를 떼고 실행기는
+`<앱키>_<원래 이름>` 별칭으로 부른다). 저장 검증과 게이트웨이 관문(`_orig`)도 그 이름으로 판정한다. 그런데 인구조사는 노출 이름만 실었고
+목록 가드(`⊆ 인구조사` · `DRY_RUN_TOOLS == 인구조사`)가 그 이름에 대조했다. 그래서 둘이 샜다 — (가) 두 앱이 이름이 겹쳐 접두로만 뜨는
+`recipe_run`(smart-twin-mcp · KooRemapper 둘 다 잡 제출)을 경고 목록에 못 적었다. (나) `DRY_RUN_TOOLS` 의 `heaxmaterialtwin_web_register_material` 은
+노출 이름이라 단계(`register_material`)의 dry_run 을 「인자가 없다」 로 잘못 거절했다.
+
+- **인구조사 줄에 `orig`.** `refresh-census.py` 가 `/tools-map` 의 `orig`(이름이 겹쳐 접두가 붙은 것만 온다)를 그 줄에 싣는다 — 지금 25줄.
+  `--keep-absent` 로 다시 찍었고(smart-twin-cluster 19줄 그대로) `orig` 말고 바뀐 줄은 없었다. 시작 줄이 지킨 줄 수를 함께 말한다.
+- **가드는 단계 이름으로.** 줄의 단계 이름은 `orig`, 없으면 `name` 이다. `MUST_GATE` · `WARN_EXACT` · `catalog-forward.json` 은 그 이름에 있어야
+  하고 노출 이름으로 적은 줄은 거절한다(아무 단계에도 안 맞는 죽은 줄이다). 되돌리기 어려운 새 도구 카나리도 단계 이름으로 본다 —
+  RA 가 다른 앱과 겹쳐 `reportarchive_trash_…` 로 뜨는 박스에서 노출 이름으로 보면 `trash_` 가 안 걸린다.
+- **`DRY_RUN_TOOLS` 는 앱별로 갈릴 때만 `<앱키>:<원래 이름>`.** 같은 원래 이름이 여러 앱에 있고 일부만 dry_run 을 받으면 맨 이름으로 적을
+  수 없다 — `register_material` 은 MaterialTwin 만 받고 StepForge 는 받지 않는다. 맨 이름이면 StepForge 단계의 dry_run 이 저장을 지나 백엔드가
+  버리고 실제로 등록하며, 리터럴 `dry_run: true` 를 미리보기로 쳐 토큰 live 시작도 막지 않는다. 그래서 `heax-materialtwin_web:register_material` 로
+  적고 판정은 `has_dry_run(st)` 하나로 한다(저장 검증 ④ · 확인 없는 쓰기의 미리보기). 가드는 인구조사에서 같은 규칙으로 기대 집합을 지어
+  정확히 같기를 요구한다. `MUST_GATE` · `WARN_EXACT` 는 맨 원래 이름 그대로다 — 같은 이름의 다른 앱까지 막거나 경고하는 것은 닫힌 쪽이다.
+- **더한 것.** `WARN_EXACT` 에 `recipe_run`. `DRY_RUN_TOOLS` 의 노출 이름 줄을 `heax-materialtwin_web:register_material` 로 바꿨다.
+- **게이트웨이는 고칠 것이 없다.** 범용 실행기는 부른 이름과 해석한 원래 이름을 둘 다 본다(`_exact = inner in … or _orig in …` — 시험
+  `test_별칭도_정확이름_차단에_걸린다`). 포털 `MUST_GATE` 와의 같음 시험도 원래 이름끼리라 그대로 선다. 게이트웨이 가지는 시험만 돌렸다.
+- **같은 어긋남이 하나 더 — 챗 기록에서 뽑은 초안.** `derive.draft` 가 챗 기록의 노출 이름을 그대로 실어, 이름이 겹친 도구는
+  `{backend: ste, tool: ste_submit_job}` 이 됐다 — 별칭이 `ste_ste_submit_job` 이라 못 부르고 `submit_` 경고도 비켜 갔다(재현함). 화면과 같은 규칙으로
+  앱 접두를 뗀다.
+- **훑어본 나머지.** 씨앗 절차 고정물 · 2단 도구 등록부(`dispatchers.yaml`)의 단계 이름은 모두 원래 이름이다. 실행기 `_gate_of` · 계약의
+  `_human_gates` · `_writey` · 캐시 판정은 단계 이름을 보므로 그대로다. 고치지 않은 것 둘 — ① ste 의 `ste_job_summary` 는 원래 이름이 그대로
+  `ste_job_summary` 인데 화면 규칙으로 떼면 `job_summary` 가 된다(별칭이 노출 이름과 같아 부르기는 된다 · 읽기 도구라 목록과 무관). ② 등록부
+  후보 `run_saved_search` 의 앱이 `ai-data-hub` 로 적혀 있는데 인구조사에서는 `reportarchive` 다(09-15 후보 줄 — 이름 어긋남이 아니라 앱 어긋남).
+  he-team.json 의 `writes` · `confirm` 은 에이전트 서버가 노출 · 별칭 이름으로 맞추는 다른 관문이라 손대지 않았다.
+- **시험이 안 물던 것.** 인구조사 대조를 단계 이름으로 바꾼 것 · `orig` 싣기 · 앱별 dry_run · 초안의 접두 떼기 · 카나리의 접두 이름에
+  시험을 붙였다. 변이 열하나가 모두 붉어졌다(사본에서) — 노출 이름 줄로 되돌리기 · 맨 이름으로 열기 · `has_dry_run` 의 앱 칸 빼기 · 미리보기
+  판정을 옛 대조로 · `recipe_run` 빼기 · 경고에 노출 이름 넣기 · 초안이 접두를 안 떼기 · `orig` 안 싣기 · 고정물에서 `orig` 지우기 · 카나리를
+  노출 이름으로(꾸민 줄로 붉음/조용함을 견줌 · 전용 시험).
+- **시험.** 포털 전체 5,062 통과 · 붉은 셋은 알려진 것(`test_HA29_StepForge_…` · 워크트리에서만 붉은 `test_ste_doctor_and_drive` · `test_tlscert`).
+  카나리 도움 함수(`_canary`)는 회귀가 모듈을 읽은 뒤 나눴다 — 절차 시험 묶음(542 통과 · 붉은 하나는 HA29)을 따로 다시 돌렸다. 게이트웨이 전체
+  1,192 통과(코드는 그대로). 올리기 · 병합 · 재기동은 하지 않았다 — 저장 검증 목록과 초안 규칙은 포털 재기동 뒤에 먹는다.

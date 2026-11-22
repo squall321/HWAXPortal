@@ -55,14 +55,21 @@ def pull(url: str = "http://127.0.0.1:9110") -> dict:
     for ln in raw.splitlines():
         if ln.startswith("data: "):
             tools = json.loads(ln[6:]).get("result", {}).get("tools", [])
-    tmap = json.loads(urllib.request.urlopen(f"{url}/tools-map", timeout=30).read())
-    tmap = tmap.get("map") or tmap
+    tm = json.loads(urllib.request.urlopen(f"{url}/tools-map", timeout=30).read())
+    tmap = tm.get("map") or tm
+    # 노출 이름 → 원래 이름(이름이 겹쳐 게이트웨이가 접두를 붙인 것만 온다). 절차 단계는 **원래 이름**을 싣고(Step.tool) 목록 · 게이트웨이
+    # 관문도 그 이름으로 판정하므로 인구조사가 함께 싣는다 — 노출 이름만 있으면 `recipe_run` 처럼 접두로만 뜨는 이름을 목록에 못 적는다
+    # (docs/procedures W-119). 옛 게이트웨이는 이 칸을 안 준다.
+    orig = tm.get("orig") or {}
 
     rows = []
     for t in sorted(tools, key=lambda x: x["name"]):
         props = (t.get("inputSchema") or {}).get("properties") or {}
+        row = {"name": t["name"], "backend": tmap.get(t["name"])}
+        if orig.get(t["name"], t["name"]) != t["name"]:
+            row["orig"] = orig[t["name"]]
         rows.append({
-            "name": t["name"], "backend": tmap.get(t["name"]),
+            **row,
             "dry_run": "dry_run" in props, "args": len(props),
             "args_documented": sum(1 for v in props.values()
                                    if isinstance(v, dict)
@@ -144,7 +151,9 @@ def main() -> int:
     now = {t["name"] for t in fresh["tools"]}
     c = compare(old, fresh)
     down = health_down()
-    print(f"기록 {len(was)}종({old.get('generated')}, {_age(old.get('generated'))}) → 지금 {len(now)}종")
+    kept_n = sum(v.get("tools", 0) for v in (old.get(KEPT) or {}).values())
+    print(f"기록 {len(was)}종({old.get('generated')}, {_age(old.get('generated'))}"
+          f"{f' — 내려간 백엔드에서 지킨 {kept_n}줄 포함' if kept_n else ''}) → 지금 {len(now)}종")
     for label, s in (("새로 생긴 도구", c["added"]), ("사라진 도구", c["gone"]),
                      ("dry_run 이 생긴 도구", c["dry_added"]),
                      ("dry_run 이 없어진 도구", c["dry_removed"])):
