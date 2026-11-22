@@ -25,7 +25,11 @@ STEPFORGE_OBJECT = "heaxstep_forge_onto_object"
 RISK_FIND = "heaxhwax_risk_risk_find_projects_by_subject"
 RISK_DIFF = "heaxhwax_risk_risk_get_diff"
 TASK_TYPE = "plm_task"            # SP 과제의 타입 slug(StepForge core/sp_core.py TASK_TYPE)
-CALL_TIMEOUT_S = 15.0
+# 기한 — 안쪽이 먼저 걸려야 한다. 호출 하나(CALL_TIMEOUT_S) ≤ 한 갈래 전체(READ_BUDGET_S — 개정 줄 · 리스크 변경 심사 · key 이력이 저마다) 이고,
+# 카드 하나를 읽는 창구의 안쪽 합(개정 줄 + 리스크 변경 심사 = 2 × READ_BUDGET_S)이 게이트웨이 insight_get 의 기한(30초)보다 짧아야 한다 — 넘으면
+# '모름' 으로 답하지 못하고 도구가 통째로 실패한다(반대 검토 11-22 L6 — 종전엔 호출 하나 15초를 차례로 불러 안쪽이 더 길었다). 시험이 견준다.
+CALL_TIMEOUT_S = 8.0
+READ_BUDGET_S = 10.0
 CONCURRENCY = 4
 PROJECTS_MAX = 12                 # 한 번에 StepForge 에 묻는 CAD 과제 수 — 넘는 것은 '모름' 으로 말한다
 OLD_KEYS_MAX = 5                  # 한 과제에 모으는 옛 key 수
@@ -43,6 +47,27 @@ def caller(settings, pat: str, *, timeout: float = CALL_TIMEOUT_S) -> Call:
     async def call(tool: str, args: dict) -> dict:
         return await _upload.mcp_call(settings.mcp_gateway_url, pat, tool, args, timeout=timeout)
     return call
+
+
+async def bounded(coro, budget_s: float):
+    """coro 를 budget_s 초 안에서 — 넘기면 TimeoutError 를 낸다. 넘긴 일은 취소만 걸고 **끝나기를 기다리지 않는다**(게이트웨이 호출은 취소된 뒤에도
+    세션 닫기를 보내느라 호출 기한만큼 더 걸린다 — 그것을 기다리면 상한이 그만큼 늘어난다, 반대 검토 11-22 L5). 부른 쪽이 취소되면 같이 취소한다."""
+    task = asyncio.ensure_future(coro)
+    try:
+        done, _pending = await asyncio.wait({task}, timeout=budget_s)
+    except BaseException:
+        _abandon(task)
+        raise
+    if not done:
+        _abandon(task)
+        raise TimeoutError
+    return task.result()
+
+
+def _abandon(task: asyncio.Future) -> None:
+    """취소를 걸고 뒤처리는 뒤에서 끝나게 둔다 — 끝난 뒤의 예외는 읽어 둔다(읽지 않은 예외 경고가 로그를 채우지 않게)."""
+    task.cancel()
+    task.add_done_callback(lambda t: t.cancelled() or t.exception())
 
 
 async def _ask(call: Call, tool: str, args: dict) -> tuple[dict | None, str]:
@@ -70,8 +95,9 @@ def revision_of(meta: dict) -> dict:
             "rev_label": label[:80] if isinstance(label, str) and label else None, "next": nxt}
 
 
-async def mcad_revisions(call: Call, project_ids: list[str]) -> dict[str, dict]:
-    """CAD 과제 id → 개정 정보(revision_of) 또는 {state: unknown, why}. 같은 id 는 한 번, PROJECTS_MAX 개까지 묻고 나머지는 모름이다."""
+async def mcad_revisions(call: Call, project_ids: list[str], *, budget_s: float = READ_BUDGET_S) -> dict[str, dict]:
+    """CAD 과제 id → 개정 정보(revision_of) 또는 {state: unknown, why}. 같은 id 는 한 번, PROJECTS_MAX 개까지 묻고 나머지는 모름이다. 전체가
+    budget_s 초를 넘으면 그때까지 답한 것만 쓰고 나머지는 모름이다(늦은 호출은 취소만 걸고 기다리지 않는다)."""
     ids = list(dict.fromkeys(i for i in project_ids if isinstance(i, str) and i))
     out: dict[str, dict] = {i: {"state": "unknown", "why": f"한 번에 보는 CAD 과제 수({PROJECTS_MAX})를 넘어 묻지 않았다"} for i in ids[PROJECTS_MAX:]}
     sem = asyncio.Semaphore(CONCURRENCY)
@@ -80,7 +106,18 @@ async def mcad_revisions(call: Call, project_ids: list[str]) -> dict[str, dict]:
         async with sem:
             meta, why = await _ask(call, STEPFORGE_META, {"project_id": pid})
         out[pid] = revision_of(meta) if meta is not None else {"state": "unknown", "why": why}
-    await asyncio.gather(*(one(i) for i in ids[:PROJECTS_MAX]))
+    tasks = [asyncio.ensure_future(one(i)) for i in ids[:PROJECTS_MAX]]
+    if tasks:
+        try:
+            _done, pending = await asyncio.wait(tasks, timeout=budget_s)
+        except BaseException:
+            for t in tasks:
+                _abandon(t)
+            raise
+        for t in pending:
+            _abandon(t)
+    for i in ids[:PROJECTS_MAX]:
+        out.setdefault(i, {"state": "unknown", "why": f"개정 줄의 답이 기한({budget_s:.0f}초) 안에 오지 않았다"})
     return out
 
 
@@ -124,11 +161,11 @@ def card_stale(subject: dict, revs: dict[str, dict]) -> dict | None:
     return {"state": state, "say": stale_say(state, items), "items": items}
 
 
-def stale_say(state: str, items: list[dict]) -> str:
-    """판 표지 한 줄 — 화면과 근거 항목 머리에 같은 글을 쓴다."""
+def stale_say(state: str, items: list[dict], *, detail: bool = True) -> str:
+    """판 표지 한 줄. detail 이 거짓이면 판정 낱말만이다 — 뒤 판의 이름 · id 를 싣지 않는다(public)."""
     if state == "stale":
         why = list(dict.fromkeys(_REASON[x] for i in items if i["state"] == "stale" for x in i.get("reasons") or ()))
-        nxt = [n.get("rev_label") or n["project_id"] for i in items if i["state"] == "stale" for n in i.get("next") or ()]
+        nxt = [n.get("rev_label") or n["project_id"] for i in items if i["state"] == "stale" for n in i.get("next") or ()] if detail else []
         return "낡았을 수 있다 — 기구 CAD: " + " · ".join(why) + (f"(뒤 판 {', '.join(nxt[:3])})" if nxt else "")
     if state == "unknown":
         return "판이 바뀌었는지 모른다 — 기구 CAD 의 개정 줄을 읽지 못했다"
@@ -137,17 +174,34 @@ def stale_say(state: str, items: list[dict]) -> str:
     return "판이 바뀌었는지 셈하지 않았다 — 기구 CAD 가 없는 주제다"
 
 
+def public(stale: dict | None) -> dict | None:
+    """판 표지의 **판정 낱말만** — {state, say}. 뒤 판의 CAD 과제 id · 개정 이름 · 지금 지문 · 리스크 변경 줄은 싣지 않는다. 그것들은 읽는 사람의
+    플랫폼 권한(StepForge · 리스크 앱)으로 읽은 것이라, 근거로 다시 퍼지는 자리(깐 근거의 '판' 줄 · 게이트웨이 insight_get 의 답 — 그 답을 근거로 쓴
+    카드의 범위에는 그 플랫폼 토큰이 없다)에는 낱말만 낸다. 자세한 것은 포털 화면(세션)의 그 사람에게만이다(반대 검토 11-22 M1)."""
+    if not stale:
+        return None
+    return {"state": stale["state"], "say": stale_say(stale["state"], stale.get("items") or [], detail=False)}
+
+
 def next_ids(stale: dict | None) -> list[str]:
     """낡음 표지에서 뒤 판의 CAD 과제 id(차례대로 · 한 번씩)."""
     return list(dict.fromkeys(n["project_id"] for i in (stale or {}).get("items") or () for n in i.get("next") or ()))
 
 
 # ── 뒤 판의 리스크 변경 심사 ───────────────────────────────────────────────────────────────────────────────
-async def risk_diffs(call: Call, mcad_next: list[str]) -> tuple[list[dict], str]:
+async def risk_diffs(call: Call, mcad_next: list[str], *, budget_s: float = READ_BUDGET_S) -> tuple[list[dict], str]:
     """뒤 판의 CAD 과제를 원천으로 쓰는 리스크 과제의 변경 심사(diff:) — (줄 묶음들, 까닭). 리스크 앱이 그 사람 시야로 낸 것만이다. 줄은 리스크 앱의
-    변경 목록 글 그대로다(DIFF_LINES 줄까지 · 줄마다 LINE_MAX 자)."""
+    변경 목록 글 그대로다(DIFF_LINES 줄까지 · 줄마다 LINE_MAX 자). 전체가 budget_s 초를 넘으면 그때까지 읽은 것만 낸다."""
     out: list[dict] = []
     notes: list[str] = []
+    try:
+        await bounded(_risk_diffs(call, mcad_next, out, notes), budget_s)
+    except TimeoutError:
+        notes.append(f"리스크 앱의 답이 기한({budget_s:.0f}초) 안에 다 오지 않았다")
+    return out, " · ".join(dict.fromkeys(notes))
+
+
+async def _risk_diffs(call: Call, mcad_next: list[str], out: list, notes: list) -> None:
     for pid in mcad_next[:NEXT_MAX]:
         found, why = await _ask(call, RISK_FIND, {"artifact_kind": "mcad", "artifact_id": pid, "limit": 5})
         if found is None:
@@ -171,16 +225,23 @@ async def risk_diffs(call: Call, mcad_next: list[str]) -> tuple[list[dict], str]
                             "by_kind": {str(k)[:40]: v for k, v in (got.get("by_kind") or {}).items() if isinstance(v, int)}
                             if isinstance(got.get("by_kind"), dict) else {},
                             "lines": lines, "truncated": bool(got.get("truncated"))})
-    return out, " · ".join(dict.fromkeys(notes))
 
 
 # ── 과제 key 의 이력 ──────────────────────────────────────────────────────────────────────────────────────
-async def old_keys(call: Call, key: str, have: set[str]) -> tuple[list[str], str]:
+async def old_keys(call: Call, key: str, have: set[str], *, budget_s: float = READ_BUDGET_S) -> tuple[list[str], str]:
     """지금 과제 key 의 옛 key(previous_keys — 이름 바뀜 · merged_from — 합쳐진 과제) 가운데 have(원장에 카드가 있는 key)에 든 것 — (옛 key 들, 까닭).
-    옛 key 가 지금 다른 산 과제의 key 면(풀이 결과에 글자 그대로 같은 활성 행이 하나) 그 과제의 것이라 뺀다. 못 읽으면 모으지 않는다(닫힌 쪽)."""
+    옛 key 가 지금 다른 산 과제의 key 면(풀이 결과에 글자 그대로 같은 활성 행이 하나) 그 과제의 것이라 뺀다. 못 읽으면 모으지 않는다(닫힌 쪽) —
+    전체가 budget_s 초를 넘겨도 같다."""
     want = {k for k in have if k != key}
     if not want:
         return [], ""
+    try:
+        return await bounded(_old_keys(call, key, want), budget_s)
+    except TimeoutError:
+        return [], f"과제 key 의 이력을 기한({budget_s:.0f}초) 안에 읽지 못했다 — 옛 key 로 남은 카드가 있어도 여기 모으지 않았다"
+
+
+async def _old_keys(call: Call, key: str, want: set[str]) -> tuple[list[str], str]:
     card, why = await _ask(call, STEPFORGE_OBJECT, {"focus": f"{TASK_TYPE}:{key}", "history": False})
     if card is None or card.get("type") != TASK_TYPE or card.get("key") != key:
         return [], f"과제 key 의 이력을 읽지 못했다 — 옛 key 로 남은 카드가 있어도 여기 모으지 않았다({why or '답이 그 과제가 아니다'})"

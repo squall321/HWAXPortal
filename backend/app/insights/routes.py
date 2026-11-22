@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import time
 
@@ -223,6 +224,17 @@ async def _stales(call, rows: list[dict]) -> dict:
     return out
 
 
+def _on_screen(request: Request) -> bool:
+    """포털 화면(브라우저 세션)의 읽기인가 — 사람 PAT(게이트웨이 insight_get · 스크립트)면 거짓. 판 표지의 자세한 것(뒤 판의 CAD 과제 id · 개정
+    이름 · 지금 지문 · 리스크 변경 줄)은 읽는 사람의 플랫폼 권한으로 읽은 것이라 화면의 그 사람에게만 낸다. PAT 로 읽은 답은 근거로 다시 퍼질 수 있고
+    그 답을 근거로 쓴 카드의 범위에는 그 플랫폼 토큰이 없다 — 판정 낱말만 낸다(lineage.public, 반대 검토 11-22 M1)."""
+    return request.headers.get("authorization", "")[:7].lower() != "bearer "
+
+
+def _stale_out(request: Request, stale: dict) -> dict:
+    return stale if _on_screen(request) else lineage.public(stale)
+
+
 def _newest(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda r: (-int(r.get("created_at") or 0), str(r.get("id"))))
 
@@ -316,7 +328,7 @@ async def project(request: Request, sp_task: str = Query(..., min_length=1, max_
         same = C.same_claims(cell_rows)       # 같은 결론 — 이 칸에서 읽는 사람이 볼 수 있는 카드끼리만(합치지 않는다)
         for r in cell_rows:
             view = _same(_view(r, v, links=links, seen=seen), same)
-            cells[b]["cards"].append({**view, "stale": stales[r["id"]]} if r["id"] in stales else view)
+            cells[b]["cards"].append({**view, "stale": _stale_out(request, stales[r["id"]])} if r["id"] in stales else view)
     for rp in risk:
         if rp.get("sp_task") in fam:
             cells[_bucket(_risk_round(rp))]["risk"].append(rp)
@@ -394,7 +406,7 @@ async def review(request: Request, principal: Principal = Depends(_reader), sett
     for reasons, r in picked:
         view = _view(r, v, seen=seen)
         if r["id"] in stales:
-            view["stale"] = stales[r["id"]]
+            view["stale"] = _stale_out(request, stales[r["id"]])
         items.append({"reasons": reasons, "say": " · ".join(_REVIEW[x] for x in reasons), "card": view})
         for x in reasons:
             counts[x] = counts.get(x, 0) + 1
@@ -467,12 +479,17 @@ async def card(cid: str, request: Request, principal: Principal = Depends(_reade
     _audit_admin(request, v, ([cid] if only else []) + admin_seen, "card")
     view = _view(r, v, full=True, links=links, seen=seen)
     if r["status"] != "waiting" and r.get("sp_task"):
-        # 같은 결론 — 이 카드의 과제 key · 같은 차수 칸에서 볼 수 있는 카드끼리(과제 보기는 옛 key 의 카드까지 모아 센다)
-        peers, _admin = _filter((await asyncio.to_thread(_rows_for, st, v, sp_task=r["sp_task"]))[0], v)
-        view = _same(view, C.same_claims([x for x in peers if x["status"] != "waiting" and _bucket(x.get("round")) == _bucket(r.get("round"))]))
+        # 같은 결론 — 이 카드의 과제 key · 같은 차수 칸에서 볼 수 있는 카드끼리(과제 보기는 옛 key 의 카드까지 모아 센다). 관리자 표지 없이 센다 —
+        # 범위 밖 읽기로 본 남의 초안 id 가 감사 없이 실리지 않게(반대 검토 11-22 L3). 이 카드 자신은 넣는다(관리자가 범위 밖 카드를 볼 때).
+        plain = dataclasses.replace(v, admin=False)
+        peers, _admin = _filter((await asyncio.to_thread(_rows_for, st, plain, sp_task=r["sp_task"]))[0], plain)
+        pool = [x for x in peers if x["status"] != "waiting" and _bucket(x.get("round")) == _bucket(r.get("round")) and x["id"] != cid]
+        view = _same(view, C.same_claims([r, *pool]))
     call = _caller(request, settings, principal)
     stale = (await _stales(call, [r])).get(cid)
-    if stale is not None:
+    if stale is not None and not _on_screen(request):
+        view["stale"] = lineage.public(stale)        # 사람 PAT — 판정 낱말만(리스크 변경 심사는 부르지도 않는다)
+    elif stale is not None:
         nxt = lineage.next_ids(stale)
         if nxt:
             # 뒤 판의 리스크 변경 심사(PLAN §8) — 읽는 사람의 리스크 앱 시야로. 그 비교의 앞 판이 이 카드의 판인지는 확인하지 않았다고 적는다
@@ -533,6 +550,8 @@ async def _apps_now(settings: Settings, card: dict) -> tuple[list, list] | None:
 
 
 _UNTRACKED_WORDS = {"evidence": "붙인 근거 글", "note": "사람 의견 · 보강 글", "summary": "앞 회차 요약", "images": "그림"}
+# 읽은 카드의 범위를 잇지 못한 때의 글 — 왜인지(없는 카드 · 거둔 카드 · 내 범위 밖)를 가르지 않는다
+_INHERIT_NONE = "앞선 인사이트를 근거로 썼다 — 그 카드들의 범위를 이어받지 못해 주인만 본다"
 
 
 @router.post("/cards/{cid}/confirm")
@@ -576,7 +595,14 @@ async def confirm(cid: str, request: Request, principal: Principal = Depends(_wr
         ids, why = C.insight_sources(r)
         if ids is not None:
             st = _store(request)
-            scope, why = C.inherit_scope(scope, [await asyncio.to_thread(st.get, i) for i in ids], v.email)
+            plain = dataclasses.replace(v, admin=False)
+            read = [await asyncio.to_thread(st.get, i) for i in ids]
+            if any(x is None or not C.visible(x, plain)[0] for x in read):
+                # 읽었다는 카드 가운데 이 사람에게 없는 것(없는 id · 거둔 것 · 범위 밖)이 있다 — 그 범위를 읽어 찍으면 남의 카드가 있는지 · 범위가
+                # 무엇인지가 드러난다(근거 표지의 id 는 호출자가 적는다). 어느 것인지 가르지 않고 주인만 본다(반대 검토 11-22 L2).
+                scope, why = [f"user:{v.email}"], _INHERIT_NONE
+            else:
+                scope, why = C.inherit_scope(scope, read, v.email)
         else:
             scope, why = [f"user:{v.email}"], f"{why} — 그 카드들의 범위를 이어받지 못해 주인만 본다"
         if why:

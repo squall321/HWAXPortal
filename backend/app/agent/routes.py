@@ -57,6 +57,7 @@ from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
 from app.insights import cards as _insight_cards
 from app.insights import intake as _insight_intake
+from app.insights import lineage as _insight_lineage
 from app.insights import reuse as _insight_reuse
 from app.procedures import handoff as _procedure_handoff
 from app.agent import panel as _panel
@@ -1167,9 +1168,10 @@ async def _relay_stream(
         if _tasks:
             yield sse_event("status", {"step": f"과제 「{_ins_key[:80]}」 의 앞선 인사이트를 찾는 중", "tool": None})
             try:
-                _laid = await asyncio.wait_for(_insight_reuse.lay(
+                # 상한을 넘기면 취소만 걸고 뒤처리(게이트웨이 세션 닫기)는 기다리지 않는다 — 기다리면 상한이 호출 기한만큼 늘어난다(lineage.bounded)
+                _laid = await _insight_lineage.bounded(_insight_reuse.lay(
                     store=insights["store"], settings=settings, principal=principal, viewer=insights["viewer"], pat=user_pat,
-                    opts=payload["delib_opts"], tasks=_tasks, ra_workspace=insights["ra_workspace"],
+                    opts=payload["delib_opts"], tasks=_tasks, ra_kind=insights["ra_kind"],
                     conversation_id=body.conversation_id), _insight_reuse.LAY_TIMEOUT_S)
             except Exception as exc:  # noqa: BLE001 — 기한 넘김(TimeoutError) 포함
                 logger.warning("과제 인사이트 — 앞선 인사이트를 깔지 못했다(%s) — 깔지 않고 심의를 연다 sub=%s", type(exc).__name__,
@@ -3164,20 +3166,27 @@ class _ReleasingStream(StreamingResponse):
                     await _close()
 
 
-def _insight_ctx(request: Request, principal: Principal, affiliation: str) -> dict | None:
+def _insight_ctx(request: Request, principal: Principal, affiliation: str, settings: Settings) -> dict | None:
     """심의 시작의 과제 인사이트 깔기(app.insights.reuse)가 쓸 것 — 원장 · 읽는 사람(메일 · 요청마다 원장으로 센 소속 · 지금 권한 그룹, 관리자
-    표지는 주지 않는다 — 범위 밖 읽기로는 깔지 않는다) · 그 사람의 RA 작업 공간을 읽는 함수. 원장이 없으면 None(깔지 않는다)."""
+    표지는 주지 않는다 — 범위 밖 읽기로는 깔지 않는다) · 새 보고서가 저장될 RA 작업 공간의 종류를 읽는 함수. 원장이 없으면 None(깔지 않는다)."""
     store = getattr(request.app.state, "insight_store", None)
     if store is None:
         return None
     email = (principal.email or "").strip().lower()
-    users = getattr(request.app.state, "user_store", None)
 
-    def _ra_workspace() -> str | None:
-        conn = users.get_connection(email=email, service="reportarchive") if users is not None and email else None
-        return (conn or {}).get("workspace") if conn else None
+    async def _ra_kind() -> str | None:
+        """이 사람의 새 심의 보고서가 갈 수 있는 RA 작업 공간의 종류(personal · org(부서) · tf · system · virtual) — 못 알아내면 None(깔기는 조직으로
+        친다). RA 에 그 사람 토큰으로 묻고(/api/me 의 멤버십 · 홈 부서) 셈은 reuse.ra_workspace_kind 가 한다 — 연결에 저장한 공간과 RA 가 고르는 기본
+        공간을, 위임 박스(RA_SSO_SECRET)면 둘 다 본다."""
+        from app.auth.routes.connections import _ra_profile     # 지연 import — 연결 창구는 이 모듈을 부르지 않는다
+        try:
+            token, _via, conn = await _ra_user_token(request, settings, principal)
+            me = await _ra_profile(settings, token)
+        except Exception:  # noqa: BLE001 — 연결 없음 · 위임 실패 · RA 불통 — 모른다(조직으로 친다)
+            return None
+        return _insight_reuse.ra_workspace_kind(me, str((conn or {}).get("workspace") or ""), sso=bool(settings.ra_sso_secret))
 
-    return {"store": store, "ra_workspace": _ra_workspace,
+    return {"store": store, "ra_kind": _ra_kind,
             "viewer": _insight_cards.Viewer(email=email, sub=principal.subject, aff=affiliation, groups=frozenset(principal.groups))}
 
 
@@ -3248,7 +3257,7 @@ async def chat(
             _aff = _wiki.known_affiliation(request)
             source = _relay_stream(body, principal, audit, settings, _agent_client(request),
                                    _chat_user_pat(request.app.state.keystore, settings, principal),
-                                   _aff, ui_host=relay_ui, insights=_insight_ctx(request, principal, _aff))
+                                   _aff, ui_host=relay_ui, insights=_insight_ctx(request, principal, _aff, settings))
 
         # conversation_id 가 있으면 이 대화(서버 정본)에 user 를 먼저 저장하고, 스트림을 훑어
         # assistant 최종 텍스트를 모아 종료 시 저장한다(웹에서 GLM 이어가기가 서버에 남게).

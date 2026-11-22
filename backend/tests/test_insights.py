@@ -582,6 +582,61 @@ def test_워크플로_대화는_저장한_뒤_다시_풀어_한_장으로_들이
     assert set(out) == {"id"}, "꼴이 아닌 주제는 없는 것과 같다 — 저장은 그대로"
 
 
+def test_워크플로가_읽은_인사이트를_실어_오면_표지로_적고_확인이_그_범위를_이어받는다(env, monkeypatch):
+    """반대 검토 11-22 M5 — 워크플로 카드에는 엔진의 근거 표지가 없다. 대화 저장이 주제 안(subject.insights)에 실어 온 읽은 카드 id 를 표지 꼴로
+    적어 두면 확인이 그 카드들의 범위를 이어받는다(contracts §10.3). 다 알 수 없다고 왔거나 꼴이 틀리면 주인만 본다. 그 칸은 주제 확인(에이전트
+    서버)에 넘기지 않는다."""
+    c, st, s = env
+    seen = []
+
+    def fake_confirm(settings, *, subject, principal, pat, chair_template):
+        seen.append(dict(subject))
+        return dict(CONFIRMED), ""
+    monkeypatch.setattr(I, "confirm_sync", fake_confirm)
+    _relay(st, owner="peer@example.com", cid="a")
+    _relay(st, owner="peer@example.com", cid="p", cards=({**CARD, "tools": ["risk_get_diff"], "apps": ["heax-hwax_risk"]},))
+    a, p = "ins:web:a:r1:default", "ins:web:p:r1:default"
+    for x in (a, p):
+        assert c.post(f"/insights-api/cards/{x}/confirm", headers=_login(c, "peer@example.com")).status_code == 200
+    assert st.get(p)["scope"] == ["aff:CAEG", "plat:risk"]
+    _login(c, "me@example.com")
+    pat = R._chat_user_pat(app.state.keystore, s, _principal("me@example.com"))
+
+    def save(insights=...) -> dict:
+        c.cookies.clear()
+        subj = {"sp_task": KEY, "round": "dv1", **({} if insights is ... else {"insights": insights})}
+        r = c.post("/agent/conversations", json={"title": "심의 — 알파", "kind": "deliberation", "source": "mcp", "subject": subj,
+                                                 "messages": [{"role": "user", "content": "q"}]},
+                   headers={"Authorization": f"Bearer {pat}"}).json()
+        assert seen[-1] == {"sp_task": KEY, "round": "dv1"}, "읽은 인사이트 칸은 주제 확인에 넘기지 않는다"
+        return st.get(r["insight"]["id"])
+
+    def confirm(row) -> dict:
+        from app.auth.routes.local import _rl
+        _rl.clear()                      # 여러 번 갈아 로그인한다 — 로그인 횟수 제한은 이 시험이 보는 것이 아니다
+        return c.post(f"/insights-api/cards/{row['id']}/confirm", headers=_login(c, "me@example.com")).json()
+    row = save([a, p, a])
+    assert row["card"]["tools"] == ["insight_get"] and row["card"]["apps_unknown"] == ["(workflow)"]
+    assert [(k["tool"], json.loads(k["args"]), k["ok"]) for k in row["card"]["calls"]] == [("insight_get", {"id": a}, True), ("insight_get", {"id": p}, True)]
+    assert C.insight_sources(row) == ([a, p], "")
+    got = confirm(row)
+    assert got["scope"] == ["aff:CAEG", "plat:risk"], "읽은 카드의 플랫폼 권한까지 담는다 — 그 권한 없는 같은 소속에 열리지 않는다"
+    # 다 알 수 없다고 왔다 · 꼴이 틀렸다 — 도구 이름만 남고 확인해도 주인만 본다
+    for bad in ("unknown", ["남의 글"], [a] * 61, [1], {"id": a}, "all", [a, "ins:web:b r1"]):
+        row = save(bad)
+        assert row["card"]["calls"] == [] and row["card"]["tools"] == ["insight_get"], bad
+        got = confirm(row)
+        assert got["scope"] == ["user:me@example.com"] and "이어받지 못해 주인만 본다" in got["scope_note"], bad
+    # 칸이 없거나 빈 목록이면 앞선 인사이트를 근거로 쓰지 않은 것이다 — 종전대로 같은 소속에 열린다
+    for none in (..., []):
+        row = save(none)
+        assert row["card"]["calls"] == [] and row["card"]["tools"] == [] and not C.insight_derived(row)
+        assert confirm(row)["scope"] == ["aff:CAEG"]
+    assert I.WORKFLOW_INSIGHTS_MAX == C.CALLS_MAX, "표지 상한(cards.CALLS_MAX)에 닿으면 다 안다고 하지 않는다 — 60개째는 모름으로 떨어진다(닫힌 쪽)"
+    row = save([f"ins:web:x{i}:r1:default" for i in range(60)])
+    assert len(row["card"]["calls"]) == 60 and C.insight_sources(row)[0] is None
+
+
 def test_큰_워크플로는_덧붙인_결정문으로_주장을_다시_뽑는다(env, monkeypatch):
     c, st, s = env
     monkeypatch.setattr(I, "confirm_sync", lambda settings, **kw: (CONFIRMED, ""))
