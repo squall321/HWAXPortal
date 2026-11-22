@@ -43,3 +43,13 @@
   띵킹은 고르기 범위 밖(지금 LLM).
 - 의존성 설치는 자동 모드가 막았고(라이브 서비스 환경) 사용자 확인으로 넣었다 — langchain-core 판은 그대로다.
 
+## CC-7 (11-22) dev 에서 켜짐 · 확인 · 사용량 기록 틈
+- 키 — 처음엔 세션의 클립보드 읽기를 권한 판정이 막았다(CC-2). 사용자가 「클립보드에 키 있어」 로 다시 지시해, 꼴(`sk-ant-` 머리)만 확인하고 곧바로 0600 파일에
+  썼다 — 값은 화면 · 로그 · 기록에 남기지 않았다. 파일이 생기는 것을 기다리던 작업이 에이전트 서버를 다시 띄웠고 `/health claude_chat` 이 켜졌다(모델 ·
+  대상 all · effort medium · 캐시 · 서버 대체 모델).
+- 확인 — dev 에이전트 서버에 웹 챗 한 턴을 보냈다(도구 없이 한 문장). 2.9초에 Claude 가 답했고 답 meta 의 `models` 가 `claude-opus-5-5` 다. Anthropic 호출은
+  HTTP 200 이다.
+- 틈 — Claude 챗과 사람별 LLM 토큰(이용 통계)이 나란히 지어져, 토큰 기록기는 OpenAI 꼴 LLM 을 짓는 자리에만 붙었다. Claude 턴은 `recorded 0` 이었다. Claude
+  LLM 에도 달았다(에이전트 서버 `a996b69`). langchain-anthropic 은 message_start 의 usage 를 버리고 message_delta 의 누적 usage(입력 · 캐시 읽기 포함)를 쓴다 —
+  입력은 캐시 읽기를 포함한 합으로 센다(OpenAI prompt_tokens 와 같은 셈). 고친 뒤 dev 한 턴이 세졌다.
+

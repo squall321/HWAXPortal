@@ -14,10 +14,10 @@
 - [x] 시험(진짜 SSE 꼴 가짜 전송) 27 · 변이 18 · 기본 박스 바이트 동일 · 전체 회귀 꾸러미 없이 4,919 · 있게 4,942
 
 ## dev
-- [ ] 키 파일(사용자 — `~/.config/hwax/anthropic.key`, 0600)
+- [x] 키 파일(`~/.config/hwax/anthropic.key`, 0600 — 사용자가 「클립보드에 키 있어」 로 다시 지시해 세션이 꼴만 확인해 넣음 · 값은 어디에도 찍지 않음, 11-22)
 - [x] 서비스 venv 에 `requirements-anthropic.txt` 설치(사용자 확인 11-22 — langchain-core 판 그대로)
 - [x] `.env` 줄 — `CLAUDE_CHAT_MODEL=claude-opus-5-5` · `CLAUDE_CHAT_API_KEY_FILE` · `CLAUDE_CHAT_FOR=all`(재기동 — 키 파일이 없어 「꺼짐 · 키 파일이 없다」 로 뜸, 파일이 생기면 한 번 더 띄운다)
-- [ ] 재기동(통합 재기동과 함께) · 웹 챗 한 턴 · 답한 모델 표시 확인
+- [x] 재기동 · 웹 챗 한 턴(2.9초 · 답 meta `models: {claude-opus-5-5: 1}`) · 사람별 LLM 토큰에 세짐(고침 `a996b69` — 기록기가 Claude LLM 에 안 붙어 있었다)
 
 ## cae00(사람 몫 — 받은 편지함)
 - [ ] 키 파일 · 설치 · `.env` 의 `CLAUDE_CHAT_FOR=feat:chat-claude` · 사람에게 개별 허가 · 한 사람으로 한 턴
