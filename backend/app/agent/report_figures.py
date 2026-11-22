@@ -5,6 +5,7 @@
   · POST /agent/figures/to-report — 게이트웨이 계약. meta = {report_id, caption, page?, tool, mime, sha256, filename, ref}. 그 사람 명의로 RA
     `POST /api/files` 에 올리고 그 보고서의 page 쪽(없으면 마지막 쪽) 끝에 그림 칸 하나를 붙인다(`PATCH /api/reports/{id}/ai-draft` 의 extra_blocks).
     답 {ok, report_id, file_id, page, block_index, url, block_id, replaced} · 실패 {ok:false, error, detail} 와 맞는 HTTP 상태(RF-8 표).
+    RA 가 outline 에 판 번호(revision)를 주면 PATCH 에 expected_revision 으로 싣고, 어긋나면 다시 읽어 세 번까지(RF-41 — v0.186.3 은 주지 않는다).
   · POST /agent/figures/upload — 같은 검사 · 같은 올리기, 보고서는 건드리지 않는다. 에이전트 서버가 /보고서 · 심의 보고서를 만들기 **전에** 그림을
     올려 file_id 를 받고, 보고서를 만드는 한 번의 호출에 그림 칸을 싣는다 — 그래야 못 올린 그림의 까닭을 본문 그 자리에 쓸 수 있다.
 자격 — 게이트웨이가 포털로 넘기는 다른 창구(대화 저장 /agent/conversations)와 같은 principal_pat_or_session(사람 PAT 또는 세션 + CSRF). 쓰기라
@@ -47,6 +48,7 @@ _ALT_MAX = 200                         # files[].alt 상한
 _SHA_RE = re.compile(r"[0-9a-f]{64}")
 _RA_TIMEOUT = httpx.Timeout(300.0, connect=10.0)     # DocForge 배달과 같은 값 — 에이전트 서버는 이보다 길게 기다린다(RF-12)
 _LOCKS: dict[int, asyncio.Lock] = {}   # 보고서마다 하나 — RA 의 ai-draft PATCH 는 읽고 · 합치고 · 쓴다(병렬 호출이 칸을 덮지 않게, RF-6)
+_REV_TRIES = 3                         # 판 번호가 어긋나면 다시 읽어 다시 붙이는 횟수 상한 — 넘으면 revision_conflict(RF-41)
 _TRANSPORT: httpx.AsyncBaseTransport | None = None   # 시험 이음매 — None 이 아니면 RA 로 가는 요청이 전부 이 전송을 탄다
 
 
@@ -265,34 +267,76 @@ async def _upload(ra: _dfd.RaSession, cli: httpx.AsyncClient, fig: dict, raw: by
     return str(fid)
 
 
+def _revision(outline: dict) -> int | None:
+    """outline 답의 판 번호 — 1 이상의 정수만. RA v0.186.3 의 outline 은 주지 않는다 → None 이고 expected_revision 을 싣지 않는다(종전 그대로, RF-41)."""
+    v = outline.get("revision")
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else None
+
+
+def _mismatch(r: httpx.Response) -> bool:
+    """RA 의 판 어긋남 — 409 이고 errors 의 code 가 revision_mismatch(services.RevisionMismatchError → routes._lock_conflict_response).
+    같은 409 의 편집 잠금(lock_held_by_other)은 다시 해도 풀리지 않으니 아니다."""
+    if r.status_code != 409:
+        return False
+    try:
+        errs = r.json().get("errors")
+    except (ValueError, AttributeError):
+        return False
+    return isinstance(errs, list) and any(isinstance(e, dict) and e.get("code") == "revision_mismatch" for e in errs)
+
+
+def _place(outline: dict, want: int | None, left: str) -> tuple[int, list]:
+    """넣을 쪽(없으면 마지막 쪽)과 그 쪽의 칸 id 차례. 없는 쪽이면 400 — 이미 올린 파일이 있으면 그것도 말한다."""
+    pages = outline.get("pages") if isinstance(outline.get("pages"), list) else []
+    n = outline.get("page_count") if isinstance(outline.get("page_count"), int) else len(pages)
+    if n < 1:
+        raise FigureError(502, "ra_error", "Report Archive 가 그 보고서의 쪽 수를 주지 않았습니다.")
+    page = want or n
+    if page > n:
+        raise FigureError(400, "bad_page", f"그 보고서에는 {n}쪽까지 있습니다(page={page}). 없으면 마지막 쪽에 넣습니다." + (f" {left}" if left else ""))
+    cur = pages[page - 1] if len(pages) >= page and isinstance(pages[page - 1], dict) else {}
+    return page, [b.get("block_id") for b in (cur.get("blocks") or []) if isinstance(b, dict)]
+
+
 async def _to_report(ra: _dfd.RaSession, fig: dict, raw: bytes) -> dict:
     rid = fig["report_id"]
+    fid = blk = None
+    left = ""
     async with _LOCKS.setdefault(rid, asyncio.Lock()), httpx.AsyncClient(timeout=_RA_TIMEOUT, transport=_TRANSPORT) as cli:
-        r = await ra.call(cli, "GET", f"/api/reports/{rid}/outline")
-        if r.status_code >= 400:
-            raise _ra_fail(r, "outline")
-        outline = _data(r, "보고서 구조")
-        pages = outline.get("pages") if isinstance(outline.get("pages"), list) else []
-        n = outline.get("page_count") if isinstance(outline.get("page_count"), int) else len(pages)
-        if n < 1:
-            raise FigureError(502, "ra_error", "Report Archive 가 그 보고서의 쪽 수를 주지 않았습니다.")
-        page = fig["page"] or n
-        if page > n:
-            raise FigureError(400, "bad_page", f"그 보고서에는 {n}쪽까지 있습니다(page={page}). 없으면 마지막 쪽에 넣습니다.")
-        cur = pages[page - 1] if len(pages) >= page and isinstance(pages[page - 1], dict) else {}
-        had = {b.get("block_id") for b in (cur.get("blocks") or []) if isinstance(b, dict)}
-        # 편집 권한 · 발행 · 편집 잠금은 RA 가 정한다 — 올리기 전에 같은 PATCH 를 dry_run 으로 묻는다. RA 는 그 가드를 지난 뒤에만 미리보기를 내고
-        # 아무것도 바꾸지 않는다(_apply_ai_draft). 거절될 보고서에 그림 파일을 남기지 않는다(반대 검토 F7, RF-6).
-        r = await ra.call(cli, "PATCH", f"/api/reports/{rid}/ai-draft", json={"page": page, "dry_run": True})
-        if r.status_code >= 400:
-            raise _ra_fail(r, "patch")
-        fid = await _upload(ra, cli, fig, raw)
-        left = f"올린 그림 파일({fid})은 Report Archive 에 남았습니다."
-        blk = block(fid, fig["sha256"], fig["caption"], fig["alt"])
-        r = await ra.call(cli, "PATCH", f"/api/reports/{rid}/ai-draft", json={"page": page, "extra_blocks": [blk]})
-        if r.status_code >= 400:
-            raise _ra_fail(r, "patch", left=left)
-        data = _data(r, "그림 칸 붙이기")
+        # 읽은 판(revision)을 실어 붙이고, 그 사이 남이 고쳐 판이 어긋나면(409 revision_mismatch) 다시 읽어 다시 붙인다 — 짧은 상한(RF-41).
+        # 판을 주지 않는 RA 에는 싣지 않고, 칸을 모르는 RA 는 버린다 — 어느 쪽이든 한 번에 붙이는 종전 그대로다.
+        for _ in range(_REV_TRIES):
+            r = await ra.call(cli, "GET", f"/api/reports/{rid}/outline")
+            if r.status_code >= 400:
+                raise _ra_fail(r, "outline", left=left)
+            outline = _data(r, "보고서 구조")
+            page, had = _place(outline, fig["page"], left)
+            if blk is None:
+                # 편집 권한 · 발행 · 편집 잠금은 RA 가 정한다 — 올리기 전에 같은 PATCH 를 dry_run 으로 묻는다. RA 는 그 가드를 지난 뒤에만 미리보기를
+                # 내고 아무것도 바꾸지 않는다(_apply_ai_draft). 거절될 보고서에 그림 파일을 남기지 않는다(반대 검토 F7, RF-6).
+                r = await ra.call(cli, "PATCH", f"/api/reports/{rid}/ai-draft", json={"page": page, "dry_run": True})
+                if r.status_code >= 400:
+                    raise _ra_fail(r, "patch")
+                fid = await _upload(ra, cli, fig, raw)
+                left = f"올린 그림 파일({fid})은 Report Archive 에 남았습니다."
+                blk = block(fid, fig["sha256"], fig["caption"], fig["alt"])
+            elif blk["id"] in had:
+                # 어긋난 사이 같은 그림 칸(같은 id)이 그 쪽에 들어갔다 — 다시 붙이지 않는다. 그 칸의 파일 번호는 outline 이 주지 않는다
+                return {"ok": True, "report_id": rid, "file_id": None, "page": page, "block_index": had.index(blk["id"]), "url": None,
+                        "block_id": blk["id"], "replaced": False, "deduped": True,
+                        "detail": f"같은 그림 칸이 그 사이 그 쪽에 들어가 있어 다시 붙이지 않았습니다. {left}"}
+            rev = _revision(outline)
+            body = {"page": page, "extra_blocks": [blk]} | ({"expected_revision": rev} if rev is not None else {})
+            r = await ra.call(cli, "PATCH", f"/api/reports/{rid}/ai-draft", json=body)
+            if _mismatch(r):
+                continue
+            if r.status_code >= 400:
+                raise _ra_fail(r, "patch", left=left)
+            data = _data(r, "그림 칸 붙이기")
+            break
+        else:
+            raise FigureError(409, "revision_conflict", f"그 보고서가 그림 칸을 붙이는 사이 {_REV_TRIES}번 잇달아 바뀌어(Report Archive 판 번호 "
+                                                        f"어긋남) 붙이지 못했습니다 — 잠시 뒤 다시 보내세요. {left}")
     # RA 는 형식이 틀린 칸을 경고만 남기고 버린다 — 답의 그 쪽에 우리 칸이 있어야 넣은 것이다(RF-7)
     rp = (data.get("report") or {}).get("pages") if isinstance(data.get("report"), dict) else None
     order = rp[page - 1].get("blocks_order") if isinstance(rp, list) and len(rp) >= page and isinstance(rp[page - 1], dict) else None
@@ -332,7 +376,8 @@ async def figure_to_report(
     settings: Settings = Depends(get_settings),
 ):
     """그림 한 장을 그 사람 명의로 RA 에 올리고 그 보고서의 page 쪽(없으면 마지막 쪽) 끝에 그림 칸 하나를 붙인다 — 게이트웨이 계약(RF-1).
-    편집 권한은 RA 가 정한다(거절은 403). 같은 그림을 같은 쪽에 다시 넣으면 그 칸을 갈아 끼운다(replaced)."""
+    편집 권한은 RA 가 정한다(거절은 403). 같은 그림을 같은 쪽에 다시 넣으면 그 칸을 갈아 끼운다(replaced). 판 번호가 어긋나 다시 읽었을 때
+    같은 그림 칸이 이미 있으면 붙이지 않는다(deduped — file_id 는 null, RF-41)."""
     fig = raw = None
     try:
         meta, raw = await _accept(request, principal, settings)
@@ -345,7 +390,7 @@ async def figure_to_report(
         return _failed(request, principal, "figure_to_report",
                        FigureError(502, "ra_unreachable", f"Report Archive 에 연결하지 못했습니다({exc.__class__.__name__})."), _ids(fig, raw))
     _audit(request, principal, "figure_to_report", "ok", file_id=out["file_id"], block_id=out["block_id"], replaced=out["replaced"],
-           **_ids(fig, raw) | {"page": out["page"]})
+           **_ids(fig, raw) | {"page": out["page"]} | ({"deduped": True} if out.get("deduped") else {}))
     return out
 
 
