@@ -520,6 +520,31 @@ def coverage_of(steps: list[dict], stages: list[dict]) -> dict:
     return {"counts": counts, "not_ok": blocked}
 
 
+# 단계가 돌지 않은 상태 — 보고서의 팀 줄을 달지 않는다('그 팀의 판단으로 돌았다' 가 거짓이 된다)
+_NOT_RUN = ("pending", "denied", "not_connected", "unavailable", "skipped")
+
+
+def _team_who(m: dict) -> str:
+    return str(m.get("name") or m.get("key") or "")
+
+
+def team_report_line(ps: dict | None, top, state: str | None) -> str:
+    """보고서 단계 절의 팀 한 줄(docs/expert-teams ET-15) — 단계 계획 행에 team 칸이 있으면 그것(사본 · false), 없으면 계획 위 team(실행기가 읽는
+    차례와 같다 — ET-9). 사본이면 '이 단계는 「팀」(주 … · 보조 …)의 판단으로 돌았다', false · null 이면 줄이 없다. 루틴 팀이 닿았는데 리스크 심사 계열이라
+    앉히지 않은 단계(false + team_why)는 그 까닭을 적는다 — 다른 단계가 다 팀 줄을 달 때 이 단계만 말이 없으면 팀이 갔는지 모른다. 돌지 않은 단계는 줄이 없다."""
+    if state in _NOT_RUN:
+        return ""
+    ps = ps or {}
+    team = ps.get("team", top)      # 칸이 있으면(false 포함) 그것 — 값이 거짓인지로 가르지 않는다
+    if isinstance(team, dict) and isinstance(team.get("lead"), dict):
+        helpers = [h for h in team.get("helpers") or () if isinstance(h, dict)]
+        who = f"주 {_team_who(team['lead'])}" + (f" · 보조 {', '.join(_team_who(h) for h in helpers)}" if helpers else "")
+        return f"이 단계는 「{team.get('name') or team.get('id') or '팀'}」({who})의 판단으로 돌았다"
+    if team is False and ps.get("team_why") and delib_is_risk(ps.get("deliberation")):
+        return f"이 단계는 팀 없이 돌았다 — {ps['team_why']}"
+    return ""
+
+
 def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: list[dict], calls: list[dict],
                   sections: dict, title: str | None) -> dict:
     """보고서 — 절은 루틴의 report.sections 차례. 실행자가 쓴 절을 쓰고, 안 쓴 단계 절은 단계 요약으로 채운다. 포털이 덧붙이는 것 —
@@ -536,6 +561,8 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
     skipped = [f"{b['title']}({b['step']}) — {STATE_LABEL.get(b['state'], b['state'])}" + (f": {b['reason']}" if b["reason"] else "")
                for b in cov["not_ok"]]
     titles = {ps["id"]: ps["title"] for ps in steps}
+    plans = {ps["id"]: ps for ps in steps}
+    top_team = (run.get("plan") or {}).get("team")      # 실행을 만들 때 남긴 루틴 팀의 사본(ET-9) — 팀 칸을 안 쓴 실행은 None
     warnings: list[str] = []
     unknown_sections = sorted(k for k in sections if k not in spec.report.sections)
     if unknown_sections:
@@ -569,6 +596,9 @@ def render_report(*, spec: RoutineSpec, run: dict, steps: list[dict], stages: li
         body = text or (env.get("summary") or "").strip() or \
             f"_(이 단계는 {STATE_LABEL.get(st.get('state'), st.get('state'))}" + (f" — {st.get('reason')}" if st.get("reason") else "") + ")_"
         extra = []
+        team_line = team_report_line(plans.get(sec), top_team, st.get("state"))
+        if team_line:
+            extra.append(team_line)
         if env.get("keys"):
             extra.append("넘긴 키 — " + " · ".join(f"{k}={v}" for k, v in env["keys"].items()))
         # 실행자가 쓴 절에 이미 있는 발견은 다시 붙이지 않는다 — 에이전트 실행기의 단계 절이 요약 + '- 발견 [ref]' 줄이라 그대로 붙이면
