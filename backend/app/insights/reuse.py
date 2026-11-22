@@ -274,8 +274,9 @@ async def lay(*, store, settings, principal, viewer: C.Viewer, pat: str, opts: d
                                ra_kind=(await ra_kind()) if asks_ra else None)
     have_ids, have_keys = evidence_marks(opts.get("evidence"))
     room = min(LAY_MAX, EVID_ITEMS - len(opts.get("evidence") or []))
+    cutoff = as_of_cutoff(opts.get("as_of"))
     picked, n = pick(rows, viewer=viewer, round_code=round_code, audience=audience, room=room, skip_source=conversation_id,
-                     skip_ids=have_ids, cutoff=as_of_cutoff(opts.get("as_of")))
+                     skip_ids=have_ids, cutoff=cutoff)
     if not any(n.values()):
         return None
     stale: dict = {}
@@ -286,7 +287,8 @@ async def lay(*, store, settings, principal, viewer: C.Viewer, pat: str, opts: d
         # 판 줄에는 판정 낱말만 싣는다(lineage.public) — 뒤 판의 이름 · id 는 StepForge 권한으로 읽은 것이라 근거로 퍼뜨리지 않는다
         stale = {r["id"]: lineage.public(lineage.card_stale(r.get("subject") or {}, revs)) for r in picked}
         for lk in await asyncio.to_thread(store.links, [r["id"] for r in picked]):
-            if lk.get("kind") == "disputes" and lk.get("note"):
+            # 기준일 심의에는 그 날 뒤에 달린 반박 메모를 싣지 않는다(상태 줄은 오늘의 상태다)
+            if lk.get("kind") == "disputes" and lk.get("note") and (cutoff is None or int(lk.get("at") or 0) <= cutoff):
                 notes.setdefault(lk["to_id"], []).append(lk["note"])
     free = (k for k in range(1, EVID_ITEMS + LAY_MAX + 2) if f"ins-{k}" not in have_keys)     # 호출자가 쓴 key 와 겹치지 않는 번호
     items = [evidence_item(r, next(free), now_subject=rec, stale=stale.get(r["id"]), dispute_notes=notes.get(r["id"])) for r in picked]

@@ -614,6 +614,30 @@ def test_봉인_심의에는_깔지_않고_기준일_심의에는_그_날_뒤의
     assert [json.loads(e["args"])["id"] for e in _ev(got)] == [a] and "기준일" not in text
 
 
+def test_기준일_뒤에_달린_반박_메모는_싣지_않는다(web, monkeypatch):
+    """M2 — 기준일 심의에는 그 날 뒤의 지식을 싣지 않는다. 카드는 그 날 앞에 생겼어도 반박 메모가 그 뒤에 달렸으면 메모는 뺀다(상태 줄은 오늘의 상태다)."""
+    a = web.confirmed("peer@example.com", "a")
+    b = web.confirmed("peer@example.com", "b", cards=({**CARD, "claim": "리브를 두지 않는다"},))
+    h = web.login("peer@example.com")
+    assert web.c.post(f"/insights-api/cards/{a}/dispute", json={"note": "그 날 앞의 반박"}, headers=h).status_code == 200
+    assert web.c.post(f"/insights-api/cards/{a}/dispute", json={"by_card": b, "note": "그 날 뒤의 반박"}, headers=h).status_code == 200
+    cut = X.as_of_cutoff("2026-01-01")
+    with closing(sqlite3.connect(web.s.procedures_store_path)) as db, db:
+        db.execute("UPDATE insight_cards SET created_at=? WHERE id IN (?, ?)", (cut - 86_400, a, b))
+        assert db.execute("UPDATE insight_links SET at=? WHERE note=?", (cut - 3_600, "그 날 앞의 반박")).rowcount == 1
+    _personal()
+
+    async def takes(*_a, **_k):
+        return True
+    monkeypatch.setattr(R, "_engine_takes_as_of", takes)
+    got, _t = web.go("me@example.com", _body(as_of="2026-01-01"))
+    body = {json.loads(e["args"])["id"]: e["result"] for e in _ev(got)}
+    assert set(body) == {a, b}
+    assert "반박 메모: 그 날 앞의 반박" in body[a] and "그 날 뒤의 반박" not in got.decode() and "상태: 반박 있음" in body[a]
+    got, _t = web.go("me@example.com", _body())
+    assert "그 날 앞의 반박" in got.decode() and "그 날 뒤의 반박" in got.decode(), "기준일이 없으면 메모를 가르지 않는다"
+
+
 def test_워크플로_대화를_웹에서_이어가면_그_대화가_낳은_카드를_깔지_않는다(web, monkeypatch):
     """M4 — 워크플로 대화의 카드(ins:wf:<대화 id>)도 그 대화의 앞 회차다. 같은 대화를 웹에서 이어가면 깔지 않는다(다른 대화에서는 앞선 인사이트다)."""
     from test_insights import _principal
