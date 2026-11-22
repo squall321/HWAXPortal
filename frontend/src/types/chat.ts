@@ -419,6 +419,8 @@ export interface TurnMeta {
   thinking?: boolean | null;
   effort?: string | null;
   fallback_to?: string | null;
+  /** Claude 턴에서 고른 모델 · 생각 깊이가 박스 목록 밖이라 기본으로 답했을 때의 알림(docs/chat-llm-claude CC-8). */
+  claude_note?: string | null;
   /** 자기검증 — 초안을 근거와 대조해 고친 결과(에이전트 서버, docs/chat-self-check). 끈 서버 · 옛 메시지는 없다. */
   self_check?: SelfCheck | null;
 }

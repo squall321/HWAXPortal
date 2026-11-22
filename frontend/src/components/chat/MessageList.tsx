@@ -275,7 +275,14 @@ function ModelBadge({ meta }: { meta: TurnMeta }) {
   const others = names.filter((n) => n !== main);
   const effort = meta.thinking ? ` · 생각 ${meta.effort ?? '켬'}` : meta.thinking === false ? ' · 생각 끔' : '';
   const label = `${main}${effort}${others.length ? ` · 넘김 ${others.map((n) => `${n} ${meta.models[n]}회`).join(', ')}` : ''}`;
-  return <span className="msg-model" title="이 답을 낸 모델(호출 수)">{label}</span>;
+  // 고른 모델 · 깊이가 이 박스 목록 밖이라 기본으로 답했으면 그렇다고 말한다(CC-8)
+  const note = meta.claude_note ? ` · 고른 값 대신 기본` : '';
+  return (
+    <span className="msg-model" title={meta.claude_note ? `이 답을 낸 모델(호출 수) — ${meta.claude_note}` : '이 답을 낸 모델(호출 수)'}>
+      {label}
+      {note}
+    </span>
+  );
 }
 
 const secs = (c: SelfCheck) => (typeof c.ms === 'number' ? ` · ${(c.ms / 1000).toFixed(1)}초` : '');

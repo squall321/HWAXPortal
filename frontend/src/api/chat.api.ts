@@ -197,6 +197,23 @@ export interface SearchCapability {
   note?: string;
 }
 
+/** 웹 챗 Claude 의 고를 수 있는 모델 · 생각 깊이(docs/chat-llm-claude CC-8) — Claude 대상이 아니면 eligible false 만 온다. */
+export interface ChatModels {
+  claude: {
+    eligible: boolean;
+    models?: { id: string; label: string }[];
+    efforts?: string[];
+    default_model?: string;
+    default_effort?: string;
+  };
+}
+
+export async function fetchChatModels(signal?: AbortSignal): Promise<ChatModels> {
+  const r = await apiFetch('/agent/claude-models', { signal });
+  if (!r.ok) throw new Error(`claude-models ${r.status}`);
+  return (await r.json()) as ChatModels;
+}
+
 export async function fetchSearchCapability(signal?: AbortSignal): Promise<SearchCapability> {
   const r = await apiFetch('/agent/search-capability', { signal });
   if (!r.ok) throw new Error(`search-capability ${r.status}`);
@@ -667,11 +684,14 @@ export async function streamChat(
     routine?: RoutineRequest;
     /** 이 화면이 MCP Apps 패널을 그릴 수 있다는 표지(HA-20) — 포털이 박스 손잡이 · feat:panels 를 보고 에이전트 서버에 옮긴다. */
     uiHost?: string;
+    /** 웹 챗 Claude 의 고른 모델 · 생각 깊이(CC-8) — 고를 수 있는 사람만 싣는다. 비면 박스 기본. */
+    claudeModel?: string;
+    claudeEffort?: string;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, uiHost, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, uiHost, claudeModel, claudeEffort, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -709,6 +729,9 @@ export async function streamChat(
       ...(images && images.length > 0 ? { images } : {}),
       // 패널 표지 — 호스트 부품이 있는 이 화면만 싣는다(포털이 손잡이 · 권한 · 세션을 다시 본다)
       ...(uiHost ? { ui_host: uiHost } : {}),
+      // 웹 챗 Claude 의 모델 · 생각 깊이(CC-8) — 고른 것만. 포털은 꼴만 보고, 에이전트 서버가 목록 밖이면 기본으로 돌린다.
+      ...(claudeModel ? { claude_model: claudeModel } : {}),
+      ...(claudeEffort ? { claude_effort: claudeEffort } : {}),
       // 분석 루틴(R3) — 포털 RoutineReq 는 모르는 칸을 422 로 거절한다(extra=forbid). 아는 칸만 골라 싣는다 — 이어서는 run_id 하나(다른 칸은
       // 서버가 안 본다 — RA 초안 올리기만 upload_ra 를 참으로 더한다), 새 실행은 id · version · inputs · 덧붙인 말(note, 비면 싣지 않는다).
       ...(routine?.run_id
