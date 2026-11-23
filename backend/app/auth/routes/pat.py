@@ -91,6 +91,12 @@ class PatCreated(PatMeta):
     token: str  # the JWT — shown ONCE, never stored server-side
 
 
+class PatIssued(PatCreated):
+    """발급 화면(세션 + CSRF)의 응답 — 배치를 만드는 그 순간에 필요한 박스 값을 함께 싣는다. 교환 응답에는 없다."""
+    # 사내 프록시 주소(config.hwax_fallback_proxy) — 비면 배치가 프록시 폴백 없이 직결만 본다.
+    fallback_proxy: str = ""
+
+
 class ServicePatCreate(BaseModel):
     """서비스 PAT 발급 본문(docs/core-link design §2).
 
@@ -153,14 +159,14 @@ def _mint_pat(request: Request, settings: Settings, principal: Principal, *,
     return token, jti, int(now.timestamp()), int(exp.timestamp())
 
 
-@router.post("", response_model=PatCreated)
+@router.post("", response_model=PatIssued)
 def create_pat(
     body: PatCreate,
     request: Request,
     principal: Principal = Depends(get_current_principal),
     _csrf: None = Depends(require_csrf),
     settings: Settings = Depends(get_settings),
-) -> PatCreated:
+) -> PatIssued:
     # API 토큰은 게이트웨이 도구를 포털 밖(Claude·스크립트)에서 쓰는 열쇠다 — 허가가 있어야
     # 발급한다.
     ensure(principal, "feat:api-token")
@@ -196,8 +202,9 @@ def create_pat(
                    principal.subject, body.name, auds,
                    "무기한" if never else f"{ttl}d",
                    " ⚠NEVER-EXPIRES" if never else "")
-    return PatCreated(jti=jti, name=body.name, audiences=auds, scopes=body.scopes,
-                      created=created, exp=exp, revoked=False, token=token)
+    return PatIssued(jti=jti, name=body.name, audiences=auds, scopes=body.scopes,
+                     created=created, exp=exp, revoked=False, token=token,
+                     fallback_proxy=settings.hwax_fallback_proxy.strip())
 
 
 def _too_many_children() -> AuthError:

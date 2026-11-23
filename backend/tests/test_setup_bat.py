@@ -20,6 +20,8 @@ FE = ROOT / "frontend"
 LIB = FE / "src/lib/setupBat.ts"
 TSC = FE / "node_modules/.bin/tsc"
 TOKEN = "hwax_pat_TESTTOKEN_abcd1234"
+# 포털이 PAT 발급 응답(fallback_proxy)으로 주는 사내 프록시 — 시험은 문서용 예약 대역(TEST-NET-2)만 쓴다
+PROXY = "http://198.51.100.20:8080"
 
 pytestmark = pytest.mark.skipif(
     not TSC.exists() or not shutil.which("node"),
@@ -42,11 +44,11 @@ def gen(tmp_path_factory):
         "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null)\n"
         "  : process.argv[4] === 'guide' ? JSON.stringify(s.certGuide(process.argv[5] === 'notoken' ? null : '" + TOKEN + "'))\n"
         "  : process.argv[4] === 'code' ? s.claudeCodeSnippet('" + TOKEN + "')\n"
-        "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem));\n")
+        "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem, process.argv[6] || null));\n")
 
-    def run(origin="https://hwax.example.net", pem=True, what="bat", cert=""):
+    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY):
         # ⚠ text=True 는 universal newlines 로 CRLF 를 LF 로 바꾼다 — 배치의 줄끝 규약을 검사할 수 없다(실측).
-        r = subprocess.run(["node", str(drv), origin, "pem" if pem else "nopem", what, cert],
+        r = subprocess.run(["node", str(drv), origin, "pem" if pem else "nopem", what, cert, proxy],
                            capture_output=True, timeout=120, cwd=str(out))
         assert r.returncode == 0, r.stdout.decode("utf-8", "replace") + r.stderr.decode("utf-8", "replace")
         return r.stdout.decode("utf-8")
@@ -390,6 +392,52 @@ def test_the_generator_is_free_of_browser_globals():
     assert "window." not in src and "document." not in src, "origin 은 인자로 받는다 — 그래서 시험할 수 있다"
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
     assert "from '../lib/setupBat'" in page and "function buildSetupBat" not in page
+
+
+# ── 사내 프록시는 포털이 준다 — 공개 리포에 주소를 두지 않는다(사용자 결정 11-24) ─────────────────────────────
+# 박스의 infra/.env HWAX_FALLBACK_PROXY → PAT 발급 응답 fallback_proxy → 화면이 buildSetupBat 에 넘긴다(그 응답은 test_pat_fallback_proxy).
+_NO_PROXY_LINE = "echo      npm 레지스트리 직결 실패 - 포털이 준 사내 프록시 주소가 없거나 모양이 틀려 프록시로 다시 시도하지 않습니다"
+
+
+def _npm_fallback(bat: str) -> list[str]:
+    """레지스트리 직결이 실패하고 이 창에 프록시도 없을 때의 자리 — `:px_npmfail` 앞까지."""
+    ls = _lines(bat)
+    i = ls.index("if defined HTTPS_PROXY goto :px_npmfail")
+    return ls[i + 1:ls.index(":px_npmfail")]
+
+
+@pytest.mark.parametrize("proxy", [PROXY, "https://proxy.corp.example:3128/"])
+def test_npm_fallback_tries_the_proxy_the_portal_gave(gen, proxy):
+    blk = _npm_fallback(gen(proxy=proxy))
+    assert blk[0] == f"echo      npm 레지스트리 직결 실패 - 사내 프록시^({proxy}^)로 시도합니다"
+    assert f"try{{$px=New-Object System.Net.WebProxy('{proxy}');" in blk[1]
+    assert f"set HTTPS_PROXY={proxy}" in blk and f"set HTTP_PROXY={proxy}" in blk
+    assert blk[-1] == "goto :px_done", "프록시로 레지스트리가 확인되면 실패 안내를 건너뛴다"
+
+
+# 빈 값 · 빈칸 · 모양이 틀린 값(따옴표 · & 로 배치나 PowerShell 에 끼어드는 것, 스킴 없음, http 가 아닌 스킴)은 붙여 넣지 않는다
+@pytest.mark.parametrize("proxy", ["", "   ", PROXY + "' ; calc", PROXY + " & del x", "198.51.100.20:8080",
+                                   "socks5://198.51.100.20:1080"])
+def test_without_a_usable_proxy_the_batch_only_tries_direct_and_says_so(gen, proxy):
+    for pem in (True, False):
+        bat = gen(pem=pem, proxy=proxy)
+        assert _npm_fallback(bat) == [_NO_PROXY_LINE], "프록시 시도를 빼고 한 줄로 알린 뒤 실패 안내로 이어진다"
+        assert "WebProxy(" not in bat and "set HTTPS_PROXY=" not in bat and "set HTTP_PROXY=" not in bat
+        assert "198.51.100.20" not in bat and "calc" not in bat
+        ls = _lines(bat)
+        labels = {l.strip()[1:] for l in ls if re.fullmatch(r":[A-Za-z_][A-Za-z0-9_]*", l.strip())}
+        targets = {m.group(1) for l in ls for m in [re.search(r"\bgoto\s+:?([A-Za-z_][A-Za-z0-9_]*)", l)] if m}
+        assert targets <= labels, "프록시 갈래를 빼도 없는 라벨로 뛰지 않는다"
+
+
+def test_the_generator_has_no_hardcoded_address_and_the_page_passes_the_portal_value():
+    """공개 리포다 — 사내 주소를 소스에 박지 않는다. 루프백 말고 IPv4 글자가 생기면 박스 설정으로 옮긴다(실패 글에 값을 싣지 않는다)."""
+    src = LIB.read_text(encoding="utf-8")
+    found = bool(set(re.findall(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])", src)) - {"127.0.0.1"})
+    assert not found, "setupBat.ts 에 IPv4 주소 글자가 있다 — 사내 주소면 박스 설정(HWAX_FALLBACK_PROXY)에서 받는다"
+    page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
+    assert re.search(r"buildSetupBat\(created\.token, created\.name, pem, created\.fallback_proxy \?\? null\)", page), (
+        "화면이 발급 응답의 사내 프록시를 배치에 넘긴다")
 
 
 # ── 10-20 개선 요청 다섯(염종섭 님 — docs/token-bat PLAN 10-20 · TB-D1~) ─────────────────────────────

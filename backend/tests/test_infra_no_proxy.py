@@ -292,3 +292,12 @@ def test_세_스크립트의_머리_블록은_글자까지_같다():
     """같은 블록이 세 곳에 있다(머리는 리포 위치를 알기 전이라 lib 를 소싱하지 않는다) — 한 곳만 고치면 그 스크립트로 띄운 서비스만 다르게 돈다."""
     blocks = {name: _top_export(src) for name, src in HEADS.items()}
     assert len(set(blocks.values())) == 1, blocks
+
+
+# ── 사내 프록시(HWAX_FALLBACK_PROXY) — 토큰 화면 배치의 npm 폴백 주소를 포털이 PAT 발급 응답으로 준다(사용자 결정 11-24) ─────────
+def test_사내_프록시는_값이_있을_때만_명시해서_넘기고_찍지_않는다(start_portal):
+    """공개 리포에 주소를 두지 않으니 포털은 박스의 infra/.env 에서만 받는다 — 상속에만 기대면 다른 기동 경로에서 조용히 빠진다."""
+    envs = start_portal("HWAX_FALLBACK_PROXY=http://198.51.100.20:8080\n")
+    assert envs["HWAX_FALLBACK_PROXY"] == "http://198.51.100.20:8080"
+    assert "198.51.100.20" not in start_portal.stdout, "주소를 화면에 찍지 않는다"
+    assert "HWAX_FALLBACK_PROXY" not in start_portal(), "빈 값을 명시하면 backend/.env 의 값까지 덮는다 — 없으면 넘기지 않는다"

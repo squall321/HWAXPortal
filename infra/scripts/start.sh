@@ -150,6 +150,10 @@ else
       *) LLMST_ENVS+=(--env "LLM_STATUS_URL=http://127.0.0.1:${LLM_STATUS_PORT:-8760}") ;;
     esac
   fi
+  # 사내 프록시(HWAX_FALLBACK_PROXY) — 토큰 화면이 만드는 설치 배치의 npm 레지스트리 폴백 주소를 포털이 PAT 발급 응답으로 준다.
+  #   공개 리포에 실제 주소를 두지 않는다(사용자 결정 11-24). 위와 같은 이유로 **값이 있을 때만** 명시해서 넘긴다. 값은 찍지 않는다.
+  PROXY_ENVS=()
+  [ -z "${HWAX_FALLBACK_PROXY:-}" ] || PROXY_ENVS+=(--env "HWAX_FALLBACK_PROXY=${HWAX_FALLBACK_PROXY}")
   # NO_PROXY 도 **명시해서** 넘긴다 — 위 SAML 과 같은 이유다(9차 변경 요청 §4-(5)). 상속이 끊기면 포털의 RA·TestScope 호출이 사내
   # 프록시를 타고 상대의 IP 허용목록에 걸린다(게이트웨이는 그 모양으로 사람별 위임이 403 이었다 — 2026-10-03 실측).
   # 두 철자를 **합쳐**(중복 없이) 같은 값으로 넘긴다 — 대문자만 읽어 넘기면 소문자(no_proxy)만 둔 박스에서 빈 값이 넘어가고,
@@ -189,6 +193,7 @@ else
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
     ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} ${LLMST_ENVS[@]+"${LLMST_ENVS[@]}"} \
+    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \
