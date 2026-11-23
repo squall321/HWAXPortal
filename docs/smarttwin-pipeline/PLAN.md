@@ -40,6 +40,32 @@
 | 8 | 해석기 없는 dev E2E(이미 있는 결과 사본 → 후처리 잡 → DynaForge 반입 → R2c) | KooSlurm · 포털 | 노드 VM 켜기 — 사용자 결정 |
 | 9 | SmartTwinMCP 이미지 도구 · cae00 게이트웨이 등재 | KooSlurm(SmartTwinMCP) | PA-16 확인 뒤 |
 
+## 3-1. 7 의 정의 — Drive 이름 규칙(2026-11-23, context-notes SP-4)
+
+자리는 지금 그대로 `ApptainerImages:SmartTwinPreprocessor/` 하나다(전처리 · 후처리가 함께 쓴다). 첫 적용은 **다음 굽기(Pre v142 · Post v54)** 부터 —
+v141 · v53 은 지금 꼴 그대로 둔다.
+
+| 갈래 | 이름 | 덮어쓰기 |
+|---|---|---|
+| 판 파일(SIF) | `SmartTwinPreprocessor_<YYYYMMDD>_v<N>.sif` · `SmartTwinPostprocessor_<YYYYMMDD>_v<N>.sif` · `SmartTwinPostprocessorGUI_<YYYYMMDD>_v<N>.sif` | **금지** |
+| 판 파일(설치 묶음) | `SmartTwinPreprocessor_<YYYYMMDD>_v<N>.tar.gz` · `SmartTwinPostprocessor_<YYYYMMDD>_v<N>.tar.gz`(지금 꼴 그대로) | **금지** |
+| 판 해시 | `<제품>_<YYYYMMDD>_v<N>.SHA256SUMS` — 그 판 파일 전부, `sha256sum` 꼴(두 칸 띄움 · 파일 이름만) | **금지** |
+| 별칭(latest) | `SmartTwinPreprocessor.sif` · `SmartTwinPostprocessor.sif` · `SmartTwinPostprocessorGUI.sif` — 가장 새 판 SIF 와 같은 바이트 | 판이 오를 때만 |
+| 별칭 안내 | `<제품>.release.json` — 아래 꼴 | 판이 오를 때만 |
+
+- `<제품>` 은 `SmartTwinPreprocessor` · `SmartTwinPostprocessor` 둘이다(GUI SIF 는 Post 판에 딸린다). `<YYYYMMDD>` 는 굽은 날(KST), `v<N>` 은 제품마다 한 번만 쓴다 —
+  같은 날 다시 구우면 N 을 올린다.
+- 해시 파일을 판마다 따로 두는 것은 두 세션(pyKooCAE · KooD3plotReader)이 같은 파일을 고치지 않게 하려는 것이다.
+- `release.json` 꼴 — `{"product", "version": "v142", "date": "20261124", "files": {"<이름>": {"sha256", "bytes"}}, "alias": {"<별칭 이름>": "<판 파일 이름>"},
+  "built_from": {"<리포>": "<커밋>"}}`. 커밋 대신 바이너리 해시가 정본이면 `built_from` 에 그 값을 적는다(예: Pre 의 KooRemapper 바이너리).
+- **올리는 차례** — 판 파일 → 판 해시 → Drive 쪽 sha256 이 판 해시와 같은지 확인 → 별칭 SIF → `release.json` 마지막. `release.json` 이 바뀌기 전까지 별칭은
+  '아직 앞 판' 으로 읽는다(올리다 끊기면 `release.json` 과 별칭 SIF 의 해시가 어긋나 보인다 — 받는 쪽은 그때 멈춘다).
+- **받는 쪽(cae00 · 받은 편지함)** — 별칭 이름을 받아도 된다(지금 가이드 · 절차 그대로). 다만 받은 편지함은 늘 **판 파일 이름 + sha256** 을 함께 적고, 받는 쪽은
+  sha256 이 다르면 멈춘다 — 별칭이 그 사이 다음 판으로 바뀌었다는 뜻이다. 그때는 판 파일 이름으로 받는다.
+- **알림** — 메일 · 세션 알림은 md5 가 아니라 sha256 을 적는다(F6).
+- **지우기** — 판 파일은 지우지 않는 것이 기본이다. 자리가 모자라면 주인 세션이 가장 오래된 판부터 지우되, 가장 새 받은 편지함이 cae00 · stcx 에 깔린 판으로 적은
+  판과 그 바로 앞 판은 남긴다.
+
 ## 4. 지키는 것
 
 - 판 고정 중이다(cae00 이 2026-11-12 글을 받을 때까지). 다른 리포는 가지에서 짓고 보류가 풀린 뒤 올린다. 포털 문서 정정만 지금 올린다.
