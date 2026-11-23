@@ -28,6 +28,7 @@
 - [x] 계약 문서(A ~ E · 스위치 · 리포 사이 창구)
 - [ ] 에이전트 서버 — A 위임 잡(`DELEGATE_ENABLED`) · C `draft_section`(`DRAFT_ENABLED`) · D `llm_transform`(`TRANSFORM_ENABLED`) · 묻기 창구 `/llm/ask_over_text`
 - [ ] 게이트웨이 — B 결과 손잡이(`GATEWAY_RESULT_REFS` + `X-HWAX-Result: ref`) · `result_get` · `result_ask` · 내부 ref 창구 · `/health` 표지
-- [ ] 포털 — E 설정 배치 선택 칸 · Claude Code 명령 둘 · CLAUDE.md 규칙 묶음 · 박스 꺼짐 표시 · update-all ○ 줄 넷 · env 킷 · 이력
+- [x] 포털 — E 설정 배치 선택 칸 · Claude Code 명령 둘 · CLAUDE.md 규칙 묶음 · 박스 꺼짐 표시 · update-all ○ 줄 넷 · env 킷 · 이력 — 가지 `wt1124/offload-v2`(합치기 전, TS-7 ~ TS-10)
+- [ ] 포털 — Windows PC 에서 배치 실제 한 번(켬 → 다시 켬 → 끔 — 명령 둘 · CLAUDE.md 표지 사이 · 머리 · 걷은 뒤 바이트 대조, BOM · LF 파일 · 사람 파일 같은 이름)
 - [ ] 합치기 · 리포마다 전체 회귀 · dev 에서 켜고 실제 한 번씩 · 끄면 바이트 같음 확인
 - [ ] cae00 받은 편지함 — 켜는 법(켤지는 사람)

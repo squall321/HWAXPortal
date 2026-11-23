@@ -171,6 +171,8 @@ class Box:
             f'[ "$(cd "$SELF_REPO" && pwd)" = "{self.repo}" ] || {{ echo "HARNESS: 임시 리포가 아니다" >&2; exit 97; }}',
             f'grep -q "(대역) update-sites.sh" "$SELF_REPO/infra/scripts/update-sites.sh" || exit 97',
             'hr() { echo "HR:$*"; }; ok() { echo "OK:$*"; }; bad() { echo "BAD:$*"; }; fail() { echo "FAIL:$*"; FAIL=1; }',
+            # update-all 의 파일 읽기 도우미(진짜) — 3.5 뒤의 3.5e(서버 LLM 에 일 맡기기 ○ 줄)가 늘 부른다
+            _region("_envfile_value() {", "\n}\n") + "\n}",
             f'export HWAX_SKIP_LEDGER="{self.ledger}"',
             f'. "{self.repo}/infra/scripts/lib/skip-ledger.sh"', f'. "{self.repo}/infra/scripts/lib/llm-pool.sh"',
             body, post, "echo END",

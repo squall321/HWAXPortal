@@ -29,6 +29,22 @@ export interface PatCreateBody {
   ttl_days?: number;
 }
 
+// 서버 LLM 에 일 맡기기(토큰 절감 2판 — docs/token-saving/offload-v2.md 3-4) — 이 박스의 스위치. 포털이 에이전트 서버 /health 의 offload
+// 표지와 게이트웨이 /health 의 result_refs.enabled 를 읽어 준다. null 은 모름(서버가 표지를 주지 않았거나 닿지 못했다).
+export interface OffloadBox {
+  delegate: boolean | null;
+  draft: boolean | null;
+  transform: boolean | null;
+  result_ask: boolean | null;
+  result_refs: boolean | null;
+}
+
+export async function fetchOffloadBox(): Promise<OffloadBox> {
+  const res = await apiFetch('/auth/pat/offload');
+  if (!res.ok) throw new Error(`박스 스위치를 읽지 못했습니다 (${res.status})`);
+  return (await res.json()) as OffloadBox;
+}
+
 // 배열 detail(검증 오류)도 읽는 공용 구현을 쓴다 — 사본을 두면 한쪽만 고쳐진다.
 const detailMessage = errorDetail;
 

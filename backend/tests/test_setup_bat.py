@@ -44,11 +44,12 @@ def gen(tmp_path_factory):
         "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null)\n"
         "  : process.argv[4] === 'guide' ? JSON.stringify(s.certGuide(process.argv[5] === 'notoken' ? null : '" + TOKEN + "'))\n"
         "  : process.argv[4] === 'code' ? s.claudeCodeSnippet('" + TOKEN + "')\n"
-        "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem, process.argv[6] || null));\n")
+        "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem, process.argv[6] || null, process.argv[7] === 'offload'));\n")
 
-    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY):
+    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY, offload=False):
         # ⚠ text=True 는 universal newlines 로 CRLF 를 LF 로 바꾼다 — 배치의 줄끝 규약을 검사할 수 없다(실측).
-        r = subprocess.run(["node", str(drv), origin, "pem" if pem else "nopem", what, cert, proxy],
+        r = subprocess.run(["node", str(drv), origin, "pem" if pem else "nopem", what, cert, proxy,
+                            "offload" if offload else "plain"],
                            capture_output=True, timeout=120, cwd=str(out))
         assert r.returncode == 0, r.stdout.decode("utf-8", "replace") + r.stderr.decode("utf-8", "replace")
         return r.stdout.decode("utf-8")
@@ -436,8 +437,8 @@ def test_the_generator_has_no_hardcoded_address_and_the_page_passes_the_portal_v
     found = bool(set(re.findall(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])", src)) - {"127.0.0.1"})
     assert not found, "setupBat.ts 에 IPv4 주소 글자가 있다 — 사내 주소면 박스 설정(HWAX_FALLBACK_PROXY)에서 받는다"
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
-    assert re.search(r"buildSetupBat\(created\.token, created\.name, pem, created\.fallback_proxy \?\? null\)", page), (
-        "화면이 발급 응답의 사내 프록시를 배치에 넘긴다")
+    assert re.search(r"buildSetupBat\(\s*created\.token,\s*created\.name,\s*pem,\s*created\.fallback_proxy \?\? null,\s*offload,?\s*\)", page), (
+        "화면이 발급 응답의 사내 프록시(와 '서버 LLM 에 일 맡기기' 칸)를 배치에 넘긴다")
 
 
 # ── 10-20 개선 요청 다섯(염종섭 님 — docs/token-bat PLAN 10-20 · TB-D1~) ─────────────────────────────
@@ -702,6 +703,144 @@ def test_claude_registrations_ask_for_the_portal_view_and_others_do_not(gen):
     for bat in (plain, pem):
         others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l or "HWAX_TOML" in l)]
         assert len(others) == 3 and not [l for l in others if HEADER_NAME in l], others
+
+
+# ── 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4) ─────────────────────────────────────
+# 칸(기본 끔)을 켜면 ① Claude Code · Desktop 등록에 X-HWAX-Result: ref ② Claude Code 명령 /hwax-ask · /hwax-draft ③ 사용자 CLAUDE.md 의 표지 사이 규칙.
+# 끄고 다시 돌리면 셋을 걷는다 — 걷기는 걷을 것이 있을 때만 말한다(켠 적 없는 PC 의 화면은 종전과 같다).
+RESULT_H = "X-HWAX-Result"
+_OFF_SETS = ("HWAX_OFF_ASK", "HWAX_OFF_DRAFT", "HWAX_OFF_RULES")
+
+
+def _off_ps(bat: str) -> str:
+    ps = [l for l in _lines(bat) if l.startswith("powershell ") and "hwax-offload" in l]
+    assert len(ps) == 1, ps
+    return ps[0]
+
+
+def _payload(bat: str, name: str) -> str:
+    import base64
+    line = next(l for l in _lines(bat) if l.startswith(f'set "{name}='))
+    return base64.b64decode(line[len(f'set "{name}='):-1]).decode("utf-8")
+
+
+def test_offload_on_batch_keeps_the_batch_rules(gen):
+    """칸을 켠 배치도 같은 규약(라벨 · CRLF · 토큰 비노출 · 괄호 블록 없음 · echo 이스케이프)을 지킨다 — 위 검사를 켠 배치로 다시 돌린다."""
+    def on(**kw):
+        return gen(offload=True, **kw)
+    for t in (test_every_goto_has_a_label_and_labels_are_unique, test_batch_is_crlf_with_a_bom_and_a_sacrificial_first_line,
+              test_the_token_is_never_echoed_to_the_console, test_the_batch_has_no_multiline_paren_blocks,
+              test_multi_word_console_messages_escape_what_cmd_eats):
+        t(on)
+
+
+def test_offload_on_adds_the_result_header_next_to_the_view_header(gen):
+    """머리는 보기 머리 옆에 — CLI · Code 직접 · Desktop 셋 다. Gemini · Codex 는 '개인 Claude' 가 아니라 달지 않는다."""
+    view_http, view_remote = '--header "X-HWAX-View: portal"', "X-HWAX-View:portal"
+    plain = gen(pem=False, offload=True)
+    assert _cli_add_line(plain).endswith(f' {view_http} --header "{RESULT_H}: ref"')
+    for ps in (_ccj_ps(_no_cli_block(plain)), _desk_ps(plain)):
+        rm = "foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + RESULT_H + "'})){[void]$h.Remove($k)};"
+        assert rm + f"$h['{RESULT_H}']='ref';" in ps, "대소문자만 다른 옛 머리를 걷은 뒤 단다(사전이 대소문자를 가른다)"
+        assert ps.index("$h['X-HWAX-View']") < ps.index(rm) < ps.index("$h['Authorization']")
+    for origin in ("https://hwax.example.net", "http://hwax.example.net"):
+        bat = gen(origin=origin, pem=True, offload=True)
+        cli = _cli_add_line(bat)
+        assert cli.endswith(f' --header "{view_remote}" --header "{RESULT_H}:ref"'), cli
+        for ps in (_ccj_ps(_no_cli_block(bat)), _desk_ps(bat)):
+            m = re.search(r"\$e\['command'\]='([^']*)';.*?\$e\['args'\]=\[object\[\]\]@\(([^)]*)\);", ps)
+            assert m and [m.group(1)] + re.findall(r"'([^']*)'", m.group(2)) == shlex.split(cli.split(" -- ", 1)[1]), \
+                "직접 쓰기의 인자가 CLI 줄과 같다"
+        others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l)]
+        assert len(others) == 2 and not [l for l in others if RESULT_H in l]
+
+
+def test_offload_off_registers_nothing_new_and_strips_an_old_header(gen):
+    """끈 배치 — 머리 · 명령 · 규칙을 새로 넣지 않는다. http 항목은 남은 결과 머리를 걷고(stdio 는 인자를 통째로 다시 쓰므로 저절로 빠진다),
+    명령 · 규칙 걷기는 PowerShell 한 줄 + 실패 알림 한 줄뿐이다 — 머리 줄([5b])은 걷은 것이 있을 때만 PowerShell 이 찍는다."""
+    for pem in (True, False):
+        bat = gen(pem=pem)
+        assert f"{RESULT_H}:ref" not in bat and f"'{RESULT_H}']='ref'" not in bat and f'"{RESULT_H}: ref"' not in bat
+        assert not [n for n in _OFF_SETS if n in bat], "글을 싣지 않는다"
+        assert not [l for l in _lines(bat) if l.startswith("echo") and "[5b]" in l], "꺼진 배치는 머리 줄을 cmd 로 찍지 않는다"
+        ls = _lines(bat)
+        i = ls.index(_off_ps(bat))
+        assert ls[i - 2:i] == [":codex_done", ""] and ls[i + 1].startswith("if errorlevel 1 echo      [!] ")
+        assert ls[i + 2:i + 4] == ["echo.", 'if not "%HWAX_DONE%"=="0" goto :ok'], "걷기 뒤는 종전 흐름 그대로"
+        if not pem:
+            for ps in (_ccj_ps(_no_cli_block(bat)), _desk_ps(bat)):
+                assert "foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + RESULT_H + "'})){[void]$h.Remove($k)};$h['Authorization']" in ps
+
+
+def test_offload_off_cleanup_speaks_only_when_it_removed_something(gen):
+    """켠 적 없는 PC 에서는 아무 말도 하지 않는다 — try 안의 Write-Host 는 '걷은 것이 있을 때' 갈래뿐이고, CLAUDE.md 는 표지가 있을 때만 엄격하게
+    읽는다(UTF-8 이 아닌 파일이어도 조용하다). 명령은 우리 표지가 있는 파일만, CLAUDE.md 는 표지 두 줄과 그 사이만 걷는다."""
+    for pem in (True, False):
+        ps = _off_ps(gen(pem=pem))
+        body, catch = ps.split('-Command "', 1)[1].split("}catch{", 1)
+        assert body.count("Write-Host") == 2 and body.index("Write-Host") == body.index("if($g.Count -gt 0){Write-Host") + len("if($g.Count -gt 0){")
+        assert "if($u.GetString($bb).Contains($mb)){" in body and body.index("Contains($mb)){") < body.index("$v.GetString($bb")
+        assert "ReadAllText($f,$u).Contains('hwax-offload'))){Remove-Item -LiteralPath $f -Force;$g+=$f}" in body, "우리가 만든 명령만"
+        assert "$y=$x.Substring(0,$i)+$z;" in body and "$z=$x.Substring($k+$me.Length)" in body, "표지 밖은 바이트 그대로"
+        assert body.index("$s='backup'") < body.index("WriteAllText($t,$y,$w)") < body.index("throw 'mismatch'") < body.index("Copy($t,$f,$true)")
+        assert "WriteAllText($f" not in body, "CLAUDE.md 에 직접 쓰지 않는다 — 임시 파일을 되읽어 확인한 뒤 바꿔 넣는다"
+        assert "exit 1" in catch and "Exception.Message" not in ps
+
+
+def test_offload_on_installs_two_commands_and_the_rules_between_markers(gen):
+    bat = gen(pem=False, offload=True)
+    ls = _lines(bat)
+    ps = _off_ps(bat)
+    i = ls.index(ps)
+    assert [l.split("=", 1)[0] for l in ls[i - 3:i]] == [f'set "{n}' for n in _OFF_SETS], "글을 먼저 세운다"
+    assert ls[i - 4].startswith("echo  [5b] ") and ls[i + 1].startswith("if errorlevel 1 echo ")
+    ask, draft, rules = (_payload(bat, n) for n in _OFF_SETS)
+    assert ask.startswith("---\ndescription: ") and "$ARGUMENTS" in ask
+    assert all(s in ask for s in ("delegate_start(", "delegate_status(", "wait_s", "delegate_result(", "numbers.mismatched"))
+    assert draft.startswith("---\ndescription: ") and "$ARGUMENTS" in draft and "draft_section(" in draft
+    for md in (ask, draft):
+        assert "hwax-offload" in md.splitlines()[-1], "끝 줄의 표지로 우리 파일인지 가른다"
+    # 사용자 요청의 규칙 넷 — 큰 결과는 ref 로 받고 result_ask · 조사는 위임 · 긴 글은 draft_section · 숫자 대조가 어긋났다는 표시는 그대로
+    assert "ref" in rules and "result_ask(" in rules and "delegate_start" in rules and "draft_section" in rules
+    assert "그대로 사람에게 전한다" in rules
+    assert "\r" not in rules and "hwax-offload:begin" not in rules, "표지 줄은 PowerShell 이 붙이고, 줄바꿈은 그 파일의 것으로 바꾼다"
+    assert TOKEN not in ask + draft + rules
+    # 자리 — Claude Code 의 규칙(CLAUDE_CONFIG_DIR 이 있으면 그 아래, 없으면 <프로필 폴더>\.claude)
+    for s in ("[Environment]::GetFolderPath('UserProfile')", "if($env:CLAUDE_CONFIG_DIR){$d=$env:CLAUDE_CONFIG_DIR}",
+              "Combine($d,'commands')", "Combine($d,'CLAUDE.md')"):
+        assert s in ps, s
+    # 같은 이름의 사람 파일은 덮지 않는다 · 표지가 있으면 그 사이만 바꾸고 없으면 끝에 붙인다 · 바꿀 때는 백업 → 임시 → 되읽기 → 바꿔 넣기
+    assert "-and -not ([System.IO.File]::ReadAllText($f,$u).Contains('hwax-offload'))){Write-Host" in ps and ";continue};" in ps
+    assert "if($i -ge 0){$y=$x.Substring(0,$i)+$b+$x.Substring($k+$me.Length)}else{" in ps
+    assert "if($i -ge 0 -and $k -lt 0){$s='marker';throw 'marker'}" in ps, "끝 표지가 없으면 건드리지 않는다"
+    assert ps.index("$s='backup'") < ps.index("WriteAllText($t,$y,$w)") < ps.index("throw 'mismatch'") < ps.index("Copy($t,$f,$true)")
+    assert "$w=New-Object System.Text.UTF8Encoding($true)" in ps, "BOM 이 있던 파일은 BOM 째로"
+    assert "$v=New-Object System.Text.UTF8Encoding($false,$true)" in ps and "$x=$v.GetString(" in ps, "UTF-8 이 아니면 읽기에서 멈춘다"
+
+
+def test_offload_powershell_lines_are_safe_inside_cmd(gen):
+    """cmd 의 \"…\" 안이다 — 큰따옴표 · % 가 없어야 하고, `!` 도 글자로 두지 않는다(지연 확장이 켜진 PC 에서 표지 둘의 `<!--` 가 짝이 되어
+    사이가 지워진다 — PowerShell 이 [char]33 으로 짓는다). 화면에 나가는 것은 경로 · 단계 · 예외 종류뿐이다."""
+    for offload in (True, False):
+        for pem in (True, False):
+            ps = _off_ps(gen(pem=pem, offload=offload))
+            body = ps.split('-Command "', 1)[1][:-1]
+            assert ps.endswith('exit 1}"') and body.startswith("$ErrorActionPreference='Stop';")
+            assert '"' not in body and "%" not in body and "!" not in body
+            assert "$mb='<'+$bg+'-- hwax-offload:begin -->';$me='<'+$bg+'-- hwax-offload:end -->';" in body
+            assert body.index("$bg=[string][char]33;") < body.index("try{"), "catch 의 안내도 $bg 를 쓴다"
+            for arg in _write_host_args(body):
+                assert set(re.findall(r"\$[A-Za-z_][\w:]*", arg)) <= {"$f", "$q", "$s", "$bg", "$_"}, arg
+
+
+def test_offload_check_box_is_on_the_page_and_off_by_default():
+    page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
+    assert "const [offload, setOffload] = useState(false);" in page, "기본 끔"
+    assert "서버 LLM 에 일 맡기기(토큰 절약)" in page
+    # 박스가 꺼져 있어도 칸은 보인다 — 칸을 박스 표지 조건으로 감싸지 않는다
+    assert '<div className="tok-offload">' in page and "offloadBox &&" not in page, "칸을 박스 상태로 숨기지 않는다"
+    assert "이 박스에서 꺼져 있음 — 켜도 도구가 없다" in page and "이 박스에서 켜져 있는지 모름" in page
+    assert "fetchOffloadBox()" in page
 
 
 # ── PC 문서 도우미 설치 배치(docs/chat-ppt B5 · PP-D9) ─────────────────────────────────────

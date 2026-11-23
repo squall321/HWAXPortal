@@ -22,6 +22,20 @@
 
 entries:
   - date: 2026-11-24
+    title: 개인 Claude 의 일을 서버 LLM 에 맡기는 설정 칸(토큰 절약)
+    tag: 연결
+    items:
+      - "토큰 화면의 설정 배치에 '서버 LLM 에 일 맡기기(토큰 절약)' 칸이 생겼습니다(기본 끔). 켜고 받은 배치는 Claude Code · Desktop 등록에 결과 손잡이 머리(X-HWAX-Result: ref)를 달고, Claude Code 명령 /hwax-ask(여러 도구를 도는 조사를 서버에 맡기기) · /hwax-draft(긴 글을 서버가 쓰기)와 사용자 CLAUDE.md 의 규칙 묶음(큰 결과는 ref 로 받고 result_ask 로 묻기 · 조사는 위임 · 긴 글은 draft_section · 숫자 대조가 어긋났다는 표시는 그대로 전하기)을 넣습니다."
+      - "칸을 끄고 받은 배치를 다시 실행하면 셋을 걷습니다 — 명령은 배치가 만든 것만 지우고, CLAUDE.md 는 표지 두 줄 사이만 걷어 사람이 쓴 다른 줄은 그대로 둡니다. 켠 적이 없는 PC 에서는 배치 화면이 전과 같습니다."
+      - "칸 옆에 이 포털 박스에서 그 기능이 켜져 있는지를 보입니다 — 모두 꺼져 있으면 '이 박스에서 꺼져 있음 — 켜도 도구가 없다', 서버가 표지를 주지 않으면 '모름' 입니다."
+  - date: 2026-11-24
+    title: 기술 — 서버 LLM 에 일 맡기기의 박스 스위치 표시 · update-all 알림 · env 킷
+    tag: 기술
+    items:
+      - "포털 백엔드에 GET /auth/pat/offload 를 더했습니다 — 에이전트 서버 /health 의 offload(delegate · draft · transform · result_ask)와 게이트웨이 /health 의 result_refs.enabled 를 읽어 칸마다 참 · 거짓 · 모름(null)으로 줍니다. 로그인이 필요합니다."
+      - "update-all 3.5 가 서버 LLM 에 일 맡기기 넷(A 위임 · B 결과 손잡이와 묻기 · C 긴 글 · D 변환) 가운데 안 켠 것을 ○ 로 남기고 끝 요약 '있는데 안 켠 것' 에 켜는 법과 함께 다시 냅니다. 스위치는 에이전트 서버 .env 의 DELEGATE_ENABLED · DRAFT_ENABLED · TRANSFORM_ENABLED · RESULT_ASK_ENABLED 와 게이트웨이 provision.env 의 GATEWAY_RESULT_REFS 에서 읽고 고쳐 쓰지 않습니다."
+      - "에이전트 서버 env 킷(infra/env-kits/agent-server.env)에 네 스위치를 주석 줄로 적었습니다(기본 꺼짐 · 켜는 법 · 계약 문서 docs/token-saving/offload-v2.md). 주석이라 박스의 .env 에 옮겨 적히지 않습니다."
+  - date: 2026-11-24
     title: 기술 — 설치 배치의 사내 프록시를 박스 설정에서 받습니다
     tag: 기술
     items:
