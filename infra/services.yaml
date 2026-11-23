@@ -301,8 +301,12 @@ services:
   # status 에도 안 잡혀 '없다는 사실' 자체가 안 보였다 — 그게 이 항목을 만든 이유다.
   # 배포(Drive 아티팩트 반입 포함)는 deploy-all-from-drive.sh 가 하고, 여기서는 등록·자동클론·
   # 헬스·수동 재기동을 담당한다. 바이너리·프론트 dist·SIF 는 gitignore 라 Drive 에서 받는다.
+  # ⚠ DynaForge 를 운영 노드로 옮긴 박스(cae00 — 11-12 컷오버)는 이 박스의 스택이 일부러 멈춰 둔 되돌림 사본이다. infra/.env 에 KOORM_LOCAL_PARKED 가
+  #   있으면(값이 있으면 — 0 도) 이 항목은 "이 박스 대상 아님" 이다(up · update · 상태판이 그 스택을 띄우거나 보지 않는다). deploy-all · update-all ·
+  #   사전 백업도 같은 키를 같은 규칙으로 읽는다(lib/koorm-parked.sh, 11-23 라운드 HP-66 · HP-67).
   - name: kooremapper
     host: local
+    unless_env: KOORM_LOCAL_PARKED
     discover: KooRemapper
     repo: https://github.com/squall321/KooRemapper.git
     update: |

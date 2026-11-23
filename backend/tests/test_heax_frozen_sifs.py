@@ -66,7 +66,13 @@ def _is_old(root: Path, n: str, ino: int) -> bool:
 
 
 HOLD = "hwax_frozen_hold var/sifs var/sifs/.frozen-hold"
-SKIPPED = "○ 허브 앱 SIF step_forge — 동결 — infra/.env 의 HEAX_FROZEN_SIFS 에 있어 Drive 의 새 판으로 바꾸지 않았다"
+# 화면 줄 — 같은 §2 의 HEAXHub 받기가 먼저 찍는 「✓ app SIF step_forge.sif → var/sifs/」 와 어긋나 보이지 않게 되돌렸다는 것 · 바뀐 시각의 결을 말한다
+# (cae00 11-24 넘김 3 — ✓ 줄과 ○ 줄이 서로 어긋나 보였고 동결 사본의 ctime 이 바뀌었다, 설계대로다).
+SKIPPED = ("○ 허브 앱 SIF step_forge — 동결 — Drive 받기가 놓은 새 판을 되돌렸다(위 '✓ app SIF step_forge.sif' 줄은 받기 단계의 것이다) — "
+           "var/sifs/step_forge.sif · .sif.hash 의 내용 · mtime 은 동결 판 그대로이고 ctime 은 바뀐다(infra/.env 의 HEAX_FROZEN_SIFS)")
+# 장부 줄(끝 요약)은 짧게
+LEDGER = ("허브 앱 SIF step_forge — 동결\tinfra/.env 의 HEAX_FROZEN_SIFS — Drive 의 새 판을 받은 뒤 동결 판으로 되돌렸다(내용 · mtime 그대로)\t"
+          "동결을 풀 때 — infra/.env 의 HEAX_FROZEN_SIFS 에서 step_forge 을 빼고 update-all(또는 deploy-all-from-drive.sh heax)을 다시 돌린다\n")
 
 
 def _plain(s: str) -> str:
@@ -77,13 +83,15 @@ BACK = "hwax_frozen_restore var/sifs var/sifs/.frozen-hold"
 # ── lib ──────────────────────────────────────────────────────────────────────────────────────────────────────
 def test_동결한_앱은_받기가_바꾼_SIF_와_해시를_되돌리고_장부에_남긴다(tmp_path):
     ino = _old(tmp_path, "step_forge", "doc_forge")
+    ctime0 = (tmp_path / "var/sifs/step_forge.sif").stat().st_ctime_ns
     r = _lib(tmp_path, f"{HOLD} step_forge\n{_drive({'step_forge': 'NEW', 'doc_forge': 'NEW'})}\n{BACK}\necho END")
     assert r.returncode == 0 and "END" in r.stdout, r.stdout + r.stderr
     assert _is_old(tmp_path, "step_forge", ino["step_forge"]), "같은 파일(inode) · 내용 · 바뀐 시각이 옛 사본 그대로다"
+    assert (tmp_path / "var/sifs/step_forge.sif").stat().st_ctime_ns != ctime0, "ctime 은 바뀐다 — 화면 줄이 그렇다고 말하는 그대로다"
     assert (tmp_path / "var/sifs/doc_forge.sif").read_text() == "NEW", "동결하지 않은 앱은 종전대로 받는다"
     assert SKIPPED in _plain(r.stdout) and "켜려면: 동결을 풀 때 — infra/.env 의 HEAX_FROZEN_SIFS 에서 step_forge 을 빼고" in r.stdout, r.stdout
     led = (tmp_path / "ledger").read_text()
-    assert led.startswith("허브 앱 SIF step_forge — 동결\t") and led.count("\n") == 1, led
+    assert led == LEDGER, "끝 요약 줄은 짧게 — 화면 줄의 ✓ · ctime 설명은 싣지 않는다"
     assert not (tmp_path / "var/sifs/.frozen-hold").exists(), "쥘 폴더를 남기지 않는다"
 
 
@@ -153,7 +161,7 @@ def test_deploy_all_은_동결한_앱의_SIF_를_받지_않고_장부에_남긴�
     assert calls == ["appdata-merge-from-drive.sh", "dist-from-drive.sh", "stop.sh", "start.sh"], (calls, out)
     assert _is_old(tmp_path / "heax", "step_forge", ino["step_forge"]), out
     assert (tmp_path / "heax/var/sifs/doc_forge.sif").read_text() == "NEW"
-    assert SKIPPED in _plain(out) and ledger.startswith("허브 앱 SIF step_forge — 동결\t") and ledger.count("\n") == 1, (out, ledger)
+    assert SKIPPED in _plain(out) and ledger == LEDGER, (out, ledger)
     assert not (tmp_path / "heax/var/sifs/.frozen-hold").exists()
     # 하네스의 허브 재기동은 대역 health 가 늘 답해 성공으로 끝나지 않는다(기존 하네스 시험도 그것을 보지 않는다) — 받기 · 되돌리기만 본다
 

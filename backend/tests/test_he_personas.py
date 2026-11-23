@@ -1065,11 +1065,13 @@ def _s6(tmp_path, out: str, rc: int = 0, tm_ok: int = 1) -> str:
         "import sys, pathlib\n"
         f"pathlib.Path({str(tmp_path / 'called')!r}).write_text(' '.join(sys.argv[1:]))\n"
         f"sys.stdout.write({out!r})\nsys.exit({rc})\n", encoding="utf-8")
+    (tmp_path / "ledger").write_text("")
     script = "\n".join(["set -uo pipefail",                       # update-all 과 같은 셸 설정
+                        f'. "{_ROOT}/infra/scripts/lib/skip-ledger.sh"',   # update-all 이 소싱하는 ○ 장부(끝 요약)
                         'ok() { echo "OK:$*"; }', 'bad() { echo "BAD:$*"; }',
                         f"SELF_REPO='{repo}'", f"TM_OK={tm_ok}", _s6_block(), "echo END"])
     p = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
-                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HWAX_SKIP_LEDGER": str(tmp_path / "ledger")})
     assert p.returncode == 0 and p.stdout.endswith("END\n"), p.stdout + p.stderr
     return p.stdout[:-len("END\n")]
 
@@ -1087,6 +1089,25 @@ def test_update_all_6_은_운영자_점검을_check_로_부르고_경고로_올�
 def test_update_all_6_은_다_맞으면_초록_한_줄이다(tmp_path):
     out = _s6(tmp_path, "  · 건너뜀 he-data-arp: 이 게이트웨이에 앱이 없다(arp)\n  ? 정본에 없는 he-* 에이전트 1명 — he-old (지우지 않았다)\n")
     assert out == "OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구 · 읽기를 막는 목록이 없다\n", out
+
+
+_PART = ("  · 일부 he-expert-risk: hwax-risk 의 risk_report_ra_material, hwax-risk 의 risk_report_ra_record 없이 만든다(선택 앱)\n"
+         "  · 일부 he-doc-mxwp: mx-white-paper 의 wiki_search 없이 만든다(선택 앱)\n")
+
+
+def test_update_all_6_은_선택_앱_없이_만든_운영자_줄을_옮기고_끝_요약에_한_줄로_남긴다(tmp_path):
+    """cae00 11-24 넘김 1 — 받은 편지함이 「리스크 운영자 줄이 '· 일부 he-expert-risk: … 없이 만든다(선택 앱)' 로 넘어간다」 고 안내했는데 update-all 은
+    그 줄을 옮기지 않아 로그에 없었다. 조직도에서 고를 수 있는 운영자가 그 칸 없이 도는 것이라 사람이 알아야 한다 — 막지는 않는다(초록 줄 그대로)."""
+    out = _s6(tmp_path, "  · 건너뜀 he-data-arp: 이 게이트웨이에 앱이 없다(arp)\n" + _PART + "  ? 정본에 없는 he-* 에이전트 1명 — he-old (지우지 않았다)\n")
+    assert out == ("OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구 · 읽기를 막는 목록이 없다\n" + _PART), out
+    led = (tmp_path / "ledger").read_text()
+    assert led.count("\n") == 1 and led.startswith("HE팀 운영자 선택 칸\t2명을 이 박스에 없는 선택 앱 · 도구 없이 만든다(he-expert-risk · he-doc-mxwp — §6 의 '· 일부' 줄)\t"), led
+    assert "sync-he-personas.py --apply" in led, "켜는 법을 함께 남긴다(○ 장부 규칙)"
+
+
+def test_update_all_6_은_선택_앱_줄이_없으면_장부에_적지_않는다(tmp_path):
+    _s6(tmp_path, "  · 건너뜀 he-data-arp: 이 게이트웨이에 앱이 없다(arp)\n")
+    assert (tmp_path / "ledger").read_text() == ""
 
 
 def test_update_all_6_은_점검을_건너뛰었으면_초록이라_하지_않고_그_줄을_보인다(tmp_path):
@@ -1110,7 +1131,7 @@ def test_update_all_운영자_점검은_재기동_뒤_6_에서_올리고_3_은_�
     assert _UA.index("# ── 새 앱 점검 — 처음 본 앱을") < _UA.index(b) < _UA.index("SMOKE_PY="), "갱신한 지도를 읽은(TM_OK) 뒤 · 스모크 앞"
     s3 = _UA[_UA.index('hr "3) AIDataHub 데이터'):_UA.index('hr "2c) ste 코드 최신화')]
     assert 'sync-he-personas.py" 2>&1' in s3, "§3 은 merge 뒤 미리보기(HP-35)를 그대로 돈다"
-    assert "'^  ! '" not in s3 and "목록 밖 쓰기" not in s3 and "읽기를 쓰기로" not in s3, \
+    assert "'^  ! '" not in s3 and "목록 밖 쓰기" not in s3 and "읽기를 쓰기로" not in s3 and "· 일부" not in s3, \
         "§3 은 갱신 전 게이트웨이다 — 알림은 §6 한 곳에서만 올린다(두 번 찍지 않는다)"
 
 

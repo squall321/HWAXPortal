@@ -169,7 +169,12 @@ def check_running() -> None:
             say("·", f"리스크 카드 대조 {h['review_active']}건이 돈다 — update-all 이 새 대조를 멈추고 최대 300초 기다린다(HWAX_DRAIN_WAIT_S). "
                      "그 뒤 끊긴 호출은 리스크 앱이 차감 없이 다시 돌린다")
     koor = find_repo("KooRemapper")
-    if koor and (koor / "platform/infra/scripts/_common.sh").is_file():
+    # 멈춰 둔 되돌림 사본(infra/.env 의 KOORM_LOCAL_PARKED — 환경이 비어 있지 않으면 그것, lib/koorm-parked.sh 와 같은 차례) — DB 가 일부러 내려가 있어
+    # 세면 늘 '셀 수 없다' 다. update-all 은 그 스택을 띄우지 않는다.
+    parked = (os.environ.get("KOORM_LOCAL_PARKED") or "").strip() or envv(ROOT / "infra/.env", "KOORM_LOCAL_PARKED")
+    if koor and parked:
+        say("·", "DynaForge 로컬 스택은 멈춰 둔 되돌림 사본이다(infra/.env 의 KOORM_LOCAL_PARKED) — update-all 이 코드 · 배포물만 받고 띄우지 않는다")
+    elif koor and (koor / "platform/infra/scripts/_common.sh").is_file():
         n = _koorm_running(koor)
         if n is None:
             say("?", "DynaForge 도는 로컬 작업을 셀 수 없다(인스턴스 · DB 를 못 물었다)")

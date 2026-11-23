@@ -47,7 +47,11 @@ hwax_box_busy() {
     unknown+=("에이전트 서버 /health(rc $rc)")
   fi
   krm="$(_hwax_hook_repo KooRemapper "$root")"
-  if [ -n "$krm" ] && [ -f "$krm/platform/infra/scripts/_common.sh" ]; then
+  declare -F hwax_koorm_parked >/dev/null || . "$_HWAX_HOOK_LIB/koorm-parked.sh"
+  if [ -n "$krm" ] && [ -f "$krm/platform/infra/scripts/_common.sh" ] && hwax_koorm_parked "$root"; then
+    # 멈춰 둔 되돌림 사본(KOORM_LOCAL_PARKED) — 도는 작업이 없다. DB 가 일부러 내려가 있어 세면 '모름' 이 되고 --hooks-when-idle 이 훅을 늘 건너뛴다.
+    parts+=("DynaForge 멈춰 둠")
+  elif [ -n "$krm" ] && [ -f "$krm/platform/infra/scripts/_common.sh" ]; then
     # 사전 점검과 같은 30초 상한 — 인스턴스 · DB 가 매달리면 끝 요약 앞에서 update-all 이 함께 매달린다.
     n="$(timeout 30 bash -c '. "$1/koorm-busy.sh"; hwax_koorm_running_jobs "$2"' _ "$_HWAX_HOOK_LIB" "$krm" 2>/dev/null)"
     if [ -n "$n" ]; then
