@@ -530,3 +530,14 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
   `kooremapper-mcp` 매니페스트. 7 · 8 KooRemapper 점검 문서가 멈춘 사본 · 6판 값을 가리킴 · 릴리스 `manifest.json` 의 build_info 잘림 — KooRemapper. 9 운영
   StepForge 에서 materialtwin reachable false(주소 비어 기본값) — StepForge · 박스 설정. 10 옛 도구 이름(`stepforgeprod_*` · `dynaforgeprod_*`) — 포털 코드 ·
   스크립트에는 없고 날짜 박힌 기록에만 남아 고칠 것 없음(기록은 그때의 사실).
+- **덧붙임(11-24) — 넘김 뒤의 것**
+  - MaterialTwin 세션이 「cae00 이 원천을 꺼서 재료 카드 고침(HH-01)이 안 닿는다」 고 했다 — 전제는 틀렸다(cae00 은 내부 원천을 받지 않고 dev 병합이 정본 —
+    AD-17, 가드는 사설 IP 도 막아 주소만 바꿔선 안 된다). 그런데 dev 에도 표지 카드 9장이 남아 있어 따라가 보니 **진짜 결함**이었다 — AIDataHub 인앱
+    스케줄러가 회차마다 `max_pages=50`(run_sync 기본)으로 돌고, 한도에 걸린 회차는 커서를 저장하지 않아 57쪽 원천의 51 ~ 57쪽이 영영 안 받아졌다(dev 로그
+    'hit max_pages=50' 회차마다). AIDataHub `6b5a337` — 스케줄러 한도 500(`AIDH_SYNC_MAX_PAGES`) · dev API 다시 띄움(15:28 UTC). 다음 회차 뒤 표지 0 을
+    MaterialTwin 이 확인 → 조각 → 다음 라운드.
+  - StepForge — MaterialTwin 주소는 `APPTAINERENV_STEPFORGE_MATERIALTWIN_URL=…/apps/materialtwin_web`(앱 포트가 아니라 이름 경로 — 포트는 재배포마다 바뀐다).
+    cae00 은 StepForge 를 운영 노드에서 돌려 `127.0.0.1` 은 같은 노드일 때만 맞다. 레디쉬 꼴 접기는 그쪽이 고치는 중.
+  - KooRemapper `7606736`(점검 문서를 운영 노드 health · 게이트웨이 tool_count 기준으로) · HEAXHub `0cf7a45`(매니페스트 op 수를 뺌 — push 는 그쪽 확인 뒤).
+    manifest.json build_info 잘림(넘김 8)은 어느 파일인지 모른다 — 다음 글에서 cae00 에 경로를 묻는다.
+  - Post v54 — 새 Drive 이름 규칙 첫 실제 적용, Drive 대조 끝(`3f255f5a`). WDA `57e5745`(게이트 5 글자 겹침) Drive 올림.
