@@ -1210,6 +1210,78 @@ def test_리스크_앱이_쓰기라고_적은_도구는_운영자_목록에_있�
     assert {"risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel", "risk_job_action"} <= set(p["confirm"])
 
 
+# ── 11-23 cae00 라운드 — 리스크 앱 RA 초안 창구(박스 스위치 HWAXRISK_RA_REPORT_DRAFT, 기본 꺼짐)의 두 도구 ─────────────────────────────
+# 필수 confirm 에 두었더니(11-22) 창구를 켜지 않은 박스에서 미리보기가 '이 앱에 없는 도구' 로 끝 코드 2 — update-all §3 이 그 실행의 동기화를 건너뛰었다.
+# 도구마다 있을 때만 붙는 선택 칸(needs_tool — SP 0.4.72 허브 쓰기 · ODB 입구와 같은 장치)으로 옮겼다. 확인 관문은 선택 칸을 needs_tool 과
+# 상관없이 늘 읽으므로 관문의 셈은 그대로다.
+_RA_DRAFT = ("risk_report_ra_material", "risk_report_ra_record")
+_AGENT_APP = _ROOT.parent / "HWAXAgentServer" / "app.py"
+
+
+def _risk_map(with_draft: bool) -> dict:
+    tm = _write_map("he-expert-risk", set(_RA_DRAFT) if with_draft else set(), set())
+    assert all((t in tm["map"]) == with_draft for t in _RA_DRAFT)
+    return tm
+
+
+def test_L23_RA_초안_도구가_없는_박스에서도_리스크_운영자를_만든다():
+    sync = _sync()
+    one = _one("he-expert-risk")
+    p = one["personas"][0]
+    assert not set(_RA_DRAFT) & {*p["writes"], *p["confirm"]}, "필수 칸에 두면 창구를 끈 박스에서 동기화가 멈춘다"
+    assert [(o["app"], o.get("needs_tool"), o.get("confirm")) for o in p["optional"]] == \
+        [("heax-hwax_risk", t, [t]) for t in _RA_DRAFT], "도구 하나에 칸 하나 — 같은 앱 안에서 켜고 끄는 기능이다"
+    notes: list[str] = []
+    warns: list[str] = []
+    (r,), skipped, errors = sync.plan(one, _risk_map(False), notes, warns)
+    assert not errors and not skipped, (errors, skipped)
+    assert notes == [f"he-expert-risk: {', '.join(f'heax-hwax_risk 의 {t}' for t in _RA_DRAFT)} 없이 만든다(선택 앱)"], notes
+    assert warns == [], warns
+    _ask, sure = _state_lists(r["system_prompt"])
+    assert not set(_RA_DRAFT) & set(sure) and "risk_numbers_put" in sure, sure
+    assert r["response_config"]["mcp_apps"] == ["heax-hwax_risk"], "같은 앱이라 두 번 세지 않는다"
+
+
+def test_L23_RA_초안_도구가_있는_박스는_종전_정의와_같은_운영자다():
+    """창구를 켠 박스 — 11-22 정의(필수 confirm 끝에 두 도구)로 만든 것과 프롬프트 · 설정이 바이트까지 같다."""
+    sync = _sync()
+    one = _one("he-expert-risk")
+    old = json.loads(json.dumps(one))
+    op = old["personas"][0]
+    op["confirm"] = [*op["confirm"], *_RA_DRAFT]
+    del op["optional"]
+    tm = _risk_map(True)
+    notes: list[str] = []
+    warns: list[str] = []
+    (new,), skipped, errors = sync.plan(one, tm, notes, warns)
+    (was,), _s, old_errors = sync.plan(old, tm)
+    assert not errors and not skipped and not old_errors and notes == [] and warns == [], (errors, skipped, notes, warns)
+    assert new == was
+    _ask, sure = _state_lists(new["system_prompt"])
+    assert sure[-2:] == list(_RA_DRAFT), sure
+    # 한쪽만 켠 판 — 있는 것만 붙는다
+    tm["map"].pop("risk_report_ra_record")
+    (r,), _s, errors = sync.plan(one, tm)
+    _ask, sure = _state_lists(r["system_prompt"])
+    assert not errors and "risk_report_ra_material" in sure and "risk_report_ra_record" not in sure, sure
+
+
+def test_L23_RA_초안_도구는_관문_셈에_늘_든다():
+    """미리보기가 빼고 만들어도 확인 관문(에이전트서버 _confirm_lists)은 선택 칸의 confirm 을 needs_tool 과 상관없이 늘 읽는다 — 창구를 켜는 순간
+    카드가 선다. 포털의 거울(_gate_names)과 에이전트서버 소스가 그 셈인지 함께 본다."""
+    p = _one("he-expert-risk")["personas"][0]
+    gate = _sync()._gate_names(p)
+    assert all(gate.get(t) == t for t in _RA_DRAFT), sorted(gate)
+    if not _AGENT_APP.exists():
+        pytest.skip(f"형제 리포 없음: {_AGENT_APP}")
+    import ast
+    tree = ast.parse(_AGENT_APP.read_text(encoding="utf-8"))
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_confirm_lists")
+    src = ast.get_source_segment(_AGENT_APP.read_text(encoding="utf-8"), fn) or ""
+    assert 'p.get("optional")' in src and "o.get(fld)" in src, "관문이 선택 칸의 목록을 읽는다"
+    assert "needs_tool" not in src, "관문이 needs_tool 로 거르면 창구를 켠 박스에서 두 도구가 카드 없이 나간다 — 이 옮김을 다시 본다"
+
+
 def test_StepForge_의_되돌릴_수_없는_치수_지우기는_confirm_에_있다():
     """forget_dimension 은 StepForge 가 '⚠ 되돌릴 수 없다' 로 적은 지우기다 — 목록 밖이면 확인 관문이 사람이 시키지 않아도 보낸다."""
     p = _one("he-cad-stepforge")["personas"][0]
