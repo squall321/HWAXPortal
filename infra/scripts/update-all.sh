@@ -3422,6 +3422,12 @@ if [ "$TM_OK" = 1 ]; then
   _hpc_readish="$(printf '%s\n' "$_hpc" | grep -E '^  · 읽기를 쓰기로 he-' || true)"
   # 정의의 unlisted_writes 에 까닭과 함께 일부러 둔 쓰기 — ⚠ 가 아니라 ○ 로 보이기만 한다(11-23 사용자 결정 — C-30 셋이 실행마다 ⚠ 로 서 다시 넘어왔다)
   _hpc_held="$(printf '%s\n' "$_hpc" | grep -E '^  ○ 목록 밖에 둔 쓰기 he-' || true)"
+  # 선택 앱 없이 만든 운영자(정의의 optional — 이 박스 게이트웨이에 그 앱 · 도구가 없다, 11-24 cae00 넘김 1). 조직도에서 고를 수 있는 운영자가 그 칸
+  # (예: 리스크 운영자의 RA 초안 도구) 없이 돈다 — 막지 않지만 사람이 알아야 한다. 옮기는 · 줄은 이것 하나다 — '· 건너뜀 he-…' 은 운영자가 이 박스에
+  # 아예 만들어지지 않아 고를 수 없고(dev 덤프로 들어온 행은 위 '! ' 가 실행마다 알린다), '? 정본에 없는 he-*' 는 동기화가 손대지 않는 행이다.
+  # §3 에는 두지 않는다 — §3 은 병합이 돈 실행에만 · 갱신 전 게이트웨이로 돌고, 알림은 재기동을 마친 게이트웨이로 여기 한 곳에서만 올린다(두 번 찍지 않는다 —
+  # test_he_personas 의 '§3 은 어긋남만 본다' 시험).
+  _hpc_part="$(printf '%s\n' "$_hpc" | grep -E '^  · 일부 he-' || true)"
   _hpc_skip="$(printf '%s\n' "$_hpc" | grep -E '^  · (목록 밖 쓰기 점검 건너뜀|AIDataHub 전문가 목록을 못 읽었다)' || true)"
   _hpc_ovl="$(printf '%s\n' "$_hpc" | grep -E '^  (·|✗) 덧씌우기' | head -1 || true)"
   HWAX_HE_FP="$(printf '%s\n' "$_hpc_ovl" | grep -oE '지문 [0-9a-f]{12}' | head -1 | cut -d' ' -f2 || true)"
@@ -3443,6 +3449,14 @@ if [ "$TM_OK" = 1 ]; then
     printf '%s\n' "$_hpc_readish" | head -10 | sed 's/^/  /'
   fi
   [ -z "$_hpc_skip" ] || printf '%s\n' "$_hpc_skip"
+  if [ -n "$_hpc_part" ]; then
+    printf '%s\n' "$_hpc_part"
+    # 끝 요약(○ '있는데 안 켠 것')에는 한 줄로 — 그 박스에서 켜지지 않은 운영자 기능이다(사용자 지시 09-25 '안 켠 것도 전부'). 운영자마다 한 줄씩 두면
+    # 박스 내내 같은 줄 여럿이 요약을 채운다 — 운영자 키만 모으고 자세한 것은 위 줄에 둔다.
+    _hpc_pk="$(printf '%s\n' "$_hpc_part" | sed -E 's/^  · 일부 ([^:]+):.*/\1/' | paste -sd, - | sed 's/,/ · /g')"
+    hwax_skip_record "HE팀 운영자 선택 칸" "$(printf '%s\n' "$_hpc_part" | grep -c .)명을 이 박스에 없는 선택 앱 · 도구 없이 만든다($_hpc_pk — §6 의 '· 일부' 줄)" \
+      "그 앱 · 도구를 이 박스 게이트웨이에 붙인 뒤 python3 infra/scripts/sync-he-personas.py --apply(이 박스에 둘 수 없는 앱이면 그대로 둔다)"
+  fi
   [ -z "$_hpc_held" ] || printf '%s\n' "$_hpc_held"
   case "$_hpc_ovl" in
     "  ✗ "*) bad "HE팀 운영자 박스 덧씌우기를 버렸다 — 기본 정의로 돈다(확인 관문도 기본 목록만). infra/personas/he-team.local.json 을 고친다(docs/he-team-overlay/server-setup.md)"
