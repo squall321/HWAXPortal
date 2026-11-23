@@ -125,7 +125,8 @@ def test_HP47_켜면_결과_파일에만_건다(tmp_path):
 def test_HP47_모양이_틀린_값은_끔으로_만든다(tmp_path, env, name):
     _repo, conf, out = _generate(tmp_path, tls=False, infra_env=env)
     d = _directives(conf)
-    assert f"✗ {name}" in out and "limit_" not in d and "ste_result" not in d
+    # limit_rate · limit_conn 만 본다 — 맨 위 worker_rlimit_nofile(HP-80)에도 'limit_' 글자가 든다
+    assert f"✗ {name}" in out and "limit_rate" not in d and "limit_conn" not in d and "ste_result" not in d
 
 
 def test_예시_파일이_세_손잡이를_주석으로_선언한다():

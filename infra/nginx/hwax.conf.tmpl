@@ -3,6 +3,10 @@
 # Rootless-safe: pid/logs/temp all under /tmp (the only guaranteed-writable dir).
 
 worker_processes auto;
+# worker 하나의 열린 파일 한도 — 프록시 연결은 손님 하나에 둘(앞 · 뒤)이라, 박스 기본 soft 1024 면 worker 하나가 손님 500 명 남짓에서 막힌다.
+# 값은 gen-nginx-conf.sh 가 infra/.env 의 NGINX_WORKER_RLIMIT_NOFILE(기본 65536)로 채우고, 생성기를 돌린 셸의 hard 한도보다 크면 hard 로 낮춘다
+# (넘으면 nginx 가 기동 때 알림만 남기고 soft 를 그대로 둔다 — docs/request-1123 HP-80).
+worker_rlimit_nofile {{WORKER_RLIMIT_NOFILE}};
 pid /tmp/hwax-nginx.pid;
 error_log /tmp/hwax-nginx-error.log warn;
 
@@ -52,6 +56,12 @@ http {
 {{HTTP_EXTRAS}}
 
     proxy_http_version 1.1;
+    # 시간 한도의 기본값도 http 레벨에서 한 번만 — 업로드 상한과 같은 까닭이다. 없으면 loc_extras 에 이름이 없는 라우트(데이터허브 웹 경로 ·
+    # ai-data-hub · mx-white-paper · 포털 `/` …)가 모두 nginx 기본 60s 에 504 로 끊긴다(cae00 7일 42건 — docs/request-1123 HP-79).
+    # location 이 정한 값(/ste/ · /apps/ · /agent/ · /mcp-gw/ …)이 앞선다. 값은 NGINX_PROXY_READ_TIMEOUT(기본 600s) — 침묵 한도다(바이트 사이 간격).
+    # 치르는 값 — 멈춘 뒤쪽 서비스가 연결을 그만큼 붙잡는다. 그래서 위 worker_rlimit_nofile 과 짝이다.
+    proxy_read_timeout {{PROXY_READ_TIMEOUT}};
+    proxy_send_timeout {{PROXY_READ_TIMEOUT}};
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
