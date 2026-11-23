@@ -447,6 +447,8 @@ cae00 이 11-23 라운드에서 본 것을 답 끝에 「개발 쪽에 넘길 �
 
 - **할 일 1 — 정기 동기화 원천 끄기** — 하지 않았다(답에 「사용자 결정」 이라 적혀 있다 — 11-21 의 「끈다」(L21-6 ④)를 이번에 적용하지 않은 까닭은 답에 없다).
   `sync-sources.sh list`(Q4)는 아래다. AIDataHub 상태 응답의 `sync_stale` 칸은 빈 값(`{}`)이다.
+  **사용자 결정(11-23)** — 다시 물어 「cae00 에서 끈다」 를 골랐다(L21-6 ④ 그대로). 4차 받은 편지함(2026-11-23) 7절에
+  `sync-sources.sh disable signalforge-gs mxwp materialtwin` 을 싣고 `list` 의 enabled 를 물음으로 받는다.
 
   | 원천 | enabled | last_status | last_sync_at |
   |---|---|---|---|
