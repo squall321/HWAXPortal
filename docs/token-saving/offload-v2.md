@@ -48,6 +48,21 @@
   읽고 모은다(리스크 20만 창과 같은 나눠 부르기). 인용은 원문 위치로 — 원문에 없는 인용은 버린다(코드 대조).
 - 그림 · 큰 바이너리는 지금처럼 그림 보관소 ref 로 간다(이것과 따로).
 - 지금의 응답 캐시 · 쓰기 뒤 비우기 · 감사(`chars` 는 원문 크기 그대로)는 바꾸지 않는다.
+- **짓고 나서 정한 꼴(게이트웨이 `57212f4` — 11-24, TS-7)**
+  - 머리로 청한 연결의 `tools/list` 는 `outputSchema` 를 뗀다 — 떼지 않으면 Claude Code(MCP TS SDK)가 줄인 structuredContent 를 출력 스키마로 검증해 거절한다.
+    다른 연결의 목록은 그대로.
+  - 줄인 꼴 — 글 블록은 앞머리 한 블록 + 손잡이 JSON 한 블록, structuredContent 는 `{ref, chars, sha256, pages, how, head}`.
+  - 원문 = 글 블록을 줄바꿈으로 이은 것(structuredContent 의 촘촘한 JSON 이 더 길면 그것). chars · sha256 · 쪽 나누기가 이 글 기준.
+  - `result_get` 답 — 첫 블록 `{ref, page, pages, page_chars, start, end, chars}`, 둘째 블록 그 쪽의 원문 글(JSON 이스케이프로 불지 않게).
+  - `result_ask` 의 `quotes.page` 는 20,000자 단위(= `result_get` 기본 page_chars), start · end 는 원문 전체 자리.
+  - 묻기 창구 호출 — `POST {hwax-deliberation 주소에서 /mcp 를 뗀 것}/llm/ask_over_text`, 머리 `Authorization: Bearer <GW_TOKEN>` · `x-hwax-user`(%-인코딩) ·
+    있으면 `x-hwax-corr`. 404 는 「꺼짐 또는 낡은 판」 · 401 / 403 / 503 은 「공유 비밀 어긋남」.
+  - 내부 ref 창구 — `GET <게이트웨이>/internal/result/<ref>`, 머리 `Authorization: Bearer <GW_TOKEN>`(정확히 한 번) · `x-hwax-user`. 200 `{ref, tool, chars,
+    sha256, pages, created, expires, text, structured}` · 400 사람 머리 없음 · 401 · 404(없음 · 끝남 · 남의 것 — 같은 404) · 405. `X-Forwarded-*` 가 실린 요청은
+    이 길을 타지 않는다(바깥 차단) — 포털 nginx 도 `/mcp-gw/internal` 을 404 로 막는다.
+  - 도구 등록은 박스 스위치만 본다 — 켜면 머리 없는 연결 · 웹 챗 목록에도 두 도구가 보이지만, 그 연결에는 손잡이가 생기지 않아 불러도 「없다」 로 끝난다.
+  - 같은 사람 · 같은 원문은 같은 ref. 실패 결과 · 신원 없는 호출 · 저장 실패 · `result_*` 자신은 원문 그대로. 계약 밖 손잡이 넷 — 자리 · 사람마다 1 GiB ·
+    전체 10 GiB · 청소 주기(그림 보관소 꼴).
 
 ### 3-3. C 긴 글 · D 변환(에이전트 서버 MCP)
 
