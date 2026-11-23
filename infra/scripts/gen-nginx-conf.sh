@@ -80,6 +80,30 @@ EOF
             proxy_read_timeout 3600s;
 EOF
       ;;
+    # *-mcp: 플랫폼마다의 MCP streamable-http 입구(routes.local.env — cae00 열 경로). /mcp-gw/ 와 같은 스트리밍 묶음이 없으면 전역 gzip ·
+    # 버퍼링이 SSE 를 붙잡고 침묵 한도에 끊긴다. 침묵 한도는 /mcp-gw/ 와 같은 손잡이(NGINX_MCP_READ_TIMEOUT, 기본 1h) — cae00 이 conf 를 다시
+    # 만들 때마다 손으로 넣던 값(docs/request-1123 HP-73). 위 이름들보다 뒤에 둔다 — 이름이 정해진 갈래가 먼저다.
+    *-mcp)
+      cat <<'EOF'
+            proxy_buffering off;
+            proxy_cache off;
+            gzip off;
+            proxy_read_timeout {{MCP_READ_TIMEOUT}};
+            proxy_send_timeout {{MCP_READ_TIMEOUT}};
+EOF
+      ;;
+  esac
+  # 큰 응답 버퍼 — NGINX_LARGE_BUFFER_ROUTES 에 적은 라우트만(기본 끔 — docs/request-1123 HP-81). 큰 JSON 을 돌려주는 데이터허브 웹 경로는 응답이
+  # 기본 버퍼(4k · 8k 여덟)를 넘어 /tmp 임시 파일에 쓰였다(cae00 7일 10만 건 남짓 — 끊김은 아니고 느려지며 / 파티션을 쓴다). 응답 하나가 버퍼를
+  # 최대 2MB(64k × 32) 쓴다 — 도는 응답 수만큼 메모리를 쓰니 큰 응답을 내는 라우트에만 붙인다. 버퍼링을 끈 갈래에는 뜻이 없다.
+  case " $LARGE_BUFFER_ROUTES " in
+    *" $1 "*)
+      cat <<'EOF'
+            proxy_buffer_size 64k;
+            proxy_buffers 32 64k;
+            proxy_busy_buffers_size 128k;
+EOF
+      ;;
   esac
 }
 
@@ -200,6 +224,16 @@ fi
 if [ -n "$STE_RESULT_CONN" ] && [[ ! "$STE_RESULT_CONN" =~ ^[1-9][0-9]*$ ]]; then
   echo "  ✗ NGINX_STE_RESULT_CONN 값('$STE_RESULT_CONN')을 쓰지 않는다 — 1 이상의 정수(예 2). 연결 제한 없이 만든다" >&2; STE_RESULT_CONN=""
 fi
+# 큰 응답 버퍼를 붙일 라우트 — 기본 비움(끔, docs/request-1123 HP-81). 라우트 이름(routes.env · routes.local.env 의 키)을 쉼표(또는 따옴표 안
+# 빈칸)로 가른다 — infra/.env 는 셸이 읽으니 따옴표 없는 빈칸은 뒤 낱말을 명령으로 돌린다.
+#   NGINX_LARGE_BUFFER_ROUTES  예 failuretrace,rootdesign
+# 이름 꼴이 아닌 것은 버리고, 라우트에 없는 이름은 아래(라우트를 다 만든 뒤) 알린다 — 오타가 조용히 '안 붙음' 이 되지 않게.
+LARGE_BUFFER_ROUTES=""
+for _r in $(printf '%s' "${NGINX_LARGE_BUFFER_ROUTES:-}" | tr ',' ' '); do
+  if [[ "$_r" =~ ^[A-Za-z0-9_][A-Za-z0-9_/-]*$ ]]; then LARGE_BUFFER_ROUTES+="$_r "
+  else echo "  ✗ NGINX_LARGE_BUFFER_ROUTES 의 '$_r' 는 라우트 이름 꼴이 아니라 버렸다(routes.env 의 키 — 예 failuretrace)" >&2; fi
+done
+LARGE_BUFFER_ROUTES="${LARGE_BUFFER_ROUTES% }"
 _ste_result_re='"~^/ste/api/jobs/[^/]+/result(\.zip|/file/)"'
 http_extras=""
 if [ -n "$STE_RESULT_RATE" ]; then
@@ -212,6 +246,7 @@ fi
 
 locations=""
 count=0
+_route_ids=""
 if [ -f "$ROUTES_MERGED" ]; then
   while IFS= read -r raw || [ -n "$raw" ]; do
     line="$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -232,8 +267,12 @@ if [ -f "$ROUTES_MERGED" ]; then
     esac
     locations="${locations}$(loc_block "$id" "$url")"$'\n'
     count=$((count + 1))
+    _route_ids+=" $id"
   done < "$ROUTES_MERGED"
 fi
+for _r in $LARGE_BUFFER_ROUTES; do
+  case "$_route_ids " in *" $_r "*) ;; *) echo "  ⚠ NGINX_LARGE_BUFFER_ROUTES 의 '$_r' 는 라우트에 없다 — 큰 응답 버퍼가 아무 데도 붙지 않았다(routes.env · routes.local.env 의 키를 본다)" >&2 ;; esac
+done
 
 # 스트리밍 두 경로의 침묵 한도(proxy_read_timeout) — infra/.env 의 손잡이 둘. 템플릿(HTTP 서버)과 아래 TLS 사본은 같은 토큰을
 # 쓰고 값은 맨 끝의 sed 한 곳에서 들어간다. 종전엔 `1h` 리터럴이 두 파일에 따로 박혀 손으로 맞췄다.
@@ -258,6 +297,22 @@ _nginx_secs() {  # $1=위 모양의 값 → 초(10# — 앞자리 0 을 8진수�
 AGENT_READ_TIMEOUT="$(_nginx_time NGINX_AGENT_READ_TIMEOUT 50400s)"
 MCP_READ_TIMEOUT="$(_nginx_time NGINX_MCP_READ_TIMEOUT 1h)"
 STE_READ_TIMEOUT="$(_nginx_time NGINX_STE_READ_TIMEOUT 600s)"
+# 모든 라우트의 기본 침묵 한도(http 레벨 — location 이 정한 값이 앞선다, docs/request-1123 HP-79). 읽기 · 쓰기 둘 다 이 값이다.
+#   NGINX_PROXY_READ_TIMEOUT (기본 600s) — 없으면 nginx 기본 60s 라 데이터허브 웹 경로 · 포털 `/` 의 긴 요청이 504 로 끊겼다.
+PROXY_READ_TIMEOUT="$(_nginx_time NGINX_PROXY_READ_TIMEOUT 600s)"
+# worker 의 열린 파일 한도(docs/request-1123 HP-80).
+#   NGINX_WORKER_RLIMIT_NOFILE (기본 65536) — 1 이상의 정수. 이 셸의 hard 한도(nginx 를 띄우는 start.sh · update-all 이 같은 셸에서 이 생성기를
+#     부른다)보다 크면 hard 로 낮춘다 — 넘는 값은 nginx 가 기동 때 알림만 남기고 soft 를 그대로 둬, 적은 값이 먹었다고 오해하게 된다.
+WORKER_RLIMIT_NOFILE="${NGINX_WORKER_RLIMIT_NOFILE:-65536}"
+if [[ ! "$WORKER_RLIMIT_NOFILE" =~ ^[1-9][0-9]{0,8}$ ]]; then
+  echo "  ✗ NGINX_WORKER_RLIMIT_NOFILE 값('$WORKER_RLIMIT_NOFILE')을 쓰지 않는다 — 1 이상의 정수(예 65536). 기본값 65536 으로 만든다" >&2
+  WORKER_RLIMIT_NOFILE=65536
+fi
+_nofile_hard="$(ulimit -Hn 2>/dev/null || true)"
+if [[ "$_nofile_hard" =~ ^[0-9]+$ ]] && [ "$WORKER_RLIMIT_NOFILE" -gt "$_nofile_hard" ]; then
+  echo "  ⚠ NGINX_WORKER_RLIMIT_NOFILE($WORKER_RLIMIT_NOFILE)이 이 셸의 열린 파일 hard 한도($_nofile_hard)보다 커서 $_nofile_hard 로 만든다" >&2
+  WORKER_RLIMIT_NOFILE="$_nofile_hard"
+fi
 # 침묵 한도의 순서 — 포털 릴레이 < nginx /agent/. 뒤집히면 nginx 가 먼저 끊어, 포털이 낼 문구(손잡이 이름·'심의는 계속 돈다')
 # 대신 화면에 사유 없는 'network error' 만 남는다. 포털 값은 start.sh 가 넘기는 infra/.env 가 먼저고 없으면 backend/.env, 그것도
 # 없으면 코드 기본값이다. 포털 쪽을 0(끔)으로 둔 박스는 nginx 가 유일한 한도라 보지 않는다. 알리기만 한다(conf 는 그대로 만든다).
@@ -343,6 +398,8 @@ TMP1="$(mktemp)"; TMP2="$(mktemp)"; trap 'rm -f "$TMP1" "$TMP2"' EXIT
         -e "s/{{AGENT_READ_TIMEOUT}}/${AGENT_READ_TIMEOUT}/g" \
         -e "s/{{MCP_READ_TIMEOUT}}/${MCP_READ_TIMEOUT}/g" \
         -e "s/{{STE_READ_TIMEOUT}}/${STE_READ_TIMEOUT}/g" \
+        -e "s/{{PROXY_READ_TIMEOUT}}/${PROXY_READ_TIMEOUT}/g" \
+        -e "s/{{WORKER_RLIMIT_NOFILE}}/${WORKER_RLIMIT_NOFILE}/g" \
         -e "s/{{TLS_SERVER_NAME}}/${TLS_SERVER_NAME:-_}/g" > "$OUT"
 
 tls_note=""; [ "${ENABLE_TLS:-false}" = "true" ] && tls_note=" + TLS :${HTTPS_PORT:-443}"
