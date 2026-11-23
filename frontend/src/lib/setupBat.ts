@@ -15,7 +15,8 @@ export interface CertStep {
 }
 
 export interface Snippets {
-  buildSetupBat: (token: string, name: string, pem: string | null) => string;
+  // proxy — 포털이 PAT 발급 응답(fallback_proxy)으로 준 사내 프록시. 비면 npm 레지스트리 폴백 없이 직결만 본다.
+  buildSetupBat: (token: string, name: string, pem: string | null, proxy: string | null) => string;
   claudeCodeSnippet: (token: string) => string;
   claudeCodeSnippetSelfSigned: (token: string, certPath: string) => string;
   claudeDesktopSnippet: (token: string, certPath: string | null) => string;
@@ -28,9 +29,13 @@ export function makeSnippets(origin: string): Snippets {
   const MCP_URL = `${ORIGIN}/mcp-gw/mcp`;
   // NO_PROXY 는 호스트(:포트)만 받는다 — 스킴이 붙으면 무시된다.
   const HOSTONLY = ORIGIN.replace(/^https?:\/\//, '');
-  // 사내 프록시. 다른 서비스들이 쓰는 값과 같다(infra/.env.example HWAX_FALLBACK_PROXY,
-  // AIDataHub _common.sh DEFAULT_FALLBACK_PROXY). npm 레지스트리는 이걸 타야 나간다.
-  const CORP_PROXY = 'http://168.219.61.252:8080';
+  // 사내 프록시 — 공개 리포에 실제 주소를 두지 않는다(사용자 결정 11-24). 박스의 infra/.env HWAX_FALLBACK_PROXY 를 포털이 PAT 발급 응답
+  // (fallback_proxy)으로 주고, 화면이 buildSetupBat 에 넘긴다. 값은 배치의 echo · PowerShell 홑따옴표 · set 에 그대로 들어가므로
+  // 'http(s)://호스트[:포트]' 모양만 받는다 — 비었거나 모양이 틀리면 null(폴백 없이 직결만 본다).
+  const fallbackProxy = (p: string | null): string | null => {
+    const v = (p ?? '').trim();
+    return /^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?\/?$/.test(v) ? v : null;
+  };
   const CHAT_URL = `${ORIGIN}/agent/chat`;
   // 이 페이지가 만들어 주는 것에는 전부 평문 PAT 가 들어간다. 지금 접속한 origin 이 http 면
   // 그 PAT 가 네트워크를 그대로 건너간다 — 게다가 인증서 설치(NODE_EXTRA_CA_CERTS)는
@@ -186,7 +191,8 @@ export function makeSnippets(origin: string): Snippets {
     `del "%${varName}%" >nul 2>nul`,
   ];
 
-  function buildSetupBat(token: string, name: string, pem: string | null): string {
+  function buildSetupBat(token: string, name: string, pem: string | null, proxy: string | null): string {
+    const CORP_PROXY = fallbackProxy(proxy);
     const certDir = CERT_DIR;
     const certFile = CERT_FILE;
     const caFile = CA_BUNDLE;
@@ -269,7 +275,7 @@ export function makeSnippets(origin: string): Snippets {
       'echo          사내망^(VPN^) 연결을 확인하세요. 등록은 계속 진행합니다.',
       ':px_npm',
       // npx 는 레지스트리를 타야 mcp-remote 를 받는다. 프록시가 안 잡혀 있으면 여기서 죽는데,
-      // 에러가 'MCP 등록 실패' 로만 보인다. 미리 확인하고 없으면 사내 프록시를 이 창에 세운다.
+      // 에러가 'MCP 등록 실패' 로만 보인다. 미리 확인하고 없으면 사내 프록시(포털이 준 값)를 이 창에 세운다.
       'where npx >nul 2>nul',
       // 종전엔 npx 가 없으면 아무 말 없이 다음 단계로 갔다 — Node.js 없는 PC 에서는 이후
       // 등록이 전부 "왜 실패하는지 모르는 채로" 실패한다(리포트 §3). 사유를 알려 준다.
@@ -290,17 +296,24 @@ export function makeSnippets(origin: string): Snippets {
       'if defined HTTPS_PROXY goto :px_npmfail',
       // 프록시를 세우기 전에 그 프록시로 실제로 나가지는지 먼저 본다. 안 되는데 세우면 이 창의
       // 이후 모든 npx 가 그 프록시로 끌려가 더 나빠진다 — 등록도 연결 시험도 같이 죽는다.
-      `echo      npm 레지스트리 직결 실패 - 사내 프록시^(${CORP_PROXY}^)로 시도합니다`,
-      'powershell -NoProfile -Command "$ErrorActionPreference=\'SilentlyContinue\';' +
-        `try{$px=New-Object System.Net.WebProxy('${CORP_PROXY}');` +
-        '$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Proxy $px ' +
-        '-Uri \'https://registry.npmjs.org/mcp-remote/latest\';' +
-        'if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}"',
-      'if errorlevel 1 goto :px_npmfail',
-      `set HTTPS_PROXY=${CORP_PROXY}`,
-      `set HTTP_PROXY=${CORP_PROXY}`,
-      'echo      사내 프록시로 레지스트리 확인 - 이 창에 적용합니다',
-      'goto :px_done',
+      // 포털이 사내 프록시를 주지 않았으면(박스에 HWAX_FALLBACK_PROXY 없음) 이 시도를 빼고 그렇다고 한 줄 남긴다.
+      ...(CORP_PROXY
+        ? [
+            `echo      npm 레지스트리 직결 실패 - 사내 프록시^(${CORP_PROXY}^)로 시도합니다`,
+            'powershell -NoProfile -Command "$ErrorActionPreference=\'SilentlyContinue\';' +
+              `try{$px=New-Object System.Net.WebProxy('${CORP_PROXY}');` +
+              '$r=Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Proxy $px ' +
+              '-Uri \'https://registry.npmjs.org/mcp-remote/latest\';' +
+              'if($r.StatusCode -eq 200){exit 0}else{exit 1}}catch{exit 1}"',
+            'if errorlevel 1 goto :px_npmfail',
+            `set HTTPS_PROXY=${CORP_PROXY}`,
+            `set HTTP_PROXY=${CORP_PROXY}`,
+            'echo      사내 프록시로 레지스트리 확인 - 이 창에 적용합니다',
+            'goto :px_done',
+          ]
+        : [
+            'echo      npm 레지스트리 직결 실패 - 포털이 준 사내 프록시 주소가 없거나 모양이 틀려 프록시로 다시 시도하지 않습니다',
+          ]),
       ':px_npmfail',
       'echo      [!] npx 가 mcp-remote 를 받지 못했습니다.',
       'echo          프록시 뒤라면 관리자에게 npm 레지스트리 허용을 요청하세요.',

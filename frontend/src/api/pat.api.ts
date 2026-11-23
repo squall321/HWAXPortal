@@ -16,6 +16,8 @@ export interface PatMeta {
 
 export interface PatCreated extends PatMeta {
   token: string; // 평문 JWT — 발급 응답에서 한 번만 노출, 서버·로컬 어디에도 저장하지 않음
+  // 박스의 사내 프록시(infra/.env HWAX_FALLBACK_PROXY) — 설치 배치의 npm 레지스트리 폴백. 비었거나 이 칸이 없던 백엔드면 폴백 없이 직결만.
+  fallback_proxy?: string;
 }
 
 export interface PatCreateBody {

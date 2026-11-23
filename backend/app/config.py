@@ -247,6 +247,10 @@ class Settings(BaseSettings):
     pat_default_audiences: str = ("mx-white-paper,heax-hub,ai-data-hub,signalforge,"
                                  "ste,dyna-forge,step-forge,simflow,mcp-gateway")
     pat_chat_audience: str = "mcp-gateway"   # audience a PAT must carry to use the chat / MCP surface
+    # 사내 프록시 — 토큰 화면이 만드는 Windows 설치 배치가 npm 레지스트리 직결이 실패할 때 시도하는 주소(PAT 발급 응답의 fallback_proxy).
+    # 공개 리포에 실제 주소를 두지 않는다(사용자 결정 11-24) — 박스의 infra/.env 의 HWAX_FALLBACK_PROXY 를 start.sh 가 넘긴다.
+    # 비면 배치는 프록시로 다시 시도하지 않고 직결만 본다(그렇다고 한 줄 남긴다).
+    hwax_fallback_proxy: str = ""
     # 포털이 챗·심의 요청마다 찍어 에이전트 서버에 넘기는 사용자 PAT 의 수명(초) — exp = 30분 창의 시작 + 이 값이라
     # 시작 시점에 남는 수명은 최소 (이 값 − 1800)이다. 에이전트 서버는 시작할 때 받은 토큰을 그 실행 **끝까지** 쓴다
     # (좌석 조회, 마지막 Report Archive 저장). 종전 60분은 이 경로에서 가장 짧은 한도였다 — 30~60분을 넘긴 심의가

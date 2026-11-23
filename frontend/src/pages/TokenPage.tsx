@@ -169,9 +169,9 @@ export default function TokenPage() {
         if (!r.ok) throw new Error(`인증서를 받지 못했습니다 (HTTP ${r.status}).`);
         pem = await r.text();
       }
-      const blob = new Blob([SNIP.buildSetupBat(created.token, created.name, pem)], {
-        type: 'application/octet-stream',
-      });
+      // 사내 프록시는 박스 설정을 발급 응답으로 받는다(공개 리포에 주소를 두지 않는다 — 11-24).
+      const bat = SNIP.buildSetupBat(created.token, created.name, pem, created.fallback_proxy ?? null);
+      const blob = new Blob([bat], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
