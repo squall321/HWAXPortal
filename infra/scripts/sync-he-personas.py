@@ -19,7 +19,7 @@ system_prompt 를 만든 뒤 AIDataHub REST(/api/agents)로 만들거나 고친�
 없으면 빼고 만든다(건너뛰지 않는다. 미리보기에 '· 일부' 로 찍는다).
 
 막지 않고 알리기만 하는 것이 셋 더 있다(docs/request-1030). 운영자 앱의 쓰기 꼴 도구(/tools-map 의 write) 가운데 writes · confirm
-어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53), 거꾸로 두 목록이 게이트웨이가 읽기로 확인한 도구(routine_read)를 막는 것은 '· 읽기를 쓰기로'
+어디에도 없는 것은 '· 목록 밖 쓰기' 로(HP-53 — 정의의 unlisted_writes 에 까닭과 함께 일부러 둔 것은 '○ 목록 밖에 둔 쓰기' 로, 11-23 사용자 결정), 거꾸로 두 목록이 게이트웨이가 읽기로 확인한 도구(routine_read)를 막는 것은 '· 읽기를 쓰기로'
 로(C-15 — 에이전트서버의 확인 관문이 그 조회마다 카드를 세운다), 이 박스 AIDataHub 의 운영자가 모는 앱이 이 게이트웨이에 없는 것은 '! ' 로
 찍는다(HP-51). '! ' 는 정본의 이름 오류 · 저장 실패와 상관없이 /tools-map 을 읽었으면 늘 본다. --check 는 이 알림 줄만 찍는다 — update-all
 §6 이 실행마다(재기동 · 재프로비저닝을 마친 게이트웨이로) 불러 ⚠ 로 올린다. --apply 에서 저장 요청이 5xx 면 다시 읽어 저장됐는지 보고,
@@ -201,14 +201,25 @@ def plan(spec: dict, tmap: dict, notes: list[str] | None = None,
         # 빠지고, 에이전트서버의 확인 관문(HA-29)이 들어가면 그 관문이 읽을 목록에서도 빠진다. 대조는 관문과 같은 셈이다 — 이름 그대로이거나
         # '_<이름>' 으로 끝나면 적힌 것이다(_gate_names — 접두 별칭은 접두를 뗀 꼴까지). 노출 이름 · 접두 별칭만 견주면 형제 허브의 같은 도구
         # (failuretrace_bundle_import — 관문은 정본 허브 접두로 적은 이름의 꼬리로 건다)를 '목록 밖' 으로 거짓 알렸다(11-03, SP 0.4.72 허브 셋이면 99개 중 70개).
+        held_names, held_why, bad_held = _unlisted(p)
+        if bad_held:
+            errors.append(f"{key}: unlisted_writes 는 {{\"tools\": [도구 이름…], \"why\": \"까닭 한 줄\"}} 이어야 한다 — {bad_held}")
         if warns is not None and write is not None:
             gate = _gate_names(p)
             loose = [t for t in tools if t in write and t not in read_ok
                      and not any(t.lower() == g or t.lower().endswith("_" + g) for g in gate)]
+            # 일부러 목록 밖에 둔 쓰기(unlisted_writes — 사용자 결정으로 둔 것, 까닭 한 줄과 함께)는 ⚠ 가 아니라 ○ 줄로 찍는다(11-23 사용자 결정).
+            # 대조는 두 목록과 같은 셈이다(이름 그대로이거나 '_<이름>' 으로 끝난다). 칸에 없는 새 쓰기는 그대로 '목록 밖 쓰기' 다.
+            held = [t for t in loose if any(t.lower() == g or t.lower().endswith("_" + g) for g in held_names)]
+            loose = [t for t in loose if t not in held]
             if loose:
                 more = f" 외 {len(loose) - LOOSE_SHOW}개" if len(loose) > LOOSE_SHOW else ""
                 warns.append(f"목록 밖 쓰기 {key}: {len(loose)}개 — {', '.join(loose[:LOOSE_SHOW])}{more}"
                              "(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)")
+            if held:
+                more = f" 외 {len(held) - LOOSE_SHOW}개" if len(held) > LOOSE_SHOW else ""
+                warns.append(f"○ 목록 밖에 둔 쓰기 {key}: {len(held)}개 — {', '.join(held[:LOOSE_SHOW])}{more}"
+                             f"(일부러 두 목록 밖에 둔다 — {held_why})")
         tool_map: dict[str, list[str]] = {}
         for t in tools:
             tool_map.setdefault(area_label.get(areas.get(t, ""), "미분류"), []).append(t)
@@ -247,6 +258,20 @@ def _gate_names(p: dict) -> dict[str, str]:
             if low.startswith(x) and len(low) > len(x):
                 out.setdefault(low[len(x):], n)
     return out
+
+
+def _unlisted(p: dict) -> tuple[dict[str, str], str, str]:
+    """일부러 목록 밖에 둔 쓰기(unlisted_writes — {tools, why}) → (_gate_names 와 같은 셈의 이름표, 까닭, 꼴이 틀렸으면 그 말). 미리보기의 알림 줄에만 쓴다 —
+    바인딩(apps) · 확인 관문(writes · confirm · optional) · 접근 검사(apps)는 이 칸을 읽지 않는다. 칸이 없으면 빈 표다."""
+    u = p.get("unlisted_writes")
+    if u is None:
+        return {}, "", ""
+    if not isinstance(u, dict) or not isinstance(u.get("tools"), list) or not all(isinstance(t, str) and t.strip() for t in u["tools"]):
+        return {}, "", "tools 가 도구 이름 목록이 아니다"
+    why = u.get("why")
+    if not isinstance(why, str) or not why.strip():
+        return {}, "", "why(까닭 한 줄)가 비었다"
+    return _gate_names({"apps": p.get("apps") or [], "writes": u["tools"], "confirm": []}), why.strip(), ""
 
 
 def _warn_readish(spec: dict, read_ok: set, warns: list[str]) -> None:
@@ -384,7 +409,7 @@ def main() -> int:
     for n in notes:
         print(f"  · 일부 {n}")
     for w in warns:
-        print(f"  · {w}")
+        print(f"  {w}" if w.startswith("○ ") else f"  · {w}")
     if args.check:
         # 알림 줄만 — 정본 이름 오류 · 어긋남(+ · ~)은 미리보기 몫이라 여기서는 세지 않는다(오류가 있어도 '!' 는 본다).
         _report_agents(spec, tmap)

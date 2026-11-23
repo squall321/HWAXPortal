@@ -3420,6 +3420,8 @@ if [ "$TM_OK" = 1 ]; then
   _hpc_gone="$(printf '%s\n' "$_hpc" | grep -E '^  ! ' || true)"
   _hpc_loose="$(printf '%s\n' "$_hpc" | grep -E '^  · 목록 밖 쓰기 he-' || true)"
   _hpc_readish="$(printf '%s\n' "$_hpc" | grep -E '^  · 읽기를 쓰기로 he-' || true)"
+  # 정의의 unlisted_writes 에 까닭과 함께 일부러 둔 쓰기 — ⚠ 가 아니라 ○ 로 보이기만 한다(11-23 사용자 결정 — C-30 셋이 실행마다 ⚠ 로 서 다시 넘어왔다)
+  _hpc_held="$(printf '%s\n' "$_hpc" | grep -E '^  ○ 목록 밖에 둔 쓰기 he-' || true)"
   _hpc_skip="$(printf '%s\n' "$_hpc" | grep -E '^  · (목록 밖 쓰기 점검 건너뜀|AIDataHub 전문가 목록을 못 읽었다)' || true)"
   _hpc_ovl="$(printf '%s\n' "$_hpc" | grep -E '^  (·|✗) 덧씌우기' | head -1 || true)"
   HWAX_HE_FP="$(printf '%s\n' "$_hpc_ovl" | grep -oE '지문 [0-9a-f]{12}' | head -1 | cut -d' ' -f2 || true)"
@@ -3441,6 +3443,7 @@ if [ "$TM_OK" = 1 ]; then
     printf '%s\n' "$_hpc_readish" | head -10 | sed 's/^/  /'
   fi
   [ -z "$_hpc_skip" ] || printf '%s\n' "$_hpc_skip"
+  [ -z "$_hpc_held" ] || printf '%s\n' "$_hpc_held"
   case "$_hpc_ovl" in
     "  ✗ "*) bad "HE팀 운영자 박스 덧씌우기를 버렸다 — 기본 정의로 돈다(확인 관문도 기본 목록만). infra/personas/he-team.local.json 을 고친다(docs/he-team-overlay/server-setup.md)"
             printf '%s\n' "$_hpc_ovl" | sed 's/^/  /' ;;
