@@ -559,3 +559,6 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
   강제 push 로 지우지 않음) — 포털 `655a45c5`. 같은 주소가 다른 추적 파일에도 있다 — 포털 `frontend/src/lib/setupBat.ts`(PC 설정 배치의 npm 폴백 — 기능 값) ·
   AIDataHub 6(`_common.sh` 기본값 · systemd 틀 · bootstrap · 예시 · 발표 html) · MX 백서 8 · SignalForge 2 · ste 2 · PersonalSettingAutomation 1. 기능 값은 박스
   설정에서 받게 설계를 바꿔야 해 따로 정한다(남은 일).
+- **덧붙임(11-24) — 사설 대역 주소 사용자 결정** — ste 세션이 사내 프록시 말고도 사설 대역(10.x 등) 주소를 찾았다. 사용자 결정 — ste 는 「다 옮기되 라이선스
+  서버는 두 단계」(이번 글에서 cae00 이 운영 헤드 `.env` 에 `STE_LSTC_LICENSE_SERVER` 를 먼저 넣고 → 다음 라운드에 기본값을 뺀다 · dev 가드 주소 넷은 추적 밖
+  로컬 파일 · 문서 · 시험은 가리거나 TEST-NET · 192.168 VM 망 정의는 둔다). 다른 리포는 사설 대역까지 훑지 않는다(사내 프록시 주소만).
