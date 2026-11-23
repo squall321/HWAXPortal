@@ -24,6 +24,7 @@
 - [x] 키 없는 점검 `infra/scripts/claude-chat-check.sh`(바깥 연결 · 파이썬 인증서 · 꾸러미 · 키 파일 권한 · /health — 주소 · 키를 찍지 않는다), dev 에서 통과 · 막힌 프록시 · 인증서 흉내 둘
 - [x] 꾸러미 묶음 Drive `tools/claude-chat-wheels/`(바퀴 넷 · SHA256SUMS — 내려받아 대조함, 11-22)
 - [ ] 사람 — 회사 정책 확인 · 점검 · 설치 · 키 파일 · `.env` 의 `CLAUDE_CHAT_FOR=feat:chat-claude` · 사람에게 개별 허가 · 한 사람으로 한 턴(다음 update-all 라운드 뒤)
+      — 11-23 점검만 돌림(파이썬 httpx 가 인증서를 못 믿는다 → `SSL_CERT_FILE` 먼저 · 프록시는 셸에만 · 꾸러미 · 키 파일 없음 · 켜지 않음 — 그쪽 사용자 결정, CC-10)
 
 ## 모델 · 생각 깊이 고르기(CC-8 — 사용자 요청 11-22)
 - [x] 에이전트 서버 — `CLAUDE_CHAT_MODELS` · `CLAUDE_CHAT_EFFORTS` · 요청 칸 `claude_model` · `claude_effort` · 쌍마다 지어 두기 · 목록 밖은 기본 + 알림 ·

@@ -87,3 +87,19 @@
 - **묶음은 셋 + 하나** — requirements-anthropic.txt 가 새로 까는 것은 anthropic · langchain-anthropic · docstring-parser 셋이다(나머지 의존은 requirements.txt 의
   openai · langchain-core 가 이미 깐다 — dev venv 메타데이터로 확인). typing-extensions ≥ 4.14 를 요구해 옛 venv 를 위해 4.15.0 을 함께 넣었다. 모두 순수 파이썬
   바퀴라 cae00 의 파이썬 판과 상관없다. `--no-index --find-links` 마른 설치로 풀림을 봤다. 자리는 age 묶음과 같은 꼴(Drive `tools/<이름>/` + `SHA256SUMS`).
+
+## CC-10 (11-23) cae00 점검 결과 — 받은 편지함 2026-11-22 Q14
+- cae00 이 11-23 라운드 뒤 키 없는 점검(`claude-chat-check.sh`)만 돌렸고 켜지 않았다(그쪽 사용자 결정). 그래서 설치 길 · 지정한 사람 수 · 두 턴의 답한 모델은 없다.
+
+  | 줄 | 결과 |
+  |---|---|
+  | 프록시 변수 | ○ 셸에만 있다 |
+  | curl 로 닿는가 | ✓ 401(닿는다) |
+  | 에이전트 서버 파이썬 httpx | ✗ 인증서를 믿지 못한다 — 다음 걸음: 에이전트 서버 `.env` 에 `SSL_CERT_FILE` |
+  | 꾸러미 | ○ 설치 안 됨 |
+  | 키 파일 | ○ 없음 |
+  | 에이전트 서버 `/health` 의 claude_chat | ○ 꺼짐 |
+
+- CC-9 가 짚은 cae00 의 차이 둘이 그대로 나왔다 — ① TLS 를 가로채는 프록시 앞에서 파이썬 httpx 가 인증서를 못 믿는다 ② 프록시가 셸에만 있다(점검은 이 줄에
+  「에이전트 서버 `.env` 에 `HTTPS_PROXY`」 를 다음 걸음으로 낸다). 켜는 날은 [server-setup.md](server-setup.md) 차례대로 하되 `SSL_CERT_FILE` 이 먼저다(답의 박스
+  메모 — `../leftovers-1121/context-notes.md` L21-24 의 8).

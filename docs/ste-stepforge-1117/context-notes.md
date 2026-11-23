@@ -94,3 +94,16 @@
   1000배 판을 풀었다**(같은 케이스 침투깊이 0 mm → 좌표만 줄이면 35.49 mm · 기준 34.97). 운영에서 part-study 의 reddish 단계가 ok 로 끝난 잡의
   수치는 쓰지 않는다 — 받은 편지함으로 알린다.
 
+## SS-11 (11-23) cae00 답 — 받은 편지함 2026-11-22 Q6 ~ Q10 · Q15
+- **Q6 · PT-2(StepForge 줄의 build)** — `list_tool_apps` 의 StepForge 줄에 `build` 가 **없다**(리스크 · Laminate · MaterialTwin · WDA · thermal · web_research ·
+  DocForge · PaperIngest 줄에는 있다). 허브 서버 목록(`/api/v1/mcp/servers`)의 StepForge 항목은 못 봄 — 인증이 필요한 창구라 401.
+  인스턴스 시각과 디스크 SIF 시각은 견줄 것이 없었다 — 그 박스의 StepForge 인스턴스는 0 이다. 운영 StepForge 는 운영 노드에서 돌고 그 박스는 그쪽으로 잇기만
+  한다. 그래서 dev 의 「떠 있는 인스턴스보다 디스크 SIF 가 새로우면 비운다」(SS-8)와는 다른 까닭일 가능성이 크다고 답했다. 그 박스 디스크의 SIF 는 동결
+  되돌림용 사본(11-15 판)이다(같은 라운드에 update-all 이 그 사본을 덮은 일은 `../leftovers-1121/context-notes.md` L21-24 의 4).
+- **Q7 · BG-5 · PT-1(토큰 없는 계정의 `reliability_test_conditions`)** — 못 봄. 신뢰성 시험 앱에 개인 토큰을 등록하지 않은 계정이 있어야 해서 사람 몫이다.
+- **Q8 · SF-11** — `search_tools(query="leak_report", detail=true, limit=1)` 의 인자에 `parts` 가 **있다**(`array` 또는 `null`). `list_tool_apps` 의 StepForge 줄은
+  **1** 이다. 지금 판의 게이트웨이 서명에는 그 인자가 있다 — 재시험 때 왜 안 보였는지는 가리지 못했다.
+- **Q9 · Q10(SF-10 테이프 이름 꼴 · SF-6 인쇄 사양 그림)** — 그 박스에서 볼 수 없다. 과제 자료를 아는 사람에게 넘겼다(사용자 경유, 11-23).
+- **Q15(ST-3 주소)** — 아직. ste 헤드 `.env` 의 `STE_STEPFORGE_BASE` 는 사람이 사용자 시점에 넣는다.
+- 같은 라운드의 ste — staging `269f8c4` 을 받아 두었고, 도는 잡(11-23 14:50 기준 17)이 0 이 되면 저절로 바꾼다. 그 사이 dev 가 새 ste 판을 내면 기다림을 다시 건다.
+

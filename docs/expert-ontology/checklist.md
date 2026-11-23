@@ -13,14 +13,16 @@
 - [x] 시험 — 가짜 허브 · 가짜 AIDataHub(exact · candidates · none · 별칭 · 흔한 낱말 · 짧은 이름 · 낱말 경계 · 쪽 넘김 · 쓰기 도구를 부르지 않음) — 23, 변이 넷 붉음
 - [x] dev 마른 실행 — 허브 없음(그렇다고 말하고 끝 2) · 진짜 AIDataHub 카드 8장 + 가짜 허브로 층 · 카드 · 절 · 맞추기(EO-5)
 - [x] 받은 편지함 — [`../cae00-inbox/2026-11-03.md`](../cae00-inbox/2026-11-03.md) Q1 ~ Q3(범위 · 부품 슬러그와 별칭 · 뺄 낱말)
-- [ ] cae00 답 — Q1 ~ Q3(사람)
+- [ ] cae00 답 — Q1 ~ Q3(사람) — 11-23 답(EO-15): Q1 은 전체 잇기가 대신 · Q2 부품 슬러그 `part` · 별칭 온다 · Q3 뺄 낱말은 하지 않음(사람 몫 — 그림자 수를
+      본 뒤, EO-16)
 
 ## O0b 신호(E-5 B0 와 같은 날)
 - [ ] 추천 위 40명의 객체 묶음으로 A-test 순위를 다시 매기는 갈래 — E-5 B0 실행기(`seat_probe` · `/seat-eval`)에 붙인다
 - [ ] H 가 달리면 H 로 다시
 
 ## 관문 G-EO(사람)
-- [ ] O0a · O0b 숫자로 G-EO1 · G-EO2 판정 — 못 넘으면 여기서 멈추고 숫자 · 까닭을 남긴다
+- [x] G-EO1 범위 — 통과(사용자 결정 11-23, EO-16 — O0a 자리는 cae00 전체 잇기 수 EO-15)
+- [ ] G-EO2 신호 — cae00 그림자 기록(`SEAT_ONTO=shadow` · `PERSONA_SHADOW_LOG=1`)으로 본다(EO-16) — 못 넘으면 여기서 멈추고 숫자 · 까닭을 남긴다
 
 ## O1 ~ O3(관문 뒤)
 - [x] AIDataHub 요청서 — `record_entities` · 짓는 일 · 병합 보호 · 읽기 창구 · `agent_search` 객체 거름 — 요청서 대신 11-21 에 바로 지었다(아래
@@ -44,5 +46,8 @@
 - [x] dev — AIDataHub 재기동(이행 0033) · `onto.sh build` 254,668줄 11.8초 · 두 번째 건너뜀 · `persona-domains-build.py` 셈(줄 둘 — 적지 않았다)
 - [x] dev 에이전트 서버 재기동(11-22 04:35 KST = 박스 시각 11-21 19:35 UTC, 사용자 지시) — `./start.sh -d`, 도는 심의 0 · 켜진 커밋은 `f5b5dd8` · `cf22658` 뿐,
       `/health seat_onto` = `mode off · sent 0 · skipped 0`, 환경 이름 151개 그대로. 병합이 끝난 가지 `wt1120/card-onto` 셋도 지웠다
-- [ ] cae00(사람) — 받기 · build · `--dry-run` · bind · 수 보고 · G-EO 판정 뒤 `SEAT_ONTO`(server-setup 1 ~ 6절)
+- [x] cae00(사람) — 받기 · build · `--dry-run` · bind · 수 보고(11-23 — EO-15). 연결표는 셈만(`--write` 안 함)
+- [ ] cae00 그림자 재기 — `SEAT_ONTO=shadow` · `PERSONA_SHADOW_LOG=1`(사용자 결정 EO-16 — 넣는 걸음은 받은 편지함 다음 라운드 글) → 수를 본 뒤 뺄 낱말 · `rank`
+- [ ] part 타입을 더해 다시 잇기 — 그림자 재기 뒤(사용자 결정 EO-17 — `--types` 에 기본 여덟과 함께)
+- [ ] 정하지 않은 것 — 연결표 `--write` · 연결 0 인 셋(plm_model · plm_task · criterion)과 `section` 몫을 두고 뺄 낱말 · 동의어(EO-15)
 - [ ] 미룬 것 — 앉은 전문가의 카드 먼저 보기(안 지음) · '맡은 사람 없음' · '코어 데이터 질문'(EO-12 — **11-22 판정 후보로 지음 · 올림**: AIDataHub `recommend_agents` 의 `onto.verdict` `9d2ced1` · `d2fa5c5` · 에이전트 서버 그림자 기록 `ca02ada`, 알리기만 하고 순위 · 좌석은 그대로 — `no_owner` 는 카드에 이어진 객체에서만 나와 드물다, `docs/leftovers-1121` L21-16) · LLM 뽑기(연결 수를 본 뒤 다시 묻는다)
