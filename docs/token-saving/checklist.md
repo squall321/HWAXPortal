@@ -23,3 +23,11 @@
 
 ## T4. 나중
 - [ ] P8 · P6 · P7(WDA 마크다운 입구) · 리스크 심사 루틴 · R1 ~ R4 + GLM 우선순위 관문 · §4.5 따로 시험
+
+## 2판 — 서버 Qwen · GLM 에 일 맡기기(TS-6 · [offload-v2.md](offload-v2.md))
+- [x] 계약 문서(A ~ E · 스위치 · 리포 사이 창구)
+- [ ] 에이전트 서버 — A 위임 잡(`DELEGATE_ENABLED`) · C `draft_section`(`DRAFT_ENABLED`) · D `llm_transform`(`TRANSFORM_ENABLED`) · 묻기 창구 `/llm/ask_over_text`
+- [ ] 게이트웨이 — B 결과 손잡이(`GATEWAY_RESULT_REFS` + `X-HWAX-Result: ref`) · `result_get` · `result_ask` · 내부 ref 창구 · `/health` 표지
+- [ ] 포털 — E 설정 배치 선택 칸 · Claude Code 명령 둘 · CLAUDE.md 규칙 묶음 · 박스 꺼짐 표시 · update-all ○ 줄 넷 · env 킷 · 이력
+- [ ] 합치기 · 리포마다 전체 회귀 · dev 에서 켜고 실제 한 번씩 · 끄면 바이트 같음 확인
+- [ ] cae00 받은 편지함 — 켜는 법(켤지는 사람)
