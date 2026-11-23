@@ -14,9 +14,10 @@
 - [ ] 2b node001 에서 `--verify-only` 실측 — dev 노드 VM 을 켜야 한다(지금 남은 메모리 31 GB, 30 GB 규칙에 걸림 — 사용자 결정) · 그쪽 사용자 승인
 - [x] 5 KooSlurm(-35) — 읽기 전용 이미지 점검 `cluster/utils/image_version_check.sh`(가지 `feat/dropline-check-e2e` `de55def2` · dev 전 항목 OK) — 다음 라운드 받은 편지함에
 - [x] 3 DynaForge(fd) — 가지 `dropline-1112`(`734e735` API 셋 · `8073ebb` 점검 스크립트 · 절차) — 판 고정 풀린 뒤 main · dev API 재기동 → 11-15 main 에 합침(`6d4dd78` · `c6fb1eb` · 고침 `8b49d2a`) · Drive `dist-20261115-093042Z` · cae00 은 받은 편지함 2026-11-15
-- [ ] 7 pyKooCAE(굽기 스크립트 — 그쪽 사용자 결정 대기) · KooD3plotReader — 판 이름 산출 · `SHA256SUMS` · 포털에도 알림
+- [x] 7 pyKooCAE(굽기 스크립트) · KooD3plotReader — 판 이름 산출 · `SHA256SUMS` · 포털에도 알림
       · 11-23 이름 규칙을 PLAN §3-1 에 정의(SP-4) — 별칭은 지금 고정 이름 그대로, 판 파일 · 판 해시 · `release.json` 을 곁에. 첫 적용 Pre v142 · Post v54. pyKooCAE 에 자리를 알림
-      · 11-23 pyKooCAE 가 굽기 스크립트를 고침(판 해시 · `release.json` 은 Pre · Post 둘 다 그쪽이 쓴다 · 메일 sha256 · 날짜 KST, v141 · v53 산출물로 예행 — Drive 안 건드림). 남은 것 — 첫 실제 굽기(v142 · v54)를 Drive 에서 확인. 다른 이미지(SmartTwinSolutions · VNC)의 굽기 셋은 아직 고정 이름 — 이 규칙 밖
+      · 11-23 pyKooCAE 가 굽기 스크립트를 고침(판 해시 · `release.json` 은 Pre · Post 둘 다 그쪽이 쓴다 · 메일 sha256 · 날짜 KST, v141 · v53 산출물로 예행 — Drive 안 건드림). 남은 것 — 첫 실제 굽기(v142 · v54)를 Drive 에서 확인.
+      · 11-23 Post v54 첫 실제 적용 — Drive 에서 대조 끝(판 파일 셋 · 판 해시 세 줄 · `release.json` v54 · 별칭 둘이 판 파일과 같은 바이트). 이제 별칭이 v54 라 v53 SIF 는 Drive 에 판 이름으로 남지 않는다(v53 은 tar 만 — 규칙 앞 판). Pre v142 는 아직 다른 이미지(SmartTwinSolutions · VNC)의 굽기 셋은 아직 고정 이름 — 이 규칙 밖
 - [x] 4 포털 절차 씨앗 「결과 귀환 확인」(읽기만) — `docs/procedures/fixtures/drop-return-check.yaml`(포털 `1bb54c55` · 실제 응답 꼴에 맞춘 고침 `951fe9c6`, main `67fccb15` — 11-22). 씨앗 이름은 R2d 다(R2c 는 이미 축 태그 붙이기 `report-add-tags.yaml`). 예약 잡 → 잡 키 `stcx:<Slurm 잡 ID>` 로 찾은 리포트 → 종류 · 후처리 판. 실박스 확인은 8(dev E2E) · cae00
 - [ ] 6 귀환 매니페스트 이미지 출처(3 · 5 뒤)
 - [ ] 8 해석기 없는 dev E2E — 준비 끝(KooSlurm `70774ded` · DynaForge dev 값 · e2etest), ① node001 배포까지 하고 멈춤(메모리 30 GB 밑 — 사용자 결정, SP-3).
