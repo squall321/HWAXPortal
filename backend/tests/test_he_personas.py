@@ -1305,7 +1305,8 @@ def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
     assert confirm == _SF_CONFIRM, sorted(confirm ^ _SF_CONFIRM)
     # 11-11 link_plm_tasks(SRC-03 — PLM 과제 잇기, dry_run 기본이고 MCP 로도 적용한다)를 writes 에 더해 35(HP-53)
     # 11-18 StepForge D-706 의 MODIFY 둘(save_role_pairs · job_subscribe — 웹훅 등록)을 더해 37(docs/request-1117)
-    assert not writes & confirm and len(writes) == len(p["writes"]) == 37, sorted(writes)
+    # 11-23 MODIFY 둘(export_part_step — 파트 하나의 STEP 산출물 · save_part_stack — 층 장부 판, 덧붙이기만)을 더해 39(cae00 11-23 라운드 '목록 밖 쓰기')
+    assert not writes & confirm and len(writes) == len(p["writes"]) == 39, sorted(writes)
     assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension", "save_fill_rule"} <= writes
     # 다른 앱과 겹치는 둘은 접두 별칭이다(dev /tools-map — ste · DynaForge 의 cancel_job, MaterialTwin 의 register_material)
     assert "heaxstep_forge_cancel_job" in p["confirm"] and "heaxstep_forge_register_material" in p["writes"]
@@ -1354,6 +1355,42 @@ def test_HA29_StepForge_인자로_덮어쓰는_도구는_함정_줄이_말한다
     assert rows and not errors and not skipped, (errors, skipped)
     prompt = rows[0]["system_prompt"]
     assert line in prompt and advice in prompt and len(prompt) <= _sync().PROMPT_MAX
+
+
+# ── 11-23 cae00 라운드 '목록 밖 쓰기' — StepForge 2 · DynaForge 캠페인 11(두 박스에 다 있는 앱이라 git 정본에서 고친다) ─────────────────────
+# DynaForge 는 수정 도구 범주 표지가 없어 이름 낱말로만 걸린다 — 낱말에 안 걸리는 두 쓰기(build_report_bundle — 보고서 묶음의 새 판을 쌓는다 ·
+# recipe_evaluate — 실행 평가를 남겨 레시피 등록 관문의 근거가 된다)도 소스 설명대로 함께 넣었다. 지우기 · 되돌리기 어려운 것이 없어 모두 writes 다.
+_DF_L23 = frozenset({"create_campaign", "ingest_campaign_manifest", "set_campaign_health_thresholds", "set_campaign_required_extractions",
+                     "set_campaign_part_groups", "set_campaign_criteria", "set_campaign_sites", "import_part_map", "set_campaign_pair_rule",
+                     "set_campaign_frame_offset", "rename_session_part"})
+_SF_L23 = frozenset({"export_part_step", "save_part_stack"})
+
+
+def test_L23_DynaForge_캠페인_쓰기는_writes_에_있다():
+    p = _one("he-sim-dynaforge")["personas"][0]
+    assert _DF_L23 | {"build_report_bundle", "recipe_evaluate"} <= set(p["writes"]), sorted(_DF_L23 - set(p["writes"]))
+    assert not set(p["writes"]) & set(p["confirm"])
+
+
+@pytest.mark.parametrize(("key", "added", "left"), [("he-sim-dynaforge", _DF_L23, set()), ("he-cad-stepforge", _SF_L23, _SF_PORTAL_ONLY)])
+def test_L23_목록_밖_쓰기_판정이_새_쓰기를_목록_안으로_센다(key, added, left):
+    """게이트웨이가 쓰기 꼴로 낸 도구(/tools-map write)가 두 목록 안이면 미리보기 · update-all §6 의 '목록 밖 쓰기' 줄에서 빠진다. StepForge 의 온톨로지
+    쓰기 셋은 사용자 결정(C-30 — 게이트웨이로는 미리보기뿐이라 목록 밖에 둔다)대로 남는다."""
+    sync = _sync()
+    one = _one(key)
+    tm = _write_map(key, set(left), set())
+    assert added <= set(tm["write"]) and set(left) <= set(tm["write"])
+    warns: list[str] = []
+    rows, skipped, errors = sync.plan(one, tm, None, warns)
+    assert rows and not errors and not skipped, (errors, skipped)
+    assert warns == ([f"목록 밖 쓰기 {key}: {len(left)}개 — {', '.join(sorted(left))}(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)"]
+                     if left else []), warns
+    # 고치기 전 정의(새 이름이 두 목록에 없다)면 그 이름들을 알린다 — 판정이 그 도구를 보고 있다
+    old = json.loads(json.dumps(one))
+    old["personas"][0]["writes"] = [n for n in old["personas"][0]["writes"] if n not in added]
+    warns = []
+    sync.plan(old, tm, None, warns)
+    assert len(warns) == 1 and f": {len(added) + len(left)}개 — " in warns[0], warns
 
 
 # ── 박스 덧씌우기(docs/he-team-overlay — 사용자 결정 11-04 HO-1) ────────────────────────────────────────────────────────────
