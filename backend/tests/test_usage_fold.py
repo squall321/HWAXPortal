@@ -7,7 +7,9 @@ import gc
 import gzip
 import importlib.util
 import json
+import logging
 import os
+import re
 import sqlite3
 import sys
 from contextlib import closing
@@ -438,6 +440,71 @@ def test_게이트웨이가_낡았거나_거절해도_까닭만_남기고_나머
     note = _folds(box, "gateway")["*"][2]
     assert why in note and TOKEN not in note and "gateway.test" not in note, "비밀 · 주소는 까닭에 싣지 않는다"
     assert _folds(box, "agent")["*"][2] == ""
+
+
+@pytest.mark.parametrize(("status", "pending"), [(404, True), (405, True), (401, False), (500, False)])
+def test_L23_창구가_없는_것만_기다림으로_표시하고_까닭은_그대로_남긴다(tmp_path, status, pending):
+    """업데이트 중 포털이 게이트웨이 재기동보다 먼저 접으면 404 다(cae00 11-23) — 실패가 아니라 기다림이다. 접기 상태 화면은 까닭을 그대로 본다."""
+    box = _box(tmp_path)
+    out = _fold(box, handler=Remote(tmp_path, gateway_status=status))
+    assert bool(out["gateway"].get("pending")) is pending and out["gateway"]["error"], out["gateway"]
+    assert _folds(box, "gateway")["*"][2] == out["gateway"]["error"]
+
+
+_TOOK = r"시작 \d\d-\d\d \d\d:\d\d:\d\d KST · \d+\.\d초"
+_WAIT = {"error": usage_fold._HTTP_WHY[404], "pending": True}
+
+
+def _loop(monkeypatch, caplog, results: list[dict], **knobs) -> list[str]:
+    """접기 작업(run)을 결과 차례대로 돌리고 남긴 경고 줄을 돌려준다 — 결과를 다 쓰면 끈다."""
+    seq = list(results)
+    for k, v in {"FIRST_DELAY_S": 0.0, **knobs}.items():
+        monkeypatch.setattr(usage_fold, k, v)
+    caplog.set_level(logging.WARNING, logger="app.usage_fold")
+
+    async def go():
+        done = asyncio.Event()
+
+        async def fake_once(app, settings, **kw):
+            r = seq.pop(0) if seq else {}
+            if not seq:
+                done.set()
+            return r
+        monkeypatch.setattr(usage_fold, "run_once", fake_once)
+        task = asyncio.get_running_loop().create_task(usage_fold.run(APP, None, 0.001))
+        await asyncio.wait_for(done.wait(), 5)
+        await usage_fold.stop(task)
+    asyncio.run(go())
+    return [r.getMessage() for r in caplog.records if r.name == "app.usage_fold"]
+
+
+def test_L23_창구_없음은_실패로_세지_않고_다음_주기에_다시_접는다(monkeypatch, caplog):
+    lines = _loop(monkeypatch, caplog, [{"portal": 3, "gateway": _WAIT, "agent": _WAIT}, {"portal": 1, "gateway": _WAIT, "agent": 1},
+                                        {"portal": 1, "gateway": 60, "agent": 1}])
+    assert len(lines) == 1, lines
+    assert re.fullmatch(rf"이용 통계 접기 — 기동 뒤 첫 접기\({_TOOK}\): portal 3일 · gateway 창구 아직 없음\(다음 주기에 다시\) · "
+                        r"agent 창구 아직 없음\(다음 주기에 다시\)", lines[0]), lines[0]
+    assert not [ln for ln in lines if "실패" in ln], "창구가 없던 접기는 실패로 세지 않는다 — '3번 실패 뒤' 가 다시 생기지 않는다"
+
+
+def test_L23_창구_없음이_오래_이어지면_한_줄_남긴다(monkeypatch, caplog):
+    """정말 옛 판에 머문 게이트웨이를 로그가 영영 말하지 않으면 안 된다 — REPEAT_EVERY 번 이어지면 한 줄."""
+    lines = _loop(monkeypatch, caplog, [{"portal": 1, "gateway": _WAIT}] * 6, REPEAT_EVERY=3)
+    waits = [ln for ln in lines if "창구가" in ln and "이어 없다" in ln]
+    assert len(waits) == 2 and re.search(rf"그쪽 창구가 3번 이어 없다\(옛 판 그대로다 — 업데이트 · 재기동을 본다 · {_TOOK}\): gateway — 그쪽 판이 낡았다",
+                                          waits[0]), lines
+    assert "6번" in waits[1]
+
+
+def test_L23_진짜_실패는_종전대로_세고_줄마다_시작_시각과_걸린_초가_있다(monkeypatch, caplog):
+    lines = _loop(monkeypatch, caplog, [{"portal": 2, "gateway": {"error": "게이트웨이에 닿지 못했다(ConnectError)"}},
+                                        {"portal": 1, "gateway": {"error": "게이트웨이에 닿지 못했다(ConnectError)"}},
+                                        {"portal": 1, "gateway": 4, "agent": _WAIT}])
+    assert len(lines) == 2, lines
+    assert re.fullmatch(rf"이용 통계 접기 — 못 접은 원천이 있다\(1번째 · 다음에 다시 접는다 · {_TOOK}\): gateway — 게이트웨이에 닿지 못했다\(ConnectError\)",
+                        lines[0]), lines[0]
+    assert re.fullmatch(rf"이용 통계 접기 — 못 접던 원천을 다시 접었다\(2번 실패 뒤 · {_TOOK}\): portal 1일 · gateway 4일 · "
+                        r"agent 창구 아직 없음\(다음 주기에 다시\)", lines[1]), lines[1]
 
 
 def test_닿지_않거나_비밀이_없어도_예외_없이_까닭을_남긴다(tmp_path):
