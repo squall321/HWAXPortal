@@ -21,7 +21,7 @@ LIBDIR = ROOT / "infra/scripts/lib"
 BUSY_LIB = LIBDIR / "delib-busy.sh"
 UPDATE_SITES = (ROOT / "infra/scripts/update-sites.sh").read_text(encoding="utf-8")
 UA = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
-LIBS = f'. "{LIBDIR}/change-detect.sh"\n. "{LIBDIR}/skip-ledger.sh"\n. "{BUSY_LIB}"\n'
+LIBS = f'. "{LIBDIR}/change-detect.sh"\n. "{LIBDIR}/skip-ledger.sh"\n. "{BUSY_LIB}"\n. "{LIBDIR}/heax-frozen.sh"\n'
 
 
 @pytest.fixture()

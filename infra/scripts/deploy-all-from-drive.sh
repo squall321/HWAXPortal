@@ -191,6 +191,7 @@ note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/skip-ledger.sh"    # ○ 장부 — update-all 이 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일에 적는다(단독 실행이면 화면에만)
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 포털·nginx·허브를 내리지 않는다(아래 _delib_hold)
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/koorm-busy.sh"     # 도는 DynaForge 로컬 작업이 있으면 KooRemapper 스택을 내리지 않는다(아래 KooRemapper 구역)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/heax-frozen.sh"    # 동결한 허브 앱 SIF(infra/.env HEAX_FROZEN_SIFS)를 Drive 받기가 덮지 않게(아래 heax 구역)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 _fp_git() { printf '%s|' "$(git rev-parse HEAD 2>/dev/null || echo nogit)"; }   # 서브셸 안에서: 지문 앞에 git HEAD
 # .env 값 하나 — **정본 규칙**(update-all `_envfile_value` · services.py `_infra_value` · ste-doctor `envv` 와 글자 단위로 같다):
@@ -346,7 +347,16 @@ if want heax; then
       if _delib_hold http://localhost:4180/health "heax 재기동 건너뜀" \
            "앱 데이터 병합·모델·미러는 받았지만(받는 사이에 심의가 시작됐다) 새 앱 SIF·frontend/dist 는 받지 않았고 허브도 내리지 않았다. 허브와 앱은 옛 것 그대로다" \
            "내리면 리스크 앱이 같이 내려가 도는 패널이 restart 로 닫히고(사람이 재개해야 한다) 좌석이 부르는 허브 앱 도구가 그 순간 실패한다."; then exit 3; fi
-      ./deploy/apptainer/dist-from-drive.sh || exit 1   # frontend/dist + 런타임 + base/서비스 + per-app SIF — 떠 있는 인스턴스 밑에서 덮는다
+      # 동결한 앱 SIF(포털 infra/.env 의 HEAX_FROZEN_SIFS)는 받기가 바꾸지 않게 앞에서 쥐고 뒤에서 되돌린다 — 바뀌었던 앱은 ○(lib/heax-frozen.sh).
+      # cae00 11-23 라운드에서 운영 노드로 넘긴 StepForge 의 되돌림용 사본이 새 판으로 덮였다. 쥐지 못하면 받지 않는다(받으면 덮인다).
+      IFS=', ' read -ra _frz <<<"${HEAX_FROZEN_SIFS:-$(_envv "$PORTAL_DIR/infra/.env" HEAX_FROZEN_SIFS)}"
+      if ! hwax_frozen_hold var/sifs var/sifs/.frozen-hold ${_frz[@]+"${_frz[@]}"}; then
+        hwax_frozen_restore var/sifs var/sifs/.frozen-hold
+        echo "  ✗ 동결한 앱 SIF(HEAX_FROZEN_SIFS)를 쥐지 못해 Drive 받기를 하지 않았다 — var/sifs 의 쓰기 권한 · 디스크를 본다"; exit 1
+      fi
+      _ddrc=0; ./deploy/apptainer/dist-from-drive.sh || _ddrc=$?   # frontend/dist + 런타임 + base/서비스 + per-app SIF — 떠 있는 인스턴스 밑에서 덮는다
+      hwax_frozen_restore var/sifs var/sifs/.frozen-hold
+      [ "$_ddrc" = 0 ] || exit 1
       # SIF_DIR 판독은 dist-from-drive 의 env_get 과 같게(큰·작은따옴표 둘 다). 캐시 디렉터리(.drive-dist)는 지문에 넣지 않는다 — 원격 재업로드만으로 바뀐다.
       _sd="$(_envv .env SIF_DIR)"; _sd="${_sd:-$HOME/serviceApptainers}"
       # var/sifs 는 SIF 와 그 해시만 센다 — 같은 폴더의 빌드 잠금(.lock) · 정의(.def)는 허브 스캐너가 만지기만 해도 바뀌어 허브 전체 재기동이
