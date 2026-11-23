@@ -12,7 +12,8 @@
 #   hwax_frozen_restore <sif 폴더> <쥘 폴더>        받기 뒤(받기가 실패해도). 쥔 것으로 되돌리고, 받기가 바꿨던 앱마다 ○ 를 찍어 장부에 적는다(받은 판이
 #                                                  같아 그대로면 말이 없다 — 이미 최신). 다 되돌리면 쥘 폴더를 지운다.
 # 끊긴 실행이 쥘 폴더를 남겼으면 다음 hold 가 먼저 되돌린다 — 트랩 없이 끊김을 견딘다. 쥘 폴더는 sif 폴더 아래(같은 파일 시스템 — 링크)에 둔다.
-# 되돌린 SIF · 해시는 바뀐 시각까지 옛 것이라 허브 재기동 지문(var/sifs/*.sif · *.sif.hash)도 그대로다.
+# 되돌린 SIF · 해시는 바뀐 시각(mtime)까지 옛 것이라 허브 재기동 지문(var/sifs/*.sif · *.sif.hash — 큰 SIF 는 크기 · mtime, 작은 해시는 내용)도
+# 그대로다. ctime 은 바뀐다(링크를 걸고 이름을 바꿨다 — 지문은 ctime 을 보지 않는다) — 화면의 ○ 줄이 그렇게 말한다.
 
 hwax_frozen_hold() {
   local dir="$1" hold="$2" n f
@@ -34,7 +35,7 @@ hwax_frozen_hold() {
 }
 
 hwax_frozen_restore() {
-  local dir="$1" hold="$2" d n f changed ok
+  local dir="$1" hold="$2" d n f changed ok how
   [ -d "$hold" ] || return 0
   for d in "$hold"/*/; do
     [ -d "$d" ] || continue
@@ -57,8 +58,15 @@ hwax_frozen_restore() {
       continue
     fi
     if [ "$changed" = 1 ]; then
-      hwax_skip "허브 앱 SIF $n — 동결" "infra/.env 의 HEAX_FROZEN_SIFS 에 있어 Drive 의 새 판으로 바꾸지 않았다(이 박스의 사본 그대로)" \
-        "동결을 풀 때 — infra/.env 의 HEAX_FROZEN_SIFS 에서 $n 을 빼고 update-all(또는 deploy-all-from-drive.sh heax)을 다시 돌린다"
+      # 화면 줄은 충분히 · 장부 줄(끝 요약)은 짧게(cae00 11-24 넘김 3). 같은 §2 에서 HEAXHub 받기가 이 앱에도 「✓ app SIF <이름>.sif → var/sifs/」 를
+      # 먼저 찍는다 — 받기 단계의 줄이다(새 판을 놓았다). 그 ✓ 와 이 ○ 가 어긋나 보이지 않게, 그것을 되돌렸다는 것과 바뀐 시각의 결을 함께 말한다 —
+      # 쥔 하드 링크를 이름 바꾸기로 되돌리므로 내용 · mtime 은 동결 판 그대로고 그 inode 의 ctime 은 바뀐다(설계대로 — 사용자 결정 11-23, 손잡이는
+      # HEAXHub 에 청하지 않았다, docs/leftovers-1121 L21-26). 사람은 sha256 · mtime 으로 확인한다.
+      how="동결을 풀 때 — infra/.env 의 HEAX_FROZEN_SIFS 에서 $n 을 빼고 update-all(또는 deploy-all-from-drive.sh heax)을 다시 돌린다"
+      printf '  \033[1;35m○\033[0m %s — %s\n      켜려면: %s\n' "허브 앱 SIF $n — 동결" \
+        "Drive 받기가 놓은 새 판을 되돌렸다(위 '✓ app SIF $n.sif' 줄은 받기 단계의 것이다) — var/sifs/$n.sif · .sif.hash 의 내용 · mtime 은 동결 판 그대로이고 ctime 은 바뀐다(infra/.env 의 HEAX_FROZEN_SIFS)" \
+        "$how"
+      hwax_skip_record "허브 앱 SIF $n — 동결" "infra/.env 의 HEAX_FROZEN_SIFS — Drive 의 새 판을 받은 뒤 동결 판으로 되돌렸다(내용 · mtime 그대로)" "$how"
     fi
     rm -rf -- "$d"
   done
