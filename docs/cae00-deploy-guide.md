@@ -55,6 +55,8 @@
 
 **동결한 허브 앱 SIF** — 운영 노드로 넘긴 앱의 이 박스 사본(되돌림용)처럼 §2 가 Drive 의 새 판으로 바꾸면 안 되는 앱은 `infra/.env` 에 `HEAX_FROZEN_SIFS=step_forge`(빈칸 · 쉼표로 여럿)를 적는다 — §2 가 받기 앞에 쥐고 뒤에 되돌리며 `○ 허브 앱 SIF <이름> — 동결` 로 남긴다(`lib/heax-frozen.sh` · 11-23 라운드에서 StepForge 사본이 덮였다). 풀 때는 그 이름을 지우고 다시 돌린다.
 
+**멈춰 둔 KooRemapper 되돌림 사본** — DynaForge 를 운영 노드로 옮겨 이 박스의 KooRemapper 스택이 일부러 멈춰 있으면 `infra/.env` 에 `KOORM_LOCAL_PARKED=1`(값이 있으면 — `0` 도 — 멈춤)을 적는다. §2 는 그 리포의 코드(git)와 Drive 배포물만 받고(점검 문서를 HEAD 로 읽고, 다시 쓸 때 코드 · 바이너리 · 화면이 같은 판이다) 띄우기 · 이관 · 감시와 백업 크론을 하지 않으며 업스트림 :8700 · :8701 을 보지 않는다. §1b 사전 백업은 그 DB 를 ✗ 가 아니라 ○ 로 넘기고, 그 대상의 마지막 덤프는 세대 정리에서 지킨다. §5 는 로컬 :8700 으로 kr_ PAT 를 재지 않는다(재면 늘 '만료' 로 읽고 실행마다 게이트웨이를 다시 만든다 — 다른 서버로 재려면 `KOORM_BASE=<주소>`). `services.sh up` · 상태판도 그 스택을 이 박스 대상에서 뺀다(services.yaml `unless_env`). 끝 요약에는 `○ DynaForge(KooRemapper) 로컬 스택 — 멈춰 둠` 한 줄. 이미 걸린 감시 · 백업 크론은 걷지 않는다 — 남아 있으면(`crontab -l | grep koorm-`) KooRemapper 에서 `bash platform/infra/scripts/install-autostart.sh --remove`. 다시 쓸 때는 그 줄을 지우고 update-all(`lib/koorm-parked.sh` · 11-23 라운드 HP-66 · HP-67).
+
 **§6 의 치명 항목**(하나라도 실패면 끝에서 `exit 1`, 그리고 무엇이 세웠는지 목록을 다시 낸다) — 무인증 `/health`
 넷(portal:8723 · nginx:8088 · agent-server:9009 · gateway:9110) · 절차 모듈(`/procedures-api/health` 의 본문 `ok:true`,
 상태코드로는 못 본다) · **SPA dist 대조**(`frontend/dist/.build-src` ≠ `HEAD:frontend` → dev 에서 빌드+Drive 발행이 필요

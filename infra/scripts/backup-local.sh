@@ -33,6 +33,9 @@ bad() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; FAILED=$((FAILED+1)); }
 skip() { printf '  · %s\n' "$*"; SKIPPED=$((SKIPPED+1)); }
 hr() { printf '\n\033[1;36m── %s ─────────────\033[0m\n' "$*"; }
 FAILED=0; SKIPPED=0
+# ○ 장부(update-all §1b 가 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일 — 크론 단독 실행이면 적지 않는다) · 멈춰 둔 KooRemapper 사본 표시(KOORM_LOCAL_PARKED)
+. "$SELF_REPO/infra/scripts/lib/skip-ledger.sh"
+. "$SELF_REPO/infra/scripts/lib/koorm-parked.sh"
 # HP-76 — 이번 실행에서 덤프를 못 뜬(인스턴스 멈춤 · 실패) 대상의 daily. 세대 정리가 그 대상의 마지막 정상 덤프를 지우지 않게 한다.
 HOLD_DIRS=" "
 KEEP_MIN="${KEEP_MIN:-3}"   # 대상마다 날짜와 상관없이 남기는 가장 새 덤프 수
@@ -178,7 +181,11 @@ fi
 if want kooremapper; then
   hr "KooRemapper postgres (users·PAT·sessions — 종전 무백업)"
   D="$(find_repo KooRemapper)"; E="$D/platform/.env"
-  if [ -n "$D" ]; then
+  if [ -n "$D" ] && hwax_koorm_parked "$SELF_REPO"; then
+    # 멈춰 둔 되돌림 사본(lib/koorm-parked.sh) — DB 가 일부러 내려가 있어 실패(✗)가 아니라 ○ 다. 마지막 덤프는 세대 정리에서 지킨다(HP-76 의 hold).
+    printf '  \033[1;35m○\033[0m kooremapper: 멈춰 둔 되돌림 사본(포털 infra/.env 의 KOORM_LOCAL_PARKED)이라 덤프를 뜨지 않았다 — 마지막 덤프는 정리하지 않는다\n'
+    hold "$ROOT/kooremapper/daily"; hwax_koorm_parked_record
+  elif [ -n "$D" ]; then
     pg_backup "kooremapper" "$(env_get "$E" INST_POSTGRES || echo koorm_postgres)" \
       "$(env_get "$E" POSTGRES_USER || echo koorm)" "$(env_get "$E" POSTGRES_PORT || echo 5436)" \
       "$(env_get "$E" POSTGRES_DB || echo koorm)" "$ROOT/kooremapper/daily" "$(env_get "$E" POSTGRES_PASSWORD 2>/dev/null || true)"

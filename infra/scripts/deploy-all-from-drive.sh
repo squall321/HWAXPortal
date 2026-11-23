@@ -11,6 +11,8 @@
 #   AGENT_RESTART_FORCE=1 ./infra/scripts/deploy-all-from-drive.sh portal # 도는·줄 선 심의가 있어도 포털·nginx 를 재기동(구독이 전부 끊긴다)
 #       기본은 그 반대다 — 심의가 있으면 포털 구획(이미지 받기·재기동)·heax 구획(SIF 받기·허브 재기동)과 nginx 재기동을 건너뛰고 ○ 로 남긴다.
 #       update-all 아래(HWAX_DELIB_GATE)면 SignalForge 재기동도 도는 심의를 한 번 기다리고(HWAX_DELIB_WAIT_S), 못 끝나면 건너뛴다(10-31 A25).
+#   포털 infra/.env 에 KOORM_LOCAL_PARKED=1 — 이 박스의 KooRemapper 스택이 멈춰 둔 되돌림 사본이다(DynaForge 를 운영 노드로 옮긴 박스). 코드 · Drive
+#       배포물만 받고 띄우기 · 이관 · 감시와 백업 크론은 하지 않는다(○ — lib/koorm-parked.sh). 다시 쓸 때는 그 줄을 지운다(0 도 멈춤으로 읽는다).
 #
 # Prereqs (once): an rclone remote configured on cae00 (likely ALREADY there from another project —
 # we auto-detect ApptainerImages:, else the first remote, else pass --remote=). You do NOT need to
@@ -192,6 +194,7 @@ note() { printf '  \033[1;33m⚠\033[0m %s\n' "$*"; }
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 포털·nginx·허브를 내리지 않는다(아래 _delib_hold)
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/koorm-busy.sh"     # 도는 DynaForge 로컬 작업이 있으면 KooRemapper 스택을 내리지 않는다(아래 KooRemapper 구역)
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/heax-frozen.sh"    # 동결한 허브 앱 SIF(infra/.env HEAX_FROZEN_SIFS)를 Drive 받기가 덮지 않게(아래 heax 구역)
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/koorm-parked.sh"   # 멈춰 둔 KooRemapper 되돌림 사본(infra/.env KOORM_LOCAL_PARKED)은 띄우지 않는다(아래 KooRemapper 구역)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$PORTAL_DIR/infra/.state/restart-fp}"; export HWAX_RESTART_STATE_DIR
 _fp_git() { printf '%s|' "$(git rev-parse HEAD 2>/dev/null || echo nogit)"; }   # 서브셸 안에서: 지문 앞에 git HEAD
 # .env 값 하나 — **정본 규칙**(update-all `_envfile_value` · services.py `_infra_value` · ste-doctor `envv` 와 글자 단위로 같다):
@@ -481,6 +484,8 @@ fi
 #    koorm_mcp :8701)를 prod 에 띄워 HEAX Caddy 가 127.0.0.1 로 프록시할 수 있게 한다.
 #    바이너리·frontend dist·서비스 SIF 는 gitignore 라 Drive 로 조달(dist-from-drive).
 if want kooremapper; then
+  # 멈춰 둔 되돌림 사본(포털 infra/.env 의 KOORM_LOCAL_PARKED — lib/koorm-parked.sh)인가. 아래 서브셸 · 업스트림 확인 · 끝의 Health 가 같은 값을 본다.
+  _KPARK=0; if hwax_koorm_parked "$PORTAL_DIR"; then _KPARK=1; fi
   # 레포가 없으면 통째로 건너뛰던 자리다. DynaForge 는 SIF 없이 이 레포가 띄우는 서버(:8700/:8701)로
   # 프록시만 하는데, 앱 등록은 HEAXHub 쪽 매니페스트에서 나온다 — 그래서 레포가 없어도 목록엔
   # 멀쩡히 '안정'으로 뜨고 열면 502 가 난다. 조용한 skip 이 이 증상의 원인이다(cae00 실측).
@@ -503,6 +508,9 @@ if want kooremapper; then
       # 바이너리+dist+서비스 SIF 반입. 실패는 실패로 센다(skip → exit 4) — 경고만 하면 새 파이썬 코드가 옛 바이너리 · 화면 위에서 다시 뜨고
       # update-all 은 초록으로 끝났다(10-25 cae00 업데이트 점검). 진행은 종전처럼 한다(로컬 아티팩트로).
       bash platform/infra/scripts/dist-from-drive.sh || skip "koorm dist-from-drive 실패 — 새 코드가 옛 바이너리 · 화면으로 뜬다(Drive KooRemapper/dist/latest · KOORM_DRIVE_REMOTE 확인)"
+      # 멈춰 둔 되돌림 사본이면 여기서 멈춘다(5) — 코드 · 배포물은 위에서 받았고(덮어도 내려가 있는 인스턴스라 깨질 마운트가 없다 · 다시 쓸 때 같은 판이다)
+      # 띄우기 · 이관(start.sh) · 감시와 백업 크론(install-autostart.sh)은 하지 않는다. 11-23 라운드에 이 자리가 그 스택을 21:31 에 띄웠다(HP-66 · HP-67).
+      if [ "$_KPARK" = 1 ]; then hwax_koorm_parked_skip; exit 5; fi
       _cur="$(_fp_git; hwax_fp platform/backend/bin platform/frontend/dist platform/infra/apptainer/*.sif platform/.env)"
       # 배포 표지 — 내렸다 올리는 사이 1분 감시(supervisor.sh)가 start.sh 를 겹쳐 돌려 'koorm_postgres already exists' · PG 18시간 정지가
       # 났다(docs/request-1027 HP-01). 내리기 직전에 만들고 올린 뒤 지운다 — 실패 · 미룸(exit 3)에도 이 서브셸의 EXIT 가 지운다.
@@ -531,10 +539,12 @@ if want kooremapper; then
       bash platform/infra/scripts/install-autostart.sh || echo "  ⚠ autostart 설치 실패(비치명)"
     ) || _krc=$?
     # 3 = 도는 작업 때문에 미뤘다(○ 를 이미 찍었다) — 허브 구역과 같은 꼴로 실패로 세지 않고, 올라왔다고도 말하지 않는다.
-    case "$_krc" in 0) ok "kooremapper up" ;; 3) ;; *) skip "kooremapper failed (see above)" ;; esac
+    # 5 = 멈춰 둔 되돌림 사본이라 띄우지 않았다(○ 를 이미 찍었다) — 같은 꼴이다.
+    case "$_krc" in 0) ok "kooremapper up" ;; 3) ;; 5) ;; *) skip "kooremapper failed (see above)" ;; esac
     # start.sh 가 0 으로 끝나도 업스트림이 안 떠 있으면 DynaForge 는 502 다. 여기서 못 박아 둔다 —
     # 이 두 줄이 없으면 긴 배포 로그 어디에도 '왜 502 인지'가 남지 않는다.
-    for _p in 8700 8701; do
+    # 멈춰 둔 사본은 보지 않는다 — 일부러 내려 둔 것을 '무응답' skip 으로 세면 deploy-all 이 4 로 끝나고 update-all 이 실패로 적는다.
+    [ "$_KPARK" = 1 ] || for _p in 8700 8701; do
       # `|| echo 000` 을 붙이면 안 된다 — curl 은 연결 실패에도 -w 로 이미 '000' 을 찍고
       # 종료코드만 0 이 아니다. 그래서 폴백이 덧붙어 '000000' 이 되고 case 000) 을 비껴가
       # 무응답이 초록 ✓ 로 보고된다(실측). 종료코드가 아니라 출력값으로만 판정한다.
@@ -648,7 +658,7 @@ want signalforge && probe "sf     :17370   " "http://127.0.0.1:17370/"
 # /health 는 이 서버에 없다 — SPA 라우터가 어떤 경로든 같은 index.html 을 200 으로 준다
 # (/, /health, /zzz 의 md5 가 동일). 즉 API 라우터가 통째로 빠져도 초록이었다.
 # 실제 엔드포인트는 /api/health 다({"success":true,...,"binary_present":true}).
-want kooremapper && probe "koorm  /api/health" "http://127.0.0.1:8700/api/health"
+want kooremapper && [ "${_KPARK:-0}" != 1 ] && probe "koorm  /api/health" "http://127.0.0.1:8700/api/health"   # 멈춰 둔 사본은 보지 않는다(위 ○)
 
 hr "Done"
 if [ -s "$HWAX_RESTART_SKIPPED_FILE" ]; then

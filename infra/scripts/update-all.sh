@@ -157,6 +157,9 @@ export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=upda
 . "$SELF_REPO/infra/scripts/lib/llm-pool.sh"
 # 끝의 박스 훅(docs/core-link SRC-12) — infra/hooks/post-update.d/*.local.sh 를 끝맺음 뒤 · ○ 요약 앞에서 돌린다.
 . "$SELF_REPO/infra/scripts/lib/post-update-hooks.sh"
+# 멈춰 둔 KooRemapper 되돌림 사본(infra/.env 의 KOORM_LOCAL_PARKED) — §5 의 kr_ PAT 점검 · 내려간 백엔드 살리기가 그 스택을 재거나 띄우지 않는다.
+#   띄우지 않는 것은 §2 의 deploy-all, 사전 백업은 §1b 의 backup-local 이 같은 lib 로 본다.
+. "$SELF_REPO/infra/scripts/lib/koorm-parked.sh"
 # 상태판 경보 멈춤 풀기 — 1b2 가 걸었으면. 5b 의 설정 생성이 늘 풀므로(그때 HWAX_BOARD_PAUSED=0) 여기는 5b 전에 멈춘 경로(§ 머리 정지)와
 #   완주 끝의 마지막 확인이다. 실패는 삼킨다 — 시한(60분)이 지나면 상태판의 밀어 넣는 쪽(status-push.py)이 걷어낸다.
 _hwax_board_resume() {
@@ -515,10 +518,13 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   # 그래서 signalforge·mxwp 백업이 22회 내내 실패하는 동안 화면엔 '✓ 백업 완료'만 보였다.
   # 성공하면 꼬리만, 실패하면 실패 줄을 전부 보여준다.
   BK_LOG="$(mktemp)"
+  # ○ 는 일부러 뜨지 않은 대상이다(멈춰 둔 KooRemapper 사본 — 실패 아님). 꼬리 넷에 들지 않아 따로 보인다 — 끝 요약에는 backup-local 이 장부로 넘긴다.
   if "$SELF_REPO/infra/scripts/backup-local.sh" >"$BK_LOG" 2>&1; then
+    grep '○' "$BK_LOG" | sed 's/^/  /'
     tail -4 "$BK_LOG" | sed 's/^/  /'
   else
     bad "사전 백업 실패 — 아래 항목이 백업되지 않았다(배포는 계속한다)"
+    grep '○' "$BK_LOG" | sed 's/^/  /'
     grep -E '✗' "$BK_LOG" | sed 's/^/    /'
     tail -3 "$BK_LOG" | sed 's/^/  /'
   fi
@@ -2121,7 +2127,12 @@ else
   #   (실측: 저장 토큰으로 /api/v1/operations 가 401, 같은 순간 새 토큰은 200.)
   #   그래서 키가 아니라 **토큰이 실제로 인증되는지**로 본다. 죽어 있으면 재프로비저닝 대상이고,
   #   provision-config.sh 가 살아 있는지 확인한 뒤 재발급한다.
-  if [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
+  # 이 박스의 스택을 멈춰 둔 되돌림 사본으로 표시했으면(KOORM_LOCAL_PARKED — lib/koorm-parked.sh) 재지 않는다 — 로컬 :8700 이 일부러 내려가 있어
+  #   늘 '만료' 로 읽고 실행마다 게이트웨이 · 에이전트 서버를 재프로비저닝으로 다시 띄운다(그래도 발급은 못 한다). 다른 서버의 DynaForge 로 재려면
+  #   KOORM_BASE=<주소> 를 주고 돌린다 — 그때는 종전대로 잰다.
+  if hwax_koorm_parked "$SELF_REPO" && [ -z "${KOORM_BASE:-}" ]; then
+    echo "  ○ DynaForge kr_ PAT 점검 건너뜀 — 이 박스의 KooRemapper 스택을 멈춰 뒀다(infra/.env 의 KOORM_LOCAL_PARKED · 로컬 :8700 으로는 잴 수 없다). 다른 서버로 재려면 KOORM_BASE=<주소>"
+  elif [ -n "$GW_DIR" ] && [ -f "$GW_DIR/gateway_config.json" ] \
      && grep -q '"heax_registry"' "$GW_DIR/gateway_config.json" 2>/dev/null \
      && [ -n "$(find_repo KooRemapper)" ]; then
     _KR_TOK="$(python3 - "$GW_DIR/gateway_config.json" <<'PY' 2>/dev/null || true
@@ -2503,7 +2514,11 @@ PY
         # 된다(update-all 자신이 §6에서 그 모양을 설명하고 있다). 업스트림을 함께 띄운다 —
         # kooremapper start.sh 가 :8700 과 :8701 을 같이 세운다. 아래 heax-* 보다 먼저 온다.
         heax-kooremapper_mcp)
-          if [ "$(http_code http://127.0.0.1:8701/mcp 3)" = "000" ]; then
+          # 멈춰 둔 되돌림 사본(KOORM_LOCAL_PARKED)이면 이 박스의 업스트림을 띄우지 않는다 — services.yaml 의 unless_env 가 up 도 막지만, 띄운다고
+          #   말하고 건너뛰면 말이 어긋난다. 앱 재배포(프록시)는 그대로 한다 — 그 앱이 다른 서버를 가리키면 그것으로 살아난다.
+          if hwax_koorm_parked "$SELF_REPO"; then
+            echo "  · DynaForge 업스트림은 이 박스에서 멈춰 둔 되돌림 사본이다(infra/.env 의 KOORM_LOCAL_PARKED) — 이 박스의 kooremapper 를 띄우지 않는다"
+          elif [ "$(http_code http://127.0.0.1:8701/mcp 3)" = "000" ]; then
             echo "  · DynaForge 업스트림(:8701)이 죽었다 — kooremapper 를 함께 띄운다"
             UP_SVCS="$UP_SVCS kooremapper"
           fi
