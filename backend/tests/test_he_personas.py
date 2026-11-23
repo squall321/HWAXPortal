@@ -1210,6 +1210,78 @@ def test_리스크_앱이_쓰기라고_적은_도구는_운영자_목록에_있�
     assert {"risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel", "risk_job_action"} <= set(p["confirm"])
 
 
+# ── 11-23 cae00 라운드 — 리스크 앱 RA 초안 창구(박스 스위치 HWAXRISK_RA_REPORT_DRAFT, 기본 꺼짐)의 두 도구 ─────────────────────────────
+# 필수 confirm 에 두었더니(11-22) 창구를 켜지 않은 박스에서 미리보기가 '이 앱에 없는 도구' 로 끝 코드 2 — update-all §3 이 그 실행의 동기화를 건너뛰었다.
+# 도구마다 있을 때만 붙는 선택 칸(needs_tool — SP 0.4.72 허브 쓰기 · ODB 입구와 같은 장치)으로 옮겼다. 확인 관문은 선택 칸을 needs_tool 과
+# 상관없이 늘 읽으므로 관문의 셈은 그대로다.
+_RA_DRAFT = ("risk_report_ra_material", "risk_report_ra_record")
+_AGENT_APP = _ROOT.parent / "HWAXAgentServer" / "app.py"
+
+
+def _risk_map(with_draft: bool) -> dict:
+    tm = _write_map("he-expert-risk", set(_RA_DRAFT) if with_draft else set(), set())
+    assert all((t in tm["map"]) == with_draft for t in _RA_DRAFT)
+    return tm
+
+
+def test_L23_RA_초안_도구가_없는_박스에서도_리스크_운영자를_만든다():
+    sync = _sync()
+    one = _one("he-expert-risk")
+    p = one["personas"][0]
+    assert not set(_RA_DRAFT) & {*p["writes"], *p["confirm"]}, "필수 칸에 두면 창구를 끈 박스에서 동기화가 멈춘다"
+    assert [(o["app"], o.get("needs_tool"), o.get("confirm")) for o in p["optional"]] == \
+        [("heax-hwax_risk", t, [t]) for t in _RA_DRAFT], "도구 하나에 칸 하나 — 같은 앱 안에서 켜고 끄는 기능이다"
+    notes: list[str] = []
+    warns: list[str] = []
+    (r,), skipped, errors = sync.plan(one, _risk_map(False), notes, warns)
+    assert not errors and not skipped, (errors, skipped)
+    assert notes == [f"he-expert-risk: {', '.join(f'heax-hwax_risk 의 {t}' for t in _RA_DRAFT)} 없이 만든다(선택 앱)"], notes
+    assert warns == [], warns
+    _ask, sure = _state_lists(r["system_prompt"])
+    assert not set(_RA_DRAFT) & set(sure) and "risk_numbers_put" in sure, sure
+    assert r["response_config"]["mcp_apps"] == ["heax-hwax_risk"], "같은 앱이라 두 번 세지 않는다"
+
+
+def test_L23_RA_초안_도구가_있는_박스는_종전_정의와_같은_운영자다():
+    """창구를 켠 박스 — 11-22 정의(필수 confirm 끝에 두 도구)로 만든 것과 프롬프트 · 설정이 바이트까지 같다."""
+    sync = _sync()
+    one = _one("he-expert-risk")
+    old = json.loads(json.dumps(one))
+    op = old["personas"][0]
+    op["confirm"] = [*op["confirm"], *_RA_DRAFT]
+    del op["optional"]
+    tm = _risk_map(True)
+    notes: list[str] = []
+    warns: list[str] = []
+    (new,), skipped, errors = sync.plan(one, tm, notes, warns)
+    (was,), _s, old_errors = sync.plan(old, tm)
+    assert not errors and not skipped and not old_errors and notes == [] and warns == [], (errors, skipped, notes, warns)
+    assert new == was
+    _ask, sure = _state_lists(new["system_prompt"])
+    assert sure[-2:] == list(_RA_DRAFT), sure
+    # 한쪽만 켠 판 — 있는 것만 붙는다
+    tm["map"].pop("risk_report_ra_record")
+    (r,), _s, errors = sync.plan(one, tm)
+    _ask, sure = _state_lists(r["system_prompt"])
+    assert not errors and "risk_report_ra_material" in sure and "risk_report_ra_record" not in sure, sure
+
+
+def test_L23_RA_초안_도구는_관문_셈에_늘_든다():
+    """미리보기가 빼고 만들어도 확인 관문(에이전트서버 _confirm_lists)은 선택 칸의 confirm 을 needs_tool 과 상관없이 늘 읽는다 — 창구를 켜는 순간
+    카드가 선다. 포털의 거울(_gate_names)과 에이전트서버 소스가 그 셈인지 함께 본다."""
+    p = _one("he-expert-risk")["personas"][0]
+    gate = _sync()._gate_names(p)
+    assert all(gate.get(t) == t for t in _RA_DRAFT), sorted(gate)
+    if not _AGENT_APP.exists():
+        pytest.skip(f"형제 리포 없음: {_AGENT_APP}")
+    import ast
+    tree = ast.parse(_AGENT_APP.read_text(encoding="utf-8"))
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_confirm_lists")
+    src = ast.get_source_segment(_AGENT_APP.read_text(encoding="utf-8"), fn) or ""
+    assert 'p.get("optional")' in src and "o.get(fld)" in src, "관문이 선택 칸의 목록을 읽는다"
+    assert "needs_tool" not in src, "관문이 needs_tool 로 거르면 창구를 켠 박스에서 두 도구가 카드 없이 나간다 — 이 옮김을 다시 본다"
+
+
 def test_StepForge_의_되돌릴_수_없는_치수_지우기는_confirm_에_있다():
     """forget_dimension 은 StepForge 가 '⚠ 되돌릴 수 없다' 로 적은 지우기다 — 목록 밖이면 확인 관문이 사람이 시키지 않아도 보낸다."""
     p = _one("he-cad-stepforge")["personas"][0]
@@ -1233,7 +1305,8 @@ def test_HA29_StepForge_는_되돌리기_어려운_여덟만_confirm_이다():
     assert confirm == _SF_CONFIRM, sorted(confirm ^ _SF_CONFIRM)
     # 11-11 link_plm_tasks(SRC-03 — PLM 과제 잇기, dry_run 기본이고 MCP 로도 적용한다)를 writes 에 더해 35(HP-53)
     # 11-18 StepForge D-706 의 MODIFY 둘(save_role_pairs · job_subscribe — 웹훅 등록)을 더해 37(docs/request-1117)
-    assert not writes & confirm and len(writes) == len(p["writes"]) == 37, sorted(writes)
+    # 11-23 MODIFY 둘(export_part_step — 파트 하나의 STEP 산출물 · save_part_stack — 층 장부 판, 덧붙이기만)을 더해 39(cae00 11-23 라운드 '목록 밖 쓰기')
+    assert not writes & confirm and len(writes) == len(p["writes"]) == 39, sorted(writes)
     assert {"rename_part", "remove_part", "confirm_interfaces", "mesh_size_advice", "shape_op", "record_dimension", "save_fill_rule"} <= writes
     # 다른 앱과 겹치는 둘은 접두 별칭이다(dev /tools-map — ste · DynaForge 의 cancel_job, MaterialTwin 의 register_material)
     assert "heaxstep_forge_cancel_job" in p["confirm"] and "heaxstep_forge_register_material" in p["writes"]
@@ -1262,6 +1335,7 @@ def test_HA29_StepForge_가_MODIFY_로_등록한_도구는_모두_writes_confirm
     assert modify - listed == _SF_PORTAL_ONLY, f"he-cad-stepforge 의 writes · confirm 에 없다 — {sorted(modify - listed - _SF_PORTAL_ONLY)} · " \
         f"C-30 셋 가운데 MODIFY 에서 빠진 것 — {sorted(_SF_PORTAL_ONLY - modify)}"
     assert not listed - modify, f"StepForge 가 수정 도구로 등록하지 않았다 — {sorted(listed - modify)}"
+    assert set(p["unlisted_writes"]["tools"]) == _SF_PORTAL_ONLY, "C-30 셋은 정의의 unlisted_writes 에 까닭과 함께 적혀 있다(11-23 사용자 결정)"
 
 
 def test_HA29_StepForge_인자로_덮어쓰는_도구는_함정_줄이_말한다():
@@ -1282,6 +1356,124 @@ def test_HA29_StepForge_인자로_덮어쓰는_도구는_함정_줄이_말한다
     assert rows and not errors and not skipped, (errors, skipped)
     prompt = rows[0]["system_prompt"]
     assert line in prompt and advice in prompt and len(prompt) <= _sync().PROMPT_MAX
+
+
+# ── 11-23 cae00 라운드 '목록 밖 쓰기' — StepForge 2 · DynaForge 캠페인 11(두 박스에 다 있는 앱이라 git 정본에서 고친다) ─────────────────────
+# DynaForge 는 수정 도구 범주 표지가 없어 이름 낱말로만 걸린다 — 낱말에 안 걸리는 두 쓰기(build_report_bundle — 보고서 묶음의 새 판을 쌓는다 ·
+# recipe_evaluate — 실행 평가를 남겨 레시피 등록 관문의 근거가 된다)도 소스 설명대로 함께 넣었다. 지우기 · 되돌리기 어려운 것이 없어 모두 writes 다.
+_DF_L23 = frozenset({"create_campaign", "ingest_campaign_manifest", "set_campaign_health_thresholds", "set_campaign_required_extractions",
+                     "set_campaign_part_groups", "set_campaign_criteria", "set_campaign_sites", "import_part_map", "set_campaign_pair_rule",
+                     "set_campaign_frame_offset", "rename_session_part"})
+_SF_L23 = frozenset({"export_part_step", "save_part_stack"})
+
+
+def test_L23_DynaForge_캠페인_쓰기는_writes_에_있다():
+    p = _one("he-sim-dynaforge")["personas"][0]
+    assert _DF_L23 | {"build_report_bundle", "recipe_evaluate"} <= set(p["writes"]), sorted(_DF_L23 - set(p["writes"]))
+    assert not set(p["writes"]) & set(p["confirm"])
+
+
+@pytest.mark.parametrize(("key", "added", "left"), [("he-sim-dynaforge", _DF_L23, set()), ("he-cad-stepforge", _SF_L23, _SF_PORTAL_ONLY)])
+def test_L23_목록_밖_쓰기_판정이_새_쓰기를_목록_안으로_센다(key, added, left):
+    """게이트웨이가 쓰기 꼴로 낸 도구(/tools-map write)가 두 목록 안이면 미리보기 · update-all §6 의 '목록 밖 쓰기' 줄에서 빠진다. StepForge 의 온톨로지
+    쓰기 셋은 사용자 결정(C-30 — 게이트웨이로는 미리보기뿐이라 목록 밖에 둔다)대로 남는다."""
+    sync = _sync()
+    one = _one(key)
+    tm = _write_map(key, set(left), set())
+    assert added <= set(tm["write"]) and set(left) <= set(tm["write"])
+    warns: list[str] = []
+    rows, skipped, errors = sync.plan(one, tm, None, warns)
+    assert rows and not errors and not skipped, (errors, skipped)
+    assert [w for w in warns if not w.startswith("○ ")] == [], warns
+    assert len(warns) == (1 if left else 0) and (not left or warns[0].startswith(f"○ 목록 밖에 둔 쓰기 {key}: {len(left)}개 — {', '.join(sorted(left))}(")), warns
+    # 고치기 전 정의(새 이름이 두 목록에 없다)면 그 이름들을 ⚠ 로 알린다 — 판정이 그 도구를 보고 있다
+    old = json.loads(json.dumps(one))
+    old["personas"][0]["writes"] = [n for n in old["personas"][0]["writes"] if n not in added]
+    warns = []
+    sync.plan(old, tm, None, warns)
+    loose = [w for w in warns if not w.startswith("○ ")]
+    assert len(loose) == 1 and loose[0].startswith(f"목록 밖 쓰기 {key}: {len(added)}개 — "), warns
+
+
+# ── 11-23 사용자 결정 — 일부러 목록 밖에 둔 쓰기(unlisted_writes)는 ⚠ 대신 까닭 있는 ○ 줄 ─────────────────────────────────────────────
+# C-30 셋이 실행마다 update-all §6 의 ⚠ 로 서 운영 박스가 다시 넘겨 왔다. 칸은 알림 줄에만 쓰인다 — 도구를 묶지 않고(apps) 확인 관문(writes ·
+# confirm · optional) · 접근 검사(apps) · 프롬프트가 읽지 않는다.
+def test_L23_목록_밖에_둔_쓰기는_까닭과_함께_알림이고_칸에_없는_새_쓰기는_그대로_경고다():
+    sync = _sync()
+    one = _one("he-cad-stepforge")
+    why = one["personas"][0]["unlisted_writes"]["why"]
+    assert "C-30" in why and "CK-3" in why, why
+    warns: list[str] = []
+    rows, skipped, errors = sync.plan(one, _write_map("he-cad-stepforge", _SF_PORTAL_ONLY | {"recompute_cache"}, set()), None, warns)
+    assert rows and not errors and not skipped, (errors, skipped)
+    assert warns == ["목록 밖 쓰기 he-cad-stepforge: 1개 — recompute_cache(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)",
+                     f"○ 목록 밖에 둔 쓰기 he-cad-stepforge: 3개 — onto_define, onto_link, onto_put(일부러 두 목록 밖에 둔다 — {why})"], warns
+    # 접두로 나온 박스에서도 같은 셈이다(두 목록과 같은 꼬리 대조)
+    tm = _write_map("he-cad-stepforge", set(), set(), exposed={"heaxstep_forge_onto_put": "heax-step_forge"})
+    tm["write"] = [*tm["write"], "heaxstep_forge_onto_put"]
+    warns = []
+    sync.plan(one, tm, None, warns)
+    assert warns == [f"○ 목록 밖에 둔 쓰기 he-cad-stepforge: 1개 — heaxstep_forge_onto_put(일부러 두 목록 밖에 둔다 — {why})"], warns
+
+
+def test_L23_목록_밖에_둔_쓰기_칸은_올리는_행과_관문_셈을_바꾸지_않는다():
+    sync = _sync()
+    one = _one("he-cad-stepforge")
+    bare = json.loads(json.dumps(one))
+    del bare["personas"][0]["unlisted_writes"]
+    tm = _write_map("he-cad-stepforge", set(_SF_PORTAL_ONLY), set())
+    (r1,), _s, e1 = sync.plan(one, tm)
+    (r2,), _s, e2 = sync.plan(bare, tm)
+    assert not e1 and not e2 and r1 == r2, "AIDataHub 에 올리는 행(프롬프트 · 앱 · 핵심 도구)은 칸이 있으나 없으나 같다"
+    assert sync._gate_names(one["personas"][0]) == sync._gate_names(bare["personas"][0]), "관문의 거울 셈은 이 칸을 읽지 않는다"
+    assert not set(_SF_PORTAL_ONLY) & set(sync._gate_names(one["personas"][0])), "확인 목록에 들지 않는다"
+    if _AGENT_APP.exists():
+        import ast
+        src = _AGENT_APP.read_text(encoding="utf-8")
+        fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "_confirm_lists")
+        assert "unlisted" not in (ast.get_source_segment(src, fn) or ""), "확인 관문이 이 칸을 읽으면 C-30 셋에 카드가 선다"
+    guard = (_ROOT / "backend" / "app" / "access" / "agent_guard.py").read_text(encoding="utf-8")
+    assert "unlisted" not in guard, "접근 검사는 apps 만 읽는다"
+
+
+@pytest.mark.parametrize("bad", [[], {"tools": "onto_put", "why": "x"}, {"tools": ["onto_put", ""], "why": "x"}, {"tools": ["onto_put"]},
+                                 {"tools": ["onto_put"], "why": "  "}])
+def test_L23_목록_밖에_둔_쓰기_칸의_꼴이_틀리면_멈춘다(bad):
+    one = _one("he-cad-stepforge")
+    one["personas"][0]["unlisted_writes"] = bad
+    _rows, _s, errors = _sync().plan(one, _write_map("he-cad-stepforge", set(), set()), None, [])
+    assert errors and "unlisted_writes" in errors[0], errors
+
+
+def test_L23_목록_밖에_둔_쓰기_칸도_덧씌우기로_덮고_뺀다():
+    """박스 덧씌우기는 다른 칸과 같은 규칙이다 — 객체는 재귀로 합치고(목록은 통째로) null 은 칸을 뺀다."""
+    ht = _ht()
+    base = _one("he-cad-stepforge")
+    why = base["personas"][0]["unlisted_writes"]["why"]
+    merged, info = ht.apply_overlay(base, {"personas": {"he-cad-stepforge": {"unlisted_writes": {"tools": ["onto_put"]}}}})
+    assert merged["personas"][0]["unlisted_writes"] == {"tools": ["onto_put"], "why": why} and info["changed"] == ["he-cad-stepforge"]
+    warns: list[str] = []
+    _sync().plan(merged, _write_map("he-cad-stepforge", set(_SF_PORTAL_ONLY), set()), None, warns)
+    assert warns == ["목록 밖 쓰기 he-cad-stepforge: 2개 — onto_define, onto_link(writes · confirm 어디에도 없다 — 맞는 쪽에 넣는다)",
+                     f"○ 목록 밖에 둔 쓰기 he-cad-stepforge: 1개 — onto_put(일부러 두 목록 밖에 둔다 — {why})"], warns
+    gone, _info = ht.apply_overlay(base, {"personas": {"he-cad-stepforge": {"unlisted_writes": None}}})
+    assert "unlisted_writes" not in gone["personas"][0]
+    assert ht.fingerprint(merged) != ht.fingerprint(base) != ht.fingerprint(gone), "칸이 바뀌면 지문도 바뀐다(update-all §7 대조)"
+
+
+def test_L23_미리보기와_update_all_6_은_목록_밖에_둔_쓰기를_경고로_올리지_않는다(monkeypatch, capsys, tmp_path):
+    one = _one("he-cad-stepforge")
+    hub = _FakeHub(_write_map("he-cad-stepforge", set(_SF_PORTAL_ONLY), set()))
+    sync = _sync()
+    monkeypatch.setattr(sync.he_team, "load", lambda *_a, **_k: (one, {"overlay": "none", "changed": [], "added": [], "fingerprint": "x", "path": "p"}))
+    monkeypatch.setattr(sync, "_http", hub)
+    monkeypatch.setattr(sync.sys, "argv", ["sync-he-personas.py", "--check"])
+    assert sync.main() == 0
+    out = capsys.readouterr().out
+    line = next(ln for ln in out.splitlines() if "목록 밖에 둔 쓰기" in ln)
+    assert line.startswith("  ○ 목록 밖에 둔 쓰기 he-cad-stepforge: 3개 — ") and "목록 밖 쓰기 he-" not in out, out
+    s6 = _s6(tmp_path, line + "\n")
+    assert s6 == ("OK:HE팀 운영자 — 모는 앱이 다 이 게이트웨이에 있고 목록 밖 쓰기 도구 · 읽기를 막는 목록이 없다\n" + line + "\n"), s6
 
 
 # ── 박스 덧씌우기(docs/he-team-overlay — 사용자 결정 11-04 HO-1) ────────────────────────────────────────────────────────────

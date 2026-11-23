@@ -113,6 +113,11 @@ class FoldError(Exception):
     """원천 하나를 접지 못한 까닭 — 사람이 읽는 글(비밀 · 주소는 싣지 않는다)."""
 
 
+class FoldPending(FoldError):
+    """그쪽에 창구가 아직 없다(HTTP 404 · 405 — 업데이트 중 그쪽이 재기동 전 옛 판이다). 까닭은 남기되(접기 상태 화면) 실패로 세지 않고 다음
+    주기에 다시 접는다 — cae00 11-23 라운드에서 포털이 게이트웨이 재기동보다 먼저 접어 404 를 받고 '3번 실패 뒤' 로 적혔다."""
+
+
 @dataclass
 class DayFold:
     """한 날 · 한 원천의 접은 줄 — rows 는 (지표, 칸, 값), actors 는 (이메일, 갈래, 수, 그때의 소속)."""
@@ -460,6 +465,8 @@ async def ask(client: httpx.AsyncClient, base: str, token: str, body: dict, time
         r = await client.post(f"{base.rstrip('/')}{PATH}", json=body, headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
     except httpx.HTTPError as exc:
         raise FoldError(f"{who}에 닿지 못했다({type(exc).__name__})") from exc
+    if r.status_code in (404, 405):
+        raise FoldPending(_HTTP_WHY[r.status_code])
     if r.status_code != 200:
         raise FoldError(_HTTP_WHY.get(r.status_code, f"{who} 답이 HTTP {r.status_code} 이다"))
     try:
@@ -604,7 +611,7 @@ async def run_once(app, settings: Settings, *, now: float | None = None, client:
                 raise
             except Exception as exc:  # noqa: BLE001 — 까닭을 남기고 다음 원천으로
                 why = str(exc) if isinstance(exc, FoldError) else f"{type(exc).__name__}: {str(exc)[:160]}"
-                out[source] = {"error": why}
+                out[source] = {"error": why, "pending": True} if isinstance(exc, FoldPending) else {"error": why}
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(_mark_error, settings, source, now, why)
         with contextlib.suppress(Exception):
@@ -615,23 +622,42 @@ async def run_once(app, settings: Settings, *, now: float | None = None, client:
     return out
 
 
+def _summary(out: dict) -> str:
+    """한 번 접은 결과의 한 줄 — 원천마다 접은 날 수, 창구가 아직 없는 원천은 그렇다고."""
+    return " · ".join(f"{s} {v}일" if isinstance(v, int) else f"{s} 창구 아직 없음(다음 주기에 다시)" if v.get("pending") else f"{s} 못 접음"
+                      for s, v in out.items())
+
+
 async def run(app, settings: Settings, every: float) -> None:
-    """기동 뒤 조금 있다가 한 번, 그 뒤 every 초마다 — 끌 때(cancel)까지. 실패는 까닭이 바뀔 때와 REPEAT_EVERY 번마다 경고로 적는다."""
-    last, fails = None, 0
+    """기동 뒤 조금 있다가 한 번, 그 뒤 every 초마다 — 끌 때(cancel)까지. 실패는 까닭이 바뀔 때와 REPEAT_EVERY 번마다 경고로 적는다.
+    그쪽에 창구가 아직 없는 것(FoldPending — 업데이트 중 재기동 전 옛 판)은 실패로 세지 않고 다음 주기에 다시 접는다(까닭은 접기 상태에 남는다).
+    REPEAT_EVERY 번 이어지면 그때 한 줄 적는다 — 그쪽이 정말 옛 판에 머문 것이다. 줄마다 그 접기의 시작 시각(KST)과 걸린 초를 싣고, 기동 뒤 첫
+    접기는 실패가 없어도 한 줄 적는다(밀린 날 채우기가 얼마나 걸렸나 — 포털 로그는 경고 줄만 남는다)."""
+    last, fails, waits, n = None, 0, 0, 0
     delay = min(every, FIRST_DELAY_S)
     while True:
         await asyncio.sleep(delay)
         delay = every
+        t0 = time.time()
         out = await run_once(app, settings)
-        errs = "; ".join(f"{s} — {v['error']}" for s, v in out.items() if isinstance(v, dict)) or None
+        n += 1
+        took = f"시작 {datetime.fromtimestamp(t0, KST):%m-%d %H:%M:%S} KST · {time.time() - t0:.1f}초"
+        bad = {s: v for s, v in out.items() if isinstance(v, dict)}
+        errs = "; ".join(f"{s} — {v['error']}" for s, v in bad.items() if not v.get("pending")) or None
+        wait = "; ".join(f"{s} — {v['error']}" for s, v in bad.items() if v.get("pending")) or None
+        waits = waits + 1 if wait else 0
         if errs:
             fails += 1
             if errs != last or fails % REPEAT_EVERY == 0:
-                logger.warning("이용 통계 접기 — 못 접은 원천이 있다(%d번째 · 다음에 다시 접는다): %s", fails, errs)
+                logger.warning("이용 통계 접기 — 못 접은 원천이 있다(%d번째 · 다음에 다시 접는다 · %s): %s", fails, took, errs)
         else:
             if last:
-                logger.warning("이용 통계 접기 — 모든 원천을 다시 접었다(%d번 실패 뒤)", fails)
+                logger.warning("이용 통계 접기 — 못 접던 원천을 다시 접었다(%d번 실패 뒤 · %s): %s", fails, took, _summary(out))
+            elif n == 1:
+                logger.warning("이용 통계 접기 — 기동 뒤 첫 접기(%s): %s", took, _summary(out))
             fails = 0
+        if wait and waits % REPEAT_EVERY == 0:
+            logger.warning("이용 통계 접기 — 그쪽 창구가 %d번 이어 없다(옛 판 그대로다 — 업데이트 · 재기동을 본다 · %s): %s", waits, took, wait)
         last = errs
         app.state.usage_fold_last = {"at": time.time(), "result": out}
 

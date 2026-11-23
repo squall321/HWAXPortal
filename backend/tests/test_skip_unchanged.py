@@ -681,7 +681,7 @@ def test_deploy_all_wires_every_service_and_nginx_through_the_restart_cycle():
     for two in ("http://127.0.0.1:8800/api/v1/healthz http://127.0.0.1:5173/", "http://127.0.0.1:18000/health http://127.0.0.1:17370/", "http://127.0.0.1:8700/api/health http://127.0.0.1:8701/mcp"):
         assert two in DEPLOY_ALL, "인스턴스가 여럿인 서비스는 둘 다 답해야 생략"
     assert "http://127.0.0.1:8701/ " not in DEPLOY_ALL and "http://127.0.0.1:8701/'" not in DEPLOY_ALL, "MCP 루트는 404 라 매 회 '죽었다' 였다(2라운드)"
-    assert DEPLOY_ALL.count("./infra/scripts/images-from-drive.sh || exit 1") == 2 and "./deploy/apptainer/dist-from-drive.sh || exit 1" in DEPLOY_ALL and "./scripts/sync-from-drive.sh || exit 1" in DEPLOY_ALL, "받기 실패는 블록을 끊는다"
+    assert DEPLOY_ALL.count("./infra/scripts/images-from-drive.sh || exit 1") == 2 and "./deploy/apptainer/dist-from-drive.sh || _ddrc=$?" in DEPLOY_ALL and '[ "$_ddrc" = 0 ] || exit 1' in DEPLOY_ALL and "./scripts/sync-from-drive.sh || exit 1" in DEPLOY_ALL, "받기 실패는 블록을 끊는다"
     assert "hwax_fp deploy/apptainer/.env" in DEPLOY_ALL and "hwax_fp .env api_server/.env" not in DEPLOY_ALL, "AIDH 의 실제 설정 파일(2라운드) — api_server/.env 는 boot.sh 가 기동 때 다시 쓴다"
     assert "_fp0" not in DEPLOY_ALL, "블록 진입 시점 기준은 버렸다"
     assert "infra/.state/" in (ROOT / ".gitignore").read_text(encoding="utf-8")

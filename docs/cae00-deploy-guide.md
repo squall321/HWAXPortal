@@ -53,6 +53,8 @@
 **화면에 찍히는 실제 순서**(배너 문자열) — `1) · 1b) · 1c) · 1d) · 2) · 2b) · 3) · 2c) · 2d) · 3.5) · 4) · 5) · 6) · 6b) · 7)`.
 번호가 순서와 어긋난 자리가 있다(2c 가 3 뒤, 3.5 가 2c 뒤) — 배너 문자열로 찾는 것이 안전하다.
 
+**동결한 허브 앱 SIF** — 운영 노드로 넘긴 앱의 이 박스 사본(되돌림용)처럼 §2 가 Drive 의 새 판으로 바꾸면 안 되는 앱은 `infra/.env` 에 `HEAX_FROZEN_SIFS=step_forge`(빈칸 · 쉼표로 여럿)를 적는다 — §2 가 받기 앞에 쥐고 뒤에 되돌리며 `○ 허브 앱 SIF <이름> — 동결` 로 남긴다(`lib/heax-frozen.sh` · 11-23 라운드에서 StepForge 사본이 덮였다). 풀 때는 그 이름을 지우고 다시 돌린다.
+
 **§6 의 치명 항목**(하나라도 실패면 끝에서 `exit 1`, 그리고 무엇이 세웠는지 목록을 다시 낸다) — 무인증 `/health`
 넷(portal:8723 · nginx:8088 · agent-server:9009 · gateway:9110) · 절차 모듈(`/procedures-api/health` 의 본문 `ok:true`,
 상태코드로는 못 본다) · **SPA dist 대조**(`frontend/dist/.build-src` ≠ `HEAD:frontend` → dev 에서 빌드+Drive 발행이 필요
