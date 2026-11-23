@@ -72,6 +72,23 @@
 - `llm_transform(instruction: str, text?: str, ref?: str)` → `{text, ref?}` — 결과가 길면 B 저장소에 두고 ref 로 준다. LLM 은 챗 LLM.
 - 둘 다 동기 호출(긴 것은 게이트웨이 호출 상한 안에서 — 넘으면 잡으로 돌리지 않고 거절하며 줄이라 알린다).
 
+### 3-5. 짓고 나서 정한 꼴 — 에이전트 서버(`b0fd922` — 11-24, TS-8)
+
+- A 재기동 — 줄 선 위임만 재기동을 넘긴다. 도는 위임은 `interrupted` 로 끝나고 이어 돌리지 않는다(읽기만 하는 일이라 다시 맡기면 된다).
+- A 반환 — `delegate_start` → `{job_id, status, queue?, clamped?, max_steps, max_minutes, note}`. `delegate_result` 의 evidence 행은 `{id(답의 [eN]), tool, args, ok,
+  chars}`(서비스 길이라 ref 는 생기지 않는다) · `notes` · `tokens {input, output}|null` · 기본 view full. `numbers` 는 `{checked, mismatched[≤30], mismatched_total?}`.
+- A 신원 · 시야 — MCP 심의 잡과 같은 길(공유 비밀 + 신원 머리, 사람 PAT 없음). 신원 없는 호출은 여섯 도구 모두 거절. 위임 결과는 주인만(그 사람 시야로 읽은 발췌라
+  같은 소속에도 열지 않는다). 위임은 심의 GLM 자리를 쓰지 않고 제 상한으로 줄을 선다 · 도는 수(`delib_active`)에는 든다.
+- 울타리 — 루틴과 같은 `routine_read` 에서 이 서버 백엔드와 게이트웨이 로컬 도구를 뺀다. 웹 챗 · 심의 좌석(리스크 심사 포함) · 루틴은 여섯 도구를 묶지도
+  invoke_tool 로 부르지도 못한다(`_OFFLOAD_TOOLS` — D-18).
+- D `llm_transform` — `ref?` 반환은 뺐다. `{text, numbers, model, cut?}` · 20,000자에서 자른다(큰 결과의 ref 는 B 가 연결 머리로 붙인다).
+- C `draft_section` 의 `sources` — `[{n, kind, ref | tool+args, chars, ok, error?}]` + `notes?`.
+- 묻기 창구 — 사람 머리 없음은 400(403 은 게이트웨이가 「공유 비밀 어긋남」 으로 읽는다) · 모르는 칸 422 · 6쪽 넘음 413 · 540초 넘음 504 · LLM 실패 502.
+- 읽기 전용 PAT 와 위임 — 이름 낱말로 `delegate_start` 는 쓰기 쪽으로 갈린다. **열지 않는다**(이 세션 판단 TS-8 — 읽기 전용 토큰이 서버 잡을 세우는 길을 새로
+  만들지 않는다. 필요해지면 게이트웨이 읽기 목록에 이름 하나로 연다).
+- 사람별 LLM 사용량 — 지금은 `other` 로 단다. `offload` 종류를 포털 `LLM_KINDS` 와 에이전트 서버에 함께 더한다(남은 일).
+- 도구 영역 — 위임 넷은 `system`, `draft_section` · `llm_transform` 은 `report`(게이트웨이 `tool_areas.json`).
+
 ### 3-4. E PC 킷(포털)
 
 - 토큰 화면 설정 배치에 선택 칸 「서버 LLM 에 일 맡기기(토큰 절약)」 — 켜면 ① MCP 등록에 `X-HWAX-Result: ref` 머리 ② Claude Code 사용자 명령 `/hwax-ask`(A 로
