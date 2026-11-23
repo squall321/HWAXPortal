@@ -177,3 +177,8 @@ mech 83/4,509 — 2 ~ 3%). 도메인을 가르지 못한다. dev 에서 실제�
 다시 쓰므로(AIDataHub `onto_svc` — 허브마다 `record_entities` · `onto_terms` 를 지운 뒤 넣는다) `--types part` 만 주면 연결이 part 만 남는다. 기본 여덟과 `part` 를 함께
 적는다(server-setup 3절).
 
+
+**EO-18 cae00 답(11-24) — 그림자 켬(받은 편지함 2026-11-23 Q21).** 11-23 22:01 에 에이전트 서버 `.env` 에 `SEAT_ONTO=shadow` · `PERSONA_SHADOW_LOG=1` 을 넣고
+재기동했다. `/health seat_onto` — `mode` shadow · `sent` 0 · `skipped` 0 · `why` null(재기동 뒤 좌석 추천이 아직 한 번도 안 불림 — 그쪽은 미리보기를 열지 않았다).
+셈은 메모리에만 있어 재기동하면 0 이 되므로 일주일 셈은 그림자 기록으로 한다 — 11-30 무렵. 그림자 기록이 쌓이는 자리는 아직 안 봤다 — 다음 글에
+`server-setup.md` 6절의 자리(`<seat-eval>/shadow/`)를 다시 짚는다.

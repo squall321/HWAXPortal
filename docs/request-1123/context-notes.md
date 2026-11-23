@@ -20,3 +20,9 @@
 - 있는 시험 하나(`test_request_1027_nginx` HP-47)가 conf 전체에서 `limit_` 글자를 찾다가 `worker_rlimit_nofile` 에 걸렸다 — 뜻(limit_rate · limit_conn)대로 좁혔다.
 - 시험 — `test_request_1123_nginx.py`(생성기를 임시 리포에서 실제로 돌림 · hard 한도를 낮춘 셸 · `nginx -t`), 변이 넷(http 한도 뺌 · hard 로 안 낮춤 · mcp 갈래 끔 ·
   버퍼 안 붙임) 모두 붉게 잡힘.
+
+## NX-3 cae00 답(11-24)
+
+- 11-23 23:23 에 생성된 conf 에 http 레벨 600s · `worker_rlimit_nofile 65536` · `*-mcp` 스트리밍 묶음을 손으로 넣고 `nginx -t` 뒤 reload 했다. 받은 편지함 덧붙임
+  (Q28)은 그 글을 받은 뒤에 붙어 답이 없다 — 다음 update-all 이 이 판(`4cf8e6ff` 뒤)을 받으면 생성기가 같은 값을 만든다. 손으로 다시 넣으면 `duplicate` 로
+  `nginx -t` 가 실패한다 — 다음 라운드 글에 Q28 을 다시 싣는다.

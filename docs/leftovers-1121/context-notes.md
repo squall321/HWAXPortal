@@ -505,3 +505,28 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
   `build-all-to-drive.sh portal` 을 함께 한다.
 - 마지막 드리프트 — app-data(올리지 않음) · ste(ste-06 이 받은 뒤 올리려 붙든 로컬 커밋)만 ✗. 동결 — 판이 실린 세션 전부(허브 앱 · 코드 리포 · ste 둘 · 브리지 ·
   pyKooCAE · KooD3plotReader · 포털 71). 해제는 Q27 답 뒤. 그 뒤 실을 것 — Post v54(새 이름 규칙 첫 판) · ste ⑧ ⑨ · DynaForge · StepForge D-709 등.
+
+## L21-28 cae00 답(11-24) — 받은 편지함 2026-11-23 넷째 라운드
+
+답 원문은 리포에 두지 않는다(받은 편지함 README). 다른 폴더로 간 답 — Q19 는 `../smarttwin-pipeline/context-notes.md` SP-5, Q21 은
+`../expert-ontology/context-notes.md` EO-18, Q22 · Q25 는 `../ste-stepforge-1117/context-notes.md` SS-12, nginx 손 넣기는 `../request-1123/context-notes.md` NX-3.
+
+- **Q27 update-all** — 끝 코드 0(11-23 20:39 → 22:04). ✗ 는 §1b 사전 백업의 KooRemapper 되돌림 사본(일부러 멈춘 `koorm_postgres`)뿐 — 끝 요약에서는 비치명
+  ⚠. ○ — 박스 훅 없음 · 있는데 안 켠 것 열(동결 step_forge · ste 옵션 없이 routine 등) · 서비스 단계 뒤 여섯(StepForge 단언 쓰기 비밀 없음 · SmartTwinMCP 미등재 ·
+  Gatus · Phoenix · LLM/GPU 수집기 · 목록 밖에 둔 쓰기). 비치명 ⚠ 14(백업 1 · 새 앱 넷 영역 · 인자 설명 · 이름 겹침 11 · 운영자 앱 없음 1 · heax_demo_nextjs 1).
+  **「동결을 풀어도 된다」 예** — ste · 브리지는 ste 가 바뀔 때까지 묶어 둔다(SS-12).
+- **Q20 DynaForge 3차 7판** — 운영 노드 health `revision` `6ac0f7e` · `revision_matches_binary` true · 바이너리 `139036f2…` 네 사본 같음 · 도구 120 · op 65 ·
+  battery 뒤 「Negative Jacobian」 0줄(솔리드 29,197 · 다시 돌려 바이트까지 같음) · §1-13 사슬 통과 · §1-14 권취 강체 통과. 못 봄 — smoke.py(8700 은 멈춘 사본, 운영엔
+  안 돌림) · 이관 · 화면 · §1-14 의 입력을 지어야 하는 셋. 점검 문서가 6판 값 · 8700 을 가리키는 것은 개발 쪽 넘김 7.
+- **Q23 동기화 원천 셋** — 셋 다 enabled false(L21-25 결정 적용).
+- **Q24 DocForge 0.3.2** — `/health` version 0.3.2 · `docforge_list_inputs` 에 `note` 칸 있음(예) · build commit `bfa1977`.
+- **Q26 고친 넷** — 운영자 미리보기 §3 · §6 rc 0(새로 0 · 고침 0 · 그대로 21 · 건너뜀 1), §3 이 병합에 덮인 운영자 넷을 HP-64 로 되돌림. 「목록 밖 쓰기」 · 「읽기를
+  쓰기로」 0줄, StepForge 온톨로지 셋은 ○. 「· 일부 he-expert-risk」 줄은 update-all 이 옮기지 않아 로그에 없었다(넘김 1). 이용 통계 첫 접기 **20.9초**(원천 다섯 각 1일).
+- **Q28(nginx)** — 그 글을 받은 뒤에 덧붙여 답 없음. 손으로 넣은 conf 는 그대로(NX-3).
+- **개발 쪽에 넘길 것 열** — 1 update-all 이 「· 일부 …(선택 앱)」 줄을 옮기지 않음 · 2 deploy-all 이 멈춘 KooRemapper 사본을 다시 띄움(HP-66 · HP-67) · 3 동결 경로의
+  ✓ 받기 줄과 ○ 되돌림 줄이 어긋나 보임(ctime 바뀜) — 셋은 포털(가지 `wt1124/cae00-fixes`). 4 `list_tool_apps` 의 StepForge · DynaForge `build` 칸 없음 — 허브가
+  띄운 앱에만 생기는 칸이고 cae00 은 둘을 운영 노드로 넘겨 띄우지 않아 설계대로 빈다(채우려면 앱에 판을 묻는 장치 — 사용자 결정 거리). 5 `part_outline_2d`
+  reddish_geometry 기본 응답 147,749자(챗 자르기 60,000) — StepForge. 6 허브 매니페스트의 DynaForge 설명 「47개 op」(실제 65) — HEAXHub `integrations/kooremapper` ·
+  `kooremapper-mcp` 매니페스트. 7 · 8 KooRemapper 점검 문서가 멈춘 사본 · 6판 값을 가리킴 · 릴리스 `manifest.json` 의 build_info 잘림 — KooRemapper. 9 운영
+  StepForge 에서 materialtwin reachable false(주소 비어 기본값) — StepForge · 박스 설정. 10 옛 도구 이름(`stepforgeprod_*` · `dynaforgeprod_*`) — 포털 코드 ·
+  스크립트에는 없고 날짜 박힌 기록에만 남아 고칠 것 없음(기록은 그때의 사실).
