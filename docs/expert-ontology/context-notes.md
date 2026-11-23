@@ -96,3 +96,84 @@ mech 83/4,509 — 2 ~ 3%). 도메인을 가르지 못한다. dev 에서 실제�
 게이트웨이를 거친 `recommend_agents(onto=…)` 한 번(dev 에는 허브가 없어 신호가 늘 0 이고, 이 세션의 게이트웨이 토큰이 만료돼 있었다) · 진짜 SP 의 `objects_list` ·
 `objects_resolve_many` 답(탐침과 같은 가짜 — SP 스키마를 흉내 낸 것)으로 지은 사전.
 
+**EO-15 cae00 답(11-23) — 받은 편지함 2026-11-21 Q1 ~ Q5 · 2026-11-03 Q1 ~ Q3.** cae00 이 11-23 업데이트 라운드 뒤 할 일 1 ~ 3 을 돌리고 4 는 셈만 했다
+(`--write` 하지 않음 — 그쪽 사용자 결정). `SEAT_ONTO` 는 켜지 않았다. 새 표 넷은 처음 짓는 것이었다(돌리기 전 행 0 — 표 넷을 CSV 로 받아 두었다).
+답 원문은 리포에 두지 않는다(받은 편지함 README) — 수만 옮긴다.
+- **낱말 짓기(Q1)** — `onto.sh build` 끝 코드 0 · 약 13초 · 카드 61,523 · `rows` 254,670(keyword 186,420 · property 62,215 · card 6,035) · `by_type` failure_mode 3,347 ·
+  material_property 2,688. dev(EO-13 — 254,668 · 186,420 · 62,218 · 6,030 · 3,342 · 2,688)와 거의 같다.
+- **사전만 지어 보기(Q2)** — 사전 줄 23,315 · `⚠` 없음. 모든 타입이 exact 뿐이다(candidates · none · exact_no_key 0).
+
+  | 타입 | 객체 | 이름 | exact |
+  |---|---:|---:|---:|
+  | criterion | 963 | 1,926 | 1,926 |
+  | failure_mode | 120 | 1,077 | 1,077 |
+  | material_property | 278 | 1,148 | 1,148 |
+  | plm_model | 5,903 | 5,903 | 5,903 |
+  | plm_project | 635 | 1,252 | 1,252 |
+  | plm_task | 5,663 | 8,926 | 8,926 |
+  | sim_capability | 151 | 558 | 558 |
+  | test_item | 1,048 | 2,525 | 2,525 |
+
+- **잇기(Q3)** — 끝 코드 0 · 482.6초(약 8분 — dev 시험 233.5초의 두 배 남짓) · 허브 호출 `objects_list` 78 · `objects_resolve_many` 51 · 절 1,100,119개를 훑음 ·
+  사전 지문 `5328586a8d59ed8b`. **이어진 카드 50,294 / 61,523(81.7%) · 연결 345,344.** 사전에 실제로 든 객체는 plm_project 612(목록 635) · plm_task 5,605
+  (목록 5,663)이고 나머지 타입은 목록 수와 같다. AIDataHub 쪽 `onto_terms` 에 남은 줄 2,895. 사전 — 쓴 낱말 22,288 · 짧아서 뺌 636 · 뺄 낱말 0 · 겹쳐서 뺌 55.
+
+  | 타입 | 이어진 카드 | 몫(/ 61,523) | 이어진 객체 |
+  |---|---:|---:|---:|
+  | failure_mode | 39,237 | 63.8% | 113 |
+  | test_item | 34,719 | 56.4% | 185 |
+  | plm_project | 29,930 | 48.6% | 140 |
+  | material_property | 27,276 | 44.3% | 276 |
+  | sim_capability | 15 | 0.02% | 3 |
+  | plm_model · plm_task · criterion | 0 | 0 | 0(사전에는 들었다) |
+
+  | 자리 | 연결 | 몫 |
+  |---|---:|---:|
+  | section | 299,822 | 86.8% |
+  | property | 21,158 | 6.1% |
+  | summary | 11,514 | 3.3% |
+  | title | 10,316 | 3.0% |
+  | keyword | 2,534 | 0.7% |
+
+  | 문서 종류 | 이어진 / 전체 | 몫 |
+  |---|---:|---:|
+  | (종류 없음) | 19 / 20 | 95.0% |
+  | expert_knowledge_card | 16,064 / 25,865 | 62.1% |
+  | lessons_learned | 3 / 3 | 100.0% |
+  | manual | 10 / 12 | 83.3% |
+  | material_card | 2,686 / 2,688 | 99.9% |
+  | paper | 25,628 / 26,224 | 97.7% |
+  | patent | 4,887 / 5,409 | 90.3% |
+  | report | 1 / 1 | 100.0% |
+  | simulation_report | 1 / 1 | 100.0% |
+  | standard | 758 / 867 | 87.4% |
+  | whitepaper | 237 / 427 | 55.5% |
+
+  답이 짚은 것 — `section` 이 연결의 86.8% 이고, 문서 종류마다 100% 에 붙지는 않는다(55.5% ~ 99.9%). 너무 흔한 이름이 섞였는지는 사람이 `report.json` 상위를
+  봐야 안다(11-03 Q3 — 아래).
+- **연결표(Q4 — 셈만, 적지 않았다)** — 도메인 55 가운데 줄이 서는 도메인 **49**(문턱 10% · 20장) · 문턱 아래 64 · 어휘표에 없는 타입 0 · 운영자 도메인 0.
+  큰 도메인(mech · pcb · sim · rel · pwr · disp · passive · mem · cam · material · sw · xd · soc · rf · sh · std)은 failure_mode · material_property · plm_project ·
+  test_item 넷이 서고, 작은 웨어러블 · 인체공학 도메인은 failure_mode · test_item 위주다(예 — aud failure_mode 46/59, xd 는 4,652장에 failure_mode 1,618 ·
+  material_property 559 · plm_project 1,014 · test_item 1,401). 도메인별 줄 전부는 사용자에게 건넨 답 원문에 있다. dev 에서 카드 구조만으로 섰던 두 줄(EO-10)과 달리
+  허브에 이은 연결 셈으로 선 줄이다.
+- **11-03 Q1 ~ Q3(Q5)** — Q1(표본 300장 탐침 O0a)은 따로 돌리지 않았다 — 위 전체 잇기(카드 61,523장)가 그 자리를 채운다. Q2 — 부품 슬러그는 **`part`**(정본 허브
+  타입 76개 가운데 · 같은 계열로 `part_family` · `part_category` 도 있다). 목록 줄에 별칭이 온다고 본다 — 이름 수가 객체 수의 두 배(이름 + 키)를 넘는 타입이 있다
+  (failure_mode 120 → 1,077 · material_property 278 → 1,148 · part 235 → 1,773, plm_model 은 이름 = 객체 수). `--types part` 로 사전만 — 객체 235 · 이름 1,773 ·
+  exact 1,773(candidates · none · exact_no_key 0) · 사전 지문 `206ab2ee7d320778`. part 를 더한 잇기는 돌리지 않았다(잇기는 허브 연결을 통째로 다시 써 지금 연결을
+  바꾼다 — 사용자가 정한다). Q3(뺄 낱말)은 사람 몫이라 하지 않았다 — 박스의 `onto_rules.json` 은 리포 기본(stop 15) · 덧씌우기 `onto_rules.local.json` 없음 · 위
+  사전에서 뺄 낱말에 걸린 이름 0.
+- **정할 것으로 넘어온 것(답이 하지 않고 남긴 것)** — ① 연결표 적기(`persona-domains-build.py --write`) ② 고르기 스위치(`SEAT_ONTO` — 관문 G-EO) ③ part 를 더한 잇기
+  ④ 뺄 낱말(`report.json` 상위를 사람이 훑기 — 11-03 Q3) ⑤ `section` 몫과 연결 0 인 셋(plm_model · plm_task · criterion)을 두고 뺄 낱말 · 동의어를 어떻게 할지
+  (답의 「개발 쪽에 넘길 것」 7 — `../leftovers-1121/context-notes.md` L21-24). ② · ③ 의 다음 걸음은 EO-16 · EO-17 이 정했고, ④ 와 `rank` 켜기는 그림자 수를 본
+  뒤다(EO-16). ① · ⑤ 는 아직 정하지 않았다.
+
+**EO-16 사용자 결정 11-23 — G-EO1(범위)은 통과, 다음 걸음은 그림자로 재기(권장안).** EO-15 의 수(failure_mode 카드 39,237 · test_item 34,719 / 61,523 — PLAN 3.1
+의 20% 문턱을 넘는다)로 G-EO1 을 넘긴다. 다음은 cae00 에이전트 서버 `.env` 에 `SEAT_ONTO=shadow` · `PERSONA_SHADOW_LOG=1`(server-setup 6절)이다 — 고르기는 그대로
+두고 신호와 들고 나는 전문가만 기록해 G-EO2(신호)를 본다. 뺄 낱말 손보기 · `rank` 켜기는 그 수를 본 뒤다. cae00 에 넣는 걸음은 받은 편지함 다음 라운드 글(본
+세션)에 싣고, 이 폴더는 결정 · 체크리스트만 맞춘다.
+
+**EO-17 사용자 결정 11-23 — part 타입은 그림자 재기 뒤에 더한다(권장안).** 그림자 기록이 지금 연결(EO-15 의 여덟 타입)로 먼저 서야 연결이 바뀐 몫과 신호의 몫이
+섞이지 않는다. 더할 때 알아 둘 것 — `card-entity-bind.py --types` 는 기본 타입 목록(어휘표 `types` 여덟)을 **바꾼다**(더하지 않는다). 잇기는 그 허브의 연결을 지우고
+다시 쓰므로(AIDataHub `onto_svc` — 허브마다 `record_entities` · `onto_terms` 를 지운 뒤 넣는다) `--types part` 만 주면 연결이 part 만 남는다. 기본 여덟과 `part` 를 함께
+적는다(server-setup 3절).
+
