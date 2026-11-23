@@ -35,6 +35,7 @@ entries:
       - "포털 백엔드에 GET /auth/pat/offload 를 더했습니다 — 에이전트 서버 /health 의 offload(delegate · draft · transform · result_ask)와 게이트웨이 /health 의 result_refs.enabled 를 읽어 칸마다 참 · 거짓 · 모름(null)으로 줍니다. 로그인이 필요합니다."
       - "update-all 3.5 가 서버 LLM 에 일 맡기기 넷(A 위임 · B 결과 손잡이와 묻기 · C 긴 글 · D 변환) 가운데 안 켠 것을 ○ 로 남기고 끝 요약 '있는데 안 켠 것' 에 켜는 법과 함께 다시 냅니다. 스위치는 에이전트 서버 .env 의 DELEGATE_ENABLED · DRAFT_ENABLED · TRANSFORM_ENABLED · RESULT_ASK_ENABLED 와 게이트웨이 provision.env 의 GATEWAY_RESULT_REFS 에서 읽고 고쳐 쓰지 않습니다."
       - "에이전트 서버 env 킷(infra/env-kits/agent-server.env)에 네 스위치를 주석 줄로 적었습니다(기본 꺼짐 · 켜는 법 · 계약 문서 docs/token-saving/offload-v2.md). 주석이라 박스의 .env 에 옮겨 적히지 않습니다."
+      - "정문(nginx)이 게이트웨이의 내부 창구 /mcp-gw/internal/… (결과 손잡이 원문 — 서비스 자격 전용)을 무인증 진단 길(health · tools-map · refresh · conn-invalidate)과 함께 404 로 막습니다. HTTP 템플릿과 TLS 블록 둘 다이고, 게이트웨이도 X-Forwarded-* 가 실린 요청을 거절하므로 겹쳐 막는 것입니다. 반영은 nginx conf 를 다시 만드는 실행(start.sh · update-all)입니다."
   - date: 2026-11-24
     title: 기술 — 설치 배치의 사내 프록시를 박스 설정에서 받습니다
     tag: 기술
