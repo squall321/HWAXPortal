@@ -400,3 +400,9 @@ AIDataHub 794(기준선 실패 35 그대로 — 지문으로 견줌). 포털은 
   `269f8c4` 그대로) · AIDH 조각 목록(cae00 이 전체 덤프 길)만 남았다. 허브 상태 파일의 `commit` 은 **떠 있는 인스턴스**의 판이라 SIF 를 다시 지었는지 보는 데
   쓰면 안 된다(드리프트의 「dev 는 main 끝 X 로 지었다」 를 본다 — 45분을 헛기다렸다). 올리기 전 SIF 안의 판 글(`SERVER_VERSION`)을 원본과 맞댔다(MaterialTwin
   세션 권고 — 열쇠 검사는 def 의 커밋만 본다).
+- **다음 라운드에 실을 것(11-22 밤 ~ 11-23, cae00 수신 뒤)** — ① 이 세션의 묶음(포털 `wt1122/expert-teams` + 문서 `22009b6c` · 에이전트 서버 `wt1122/helper-knowledge` +
+  `wt1122/routine-team` + 문구 고침 `746eae2` — 통합 판 회귀 에이전트 4,921 · 포털 5,635(알려진 셋) · 게이트웨이 1,192 통과, 아직 안 올림) ② StepForge D-708(11-21 재시험
+  SF-1 ~ SF-12 · SP 0.4.98 — 사용자 결정 「이번엔 지금 판 · D-708 은 다음 라운드」) ③ 전처리 Pre v141(SIF 파일 sha256 `9b81405b…` · tar v141 `5035a761…` — pyKooCAE
+  `dfed7b3`) · 후처리 Post v53(헤드리스 `8a08d0c2…` · GUI `1cf90256…` · tar v53 `40f9fd02…` — KooD3plotReader `9b3c081`) — 헤드 · NFS 는 이미 새 판, Drive · 메일은
+  수신 알림 뒤 pyKooCAE 가 보낸다 ④ 브리지(KooSolverContainer) — 사용자 결정 넷(붉어짐 = 열화 분율 P/(P+P_ox) · ST-15 습도에 따른 산소분압 + 층별 온도 의존 ·
+  새 해석 스크립트와 브리지 SIF 는 스테이징 먼저 · material_preset 무시 결함 고침) ⑤ DynaForge 3차 6판(그 세션의 사용자 결정 다섯) ⑥ ste 의 로컬 커밋(ST-3 주소만 · ⑩ ~ ⑫).
