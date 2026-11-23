@@ -16,7 +16,14 @@ export interface CertStep {
 
 export interface Snippets {
   // proxy — 포털이 PAT 발급 응답(fallback_proxy)으로 준 사내 프록시. 비면 npm 레지스트리 폴백 없이 직결만 본다.
-  buildSetupBat: (token: string, name: string, pem: string | null, proxy: string | null) => string;
+  // offload — 토큰 화면의 '서버 LLM 에 일 맡기기' 칸(기본 끔, docs/token-saving/offload-v2.md 3-4). 끄면 전에 넣은 것을 걷는다.
+  buildSetupBat: (
+    token: string,
+    name: string,
+    pem: string | null,
+    proxy: string | null,
+    offload?: boolean,
+  ) => string;
   claudeCodeSnippet: (token: string) => string;
   claudeCodeSnippetSelfSigned: (token: string, certPath: string) => string;
   claudeDesktopSnippet: (token: string, certPath: string | null) => string;
@@ -72,6 +79,72 @@ export function makeSnippets(origin: string): Snippets {
   const VIEW_PORTAL = 'portal';
   const VIEW_ARG = ` --header "${VIEW_NAME}: ${VIEW_PORTAL}"`;
   const VIEW_ARG_REMOTE = ` --header "${VIEW_NAME}:${VIEW_PORTAL}"`;
+  // 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4) — 설정 배치의 선택 칸(기본 끔)을 켜면 보기 머리 옆에 결과 손잡이
+  // 머리를 단다. 게이트웨이는 박스 스위치(GATEWAY_RESULT_REFS)와 이 머리가 둘 다 있는 연결에만 큰 결과를 머리 + ref 로 준다(1판 TS-3).
+  const RESULT_NAME = 'X-HWAX-Result';
+  const RESULT_REF = 'ref';
+  const RESULT_ARG = ` --header "${RESULT_NAME}: ${RESULT_REF}"`;
+  const RESULT_ARG_REMOTE = ` --header "${RESULT_NAME}:${RESULT_REF}"`;
+  // 칸이 켜졌을 때 Claude Code 에 까는 것 — 사용자 명령 둘과 사용자 CLAUDE.md 의 규칙 묶음. 끄고 다시 돌리면 걷는다.
+  //   명령 파일은 끝 줄의 OFFLOAD_MARK 로 우리 것인지 가른다(같은 이름의 사람 파일은 덮지도 지우지도 않는다).
+  //   CLAUDE.md 는 표지 두 줄 사이만 쓴다 — 그 밖의 줄은 바이트 그대로 둔다.
+  const OFFLOAD_MARK = 'hwax-offload';
+  const OFFLOAD_BEGIN = '<!-- hwax-offload:begin -->';
+  const OFFLOAD_END = '<!-- hwax-offload:end -->';
+  const OFFLOAD_FOOT = `<!-- ${OFFLOAD_MARK}: 포털 설정 배치가 만든 파일 — 토큰 화면의 '서버 LLM 에 일 맡기기' 칸을 끄고 배치를 다시 돌리면 지운다 -->`;
+  const OFFLOAD_ASK = [
+    '---',
+    'description: 여러 도구를 도는 조사를 HWAX 서버 LLM 에 맡긴다(위임 — 토큰 절약)',
+    'argument-hint: <맡길 조사 한 줄>',
+    '---',
+    '아래 조사를 직접 도구를 여러 번 불러 풀지 말고 HWAX 서버에 맡긴다 — hwax MCP 의 위임 도구를 쓴다.',
+    '',
+    '과제: $ARGUMENTS',
+    '',
+    '1. `delegate_start(task=<위 과제>)` 를 부른다 — 받은 job_id 를 적어 둔다. 범위를 좁힐 앱이 분명하면 `apps` 도 준다.',
+    '2. `delegate_status(job_id, wait_s=120)` 을 끝날 때까지 되풀이한다 — 서버가 끝나거나 바뀔 때까지 기다렸다 답한다. 기다리는 동안 같은 조사를 직접 하지 않는다.',
+    '3. 끝나면 `delegate_result(job_id)` 로 답 · 근거 · 숫자 대조를 받아 사람에게 전한다. 숫자 대조가 어긋났다는 표시(numbers.mismatched)는 고치거나 빼지 말고 그대로 전한다.',
+    '4. 위임 도구가 없으면(그 박스에서 꺼져 있다) 그렇다고 말하고 멈춘다 — 직접 조사할지는 사람에게 묻는다.',
+    '',
+    OFFLOAD_FOOT,
+    '',
+  ].join('\n');
+  const OFFLOAD_DRAFT = [
+    '---',
+    'description: 긴 글(보고서 · 메모 · 회의록의 절)을 HWAX 서버 LLM 이 쓰게 한다(토큰 절약)',
+    'argument-hint: <개요 — 쓸 절 · 요점 · 문체>',
+    '---',
+    '아래 개요의 글을 직접 길게 쓰지 말고 hwax MCP 의 `draft_section` 으로 서버가 쓰게 한다.',
+    '',
+    '개요: $ARGUMENTS',
+    '',
+    '1. 근거는 원문을 다시 읽어 붙이지 말고 손잡이로 넘긴다 — 이 대화에서 받은 큰 결과의 ref 나 `{tool, args}` 를 `refs` 에 싣는다.',
+    '2. `draft_section(outline=<개요>, refs=[...], style="report")` 를 부른다 — style 은 report · memo · minutes · plain 가운데 하나, 길이를 정하려면 target_chars.',
+    '3. 받은 draft 를 사람에게 보인다. 숫자 대조가 어긋났다는 표시(numbers)는 고치거나 빼지 말고 그대로 전한다.',
+    '4. `draft_section` 이 없으면(그 박스에서 꺼져 있다) 그렇다고 말하고 멈춘다 — 직접 쓸지는 사람에게 묻는다.',
+    '',
+    OFFLOAD_FOOT,
+    '',
+  ].join('\n');
+  // CLAUDE.md 표지 사이의 본문 — 표지 줄은 배치의 PowerShell 이 붙인다(지울 때 같은 상수로 찾는다).
+  const OFFLOAD_RULES = [
+    '## HWAX — 서버 LLM 에 일 맡기기(토큰 절약)',
+    '',
+    "포털 설정 배치가 넣은 규칙이다 — 토큰 화면의 '서버 LLM 에 일 맡기기' 칸을 끄고 배치를 다시 돌리면 표지 두 줄 사이가 걷힌다. 이 사이를 고쳐도 다음 실행 때 덮인다.",
+    '',
+    '- 큰 결과는 ref 로 받는다 — hwax 도구 결과가 머리 + ref 로 오면 원문 전체를 받지 말고 `result_ask(ref, question)` 로 묻는다. 원문의 한 부분이 꼭 필요할 때만 `result_get(ref, page)` 로 쪽을 받는다.',
+    '- 여러 도구를 도는 조사는 `delegate_start` 로 서버에 맡기고 `delegate_status(job_id, wait_s)` → `delegate_result(job_id)` 로 받는다(명령 `/hwax-ask`).',
+    '- 긴 글(보고서 · 메모 · 회의록의 절)은 `draft_section` 으로 서버가 쓰게 한다(명령 `/hwax-draft`).',
+    '- 숫자 대조가 어긋났다는 표시(numbers.mismatched 등)는 고치거나 빼지 말고 그대로 사람에게 전한다.',
+    '- 이 도구들이 없으면(그 박스에서 꺼져 있다) 종전처럼 직접 한다.',
+  ].join('\n');
+  // 배치에 글을 싣는 길 — base64 는 [A-Za-z0-9+/=] 뿐이라 cmd 의 set 줄과 PowerShell 어디에도 걸리지 않는다(% ^ & " < > 와 줄바꿈을 걱정하지 않는다).
+  //   UTF-8 바이트를 싣고 PowerShell 이 UTF-8 로 푼다 — 콘솔 코드페이지와 무관하다.
+  const b64 = (s: string): string => {
+    let bin = '';
+    for (const c of new TextEncoder().encode(s)) bin += String.fromCharCode(c);
+    return btoa(bin);
+  };
 
   // 인증서 자리 — 배치와 화면의 '직접 설정' 안내가 같은 파일을 가리킨다(%USERPROFILE% 은 cmd 가 푼다).
   const CERT_DIR = '%USERPROFILE%\\.hwax';
@@ -105,8 +178,10 @@ export function makeSnippets(origin: string): Snippets {
   /** `$m`(mcpServers 사전)의 hwax 항목을 고친다 — 이미 있으면 그것을 바탕으로(10-20 요청 4, TB-D3).
    * 토큰(AUTH)과 우리가 정하는 칸(명령 · 주소)만 바꾸고 손으로 넣은 env 는 남긴다. NO_PROXY · NODE_EXTRA_CA_CERTS 를 이미 적어 뒀으면 그 값을
    * 쓰되, 예전 배치가 넣은 포털 인증서 경로만 회사 인증서 묶음으로 바꾼다. 토큰 · 경로는 환경변수로만 받는다(HWAX_AUTH · HWAX_CERT ·
-   * HWAX_NOPROXY) — 명령줄에 실으면 프로세스 목록에 남는다. withType 은 Claude Code 항목(`type: stdio`)이고 Desktop 항목에는 없다. */
-  function psMergeHwax(pem: boolean, withType: boolean): string {
+   * HWAX_NOPROXY) — 명령줄에 실으면 프로세스 목록에 남는다. withType 은 Claude Code 항목(`type: stdio`)이고 Desktop 항목에는 없다.
+   * offload(서버 LLM 에 일 맡기기 칸)를 켜면 결과 손잡이 머리를 단다. 끄면 stdio 는 인자를 통째로 다시 쓰므로 저절로 빠지고, http 는 남은
+   * 머리를 걷는다(칸을 켰다 끈 PC — 손으로 남긴 다른 머리는 그대로). */
+  function psMergeHwax(pem: boolean, withType: boolean, offload: boolean): string {
     const copy = (src: string, dst: string) => `foreach($k in @(${src}.Keys)){${dst}[$k]=${src}[$k]};`;
     const head = [
       "$o=$null;if($m.ContainsKey('hwax')){$o=$m['hwax']};",
@@ -118,7 +193,7 @@ export function makeSnippets(origin: string): Snippets {
         withType ? "$e['type']='stdio';" : "if($e.ContainsKey('type')){[void]$e.Remove('type')};",
         "$e['command']='npx';",
         // [object[]] — 배열을 PowerShell 이 감싼 채로 넣으면 JavaScriptSerializer 가 배열이 아니라 객체로 쓴다. 맨 .NET 배열로 못 박는다.
-        `$e['args']=[object[]]@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}','--header','${VIEW_NAME}:${VIEW_PORTAL}');`,
+        `$e['args']=[object[]]@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}','--header','${VIEW_NAME}:${VIEW_PORTAL}'${offload ? `,'--header','${RESULT_NAME}:${RESULT_REF}'` : ''});`,
         "foreach($k in @('url','headers')){if($e.ContainsKey($k)){[void]$e.Remove($k)}};",
         `$v=${PS_DICT};if($e.ContainsKey('env') -and ($e['env'] -is [System.Collections.IDictionary])){${copy("$e['env']", '$v')}};`,
         "$v['AUTH']=$env:HWAX_AUTH;",
@@ -136,6 +211,9 @@ export function makeSnippets(origin: string): Snippets {
       `$h=${PS_DICT};if($e.ContainsKey('headers') -and ($e['headers'] -is [System.Collections.IDictionary])){${copy("$e['headers']", '$h')}};`,
       // 보기 머리는 손으로 넣은 것(대소문자 무시)이 있으면 그대로 둔다 — 그 연결만의 보기를 고른 것이다.
       `if(@($h.Keys | Where-Object {$_ -ieq '${VIEW_NAME}'}).Count -eq 0){$h['${VIEW_NAME}']='${VIEW_PORTAL}'};`,
+      // 결과 손잡이 머리 — 대소문자만 다른 것까지 먼저 걷고(사전이 대소문자를 가른다 — 둘이 겹쳐 남지 않게), 칸이 켜졌을 때만 다시 단다.
+      `foreach($k in @($h.Keys | Where-Object {$_ -ieq '${RESULT_NAME}'})){[void]$h.Remove($k)};`,
+      offload ? `$h['${RESULT_NAME}']='${RESULT_REF}';` : '',
       "$h['Authorization']=$env:HWAX_AUTH;$e['headers']=$h;$m['hwax']=$e;",
     ].join('');
   }
@@ -191,7 +269,13 @@ export function makeSnippets(origin: string): Snippets {
     `del "%${varName}%" >nul 2>nul`,
   ];
 
-  function buildSetupBat(token: string, name: string, pem: string | null, proxy: string | null): string {
+  function buildSetupBat(
+    token: string,
+    name: string,
+    pem: string | null,
+    proxy: string | null,
+    offload = false,
+  ): string {
     const CORP_PROXY = fallbackProxy(proxy);
     const certDir = CERT_DIR;
     const certFile = CERT_FILE;
@@ -442,7 +526,7 @@ export function makeSnippets(origin: string): Snippets {
       `if(-not ($j -is [System.Collections.IDictionary])){$j=${PS_DICT}};`,
       `if(-not $j.ContainsKey('mcpServers') -or -not ($j['mcpServers'] -is [System.Collections.IDictionary])){$j['mcpServers']=${PS_DICT}};`,
       "$m=$j['mcpServers'];",
-      psMergeHwax(!!pem, true),
+      psMergeHwax(!!pem, true, offload),
       "$n=$j.Count;$s='write';",
       '[System.IO.File]::WriteAllText($t, $js.Serialize($j), $u);',
       "$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));",
@@ -501,8 +585,8 @@ export function makeSnippets(origin: string): Snippets {
         '"%%HWAX_CLAUDE%%" mcp remove hwax -s local >nul 2>nul',
         '"%%HWAX_CLAUDE%%" mcp remove hwax -s user >nul 2>nul',
         pem
-          ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${caFile} -e NO_PROXY=${NOPROXY} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"${VIEW_ARG_REMOTE}`
-          : `"%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"${VIEW_ARG}`,
+          ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${caFile} -e NO_PROXY=${NOPROXY} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"${VIEW_ARG_REMOTE}${offload ? RESULT_ARG_REMOTE : ''}`
+          : `"%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"${VIEW_ARG}${offload ? RESULT_ARG : ''}`,
         'if errorlevel 1 exit /b 2',
         '"%%HWAX_CLAUDE%%" mcp get hwax >nul 2>nul',
         'if errorlevel 1 exit /b 1',
@@ -588,7 +672,7 @@ export function makeSnippets(origin: string): Snippets {
       `if(-not ($j -is [System.Collections.IDictionary])){$j=${PS_DICT}};`,
       `if(-not $j.ContainsKey('mcpServers') -or -not ($j['mcpServers'] -is [System.Collections.IDictionary])){$j['mcpServers']=${PS_DICT}};`,
       "$m=$j['mcpServers'];",
-      psMergeHwax(!!pem, false),
+      psMergeHwax(!!pem, false, offload),
       "$n=$j.Count;$t=$c+'.hwax-tmp';$s='write';[System.IO.File]::WriteAllText($t,$js.Serialize($j),$u);",
       `$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));if($r.Count -ne $n -or ${deskAuth} -cne $env:HWAX_AUTH){throw 'mismatch'};`,
       "$s='replace';[System.IO.File]::Copy($t,$c,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;Write-Host '            등록 완료'",
@@ -740,6 +824,103 @@ export function makeSnippets(origin: string): Snippets {
       'echo      codex 명령 없음 - 건너뜀',
       ':codex_done',
       '',
+    );
+
+    // ── [5b] 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4) ─────────────────────────
+    // 칸을 켜면 Claude Code 사용자 명령 둘(/hwax-ask · /hwax-draft)과 사용자 CLAUDE.md 의 규칙 묶음(표지 두 줄 사이)을 넣고, 끄면 걷는다.
+    // 자리는 Claude Code 의 규칙 — CLAUDE_CONFIG_DIR 이 있으면 그 아래, 없으면 <프로필 폴더>\.claude(위 ccjPs 의 폴더 D 와 같은 판정).
+    // 꺼진 배치의 걷기는 걷을 것이 있을 때만 말한다 — 칸을 켠 적 없는 PC 에서는 화면이 종전과 같다(그래서 꺼진 쪽은 머리 줄도 PowerShell 이 찍는다).
+    // 글(명령 · 규칙)은 base64 환경변수로 넘긴다(위 b64). 경로 · 조립은 PowerShell, Stop + exit 1, 예외는 단계와 종류만 찍는다(Code · Desktop 병합과 같다).
+    // CLAUDE.md 는 엄격한 UTF-8 로 읽는다 — 못 읽으면 건드리지 않는다(5.1 이 ANSI 로 읽은 글을 다시 쓰면 사람이 쓴 한글이 깨진다). BOM 은 있던 대로 둔다.
+    // 바꿀 때는 Code 설정과 같은 순서 — 백업(.hwax-bak) → 임시 파일에 쓰고 되읽어 확인 → 바꿔 넣기.
+    // ⚠ 이 줄에는 `!` 를 글자로 두지 않는다 — 지연 확장(레지스트리 DelayedExpansion)이 켜진 PC 의 cmd 는 한 줄 안의 `!…!` 짝을 변수로 풀어 그 사이를
+    //   지운다(표지 둘의 `<!--` 가 짝이 된다). 홀로 쓴 `!` 는 그 글자만 빠져 무해해 다른 줄은 그대로 둔다. PowerShell 이 $bg([char]33)로 짓는다.
+    const psBang = (s: string): string => `'${s.split('!').join("'+$bg+'")}'`;
+    const offPs = (on: boolean): string => {
+      const read = [
+        // $f 는 CLAUDE.md, $x 는 그 글(BOM 뺀), $w 는 다시 쓸 인코딩(BOM 이 있던 파일은 BOM 째로)
+        "$f=[System.IO.Path]::Combine($d,'CLAUDE.md');$x='';$w=$u;",
+        'if(Test-Path -LiteralPath $f){$bb=[System.IO.File]::ReadAllBytes($f);',
+        // 꺼진 배치 — 표지가 없으면 읽기부터 하지 않는다(UTF-8 이 아닌 파일이어도 칸을 켠 적 없는 PC 에서는 아무 말도 하지 않게)
+        on ? '' : 'if($u.GetString($bb).Contains($mb)){',
+        '$o=0;if($bb.Length -ge 3 -and $bb[0] -eq 239 -and $bb[1] -eq 187 -and $bb[2] -eq 191){$o=3;$w=New-Object System.Text.UTF8Encoding($true)};',
+        '$x=$v.GetString($bb,$o,($bb.Length - $o))',
+        on ? '};' : '}};',
+        "$i=$x.IndexOf($mb,$oc);$k=-1;if($i -ge 0){$k=$x.IndexOf($me,$i,$oc)};if($i -ge 0 -and $k -lt 0){$s='marker';throw 'marker'};",
+      ];
+      const write = [
+        "$s='backup';if(Test-Path -LiteralPath $f){Copy-Item -LiteralPath $f -Destination ($f+'.hwax-bak') -Force};[void][System.IO.Directory]::CreateDirectory($d);",
+        "$t=$f+'.hwax-tmp';$s='write';[System.IO.File]::WriteAllText($t,$y,$w);",
+        "$s='verify';if([System.IO.File]::ReadAllText($t,$u) -cne $y){throw 'mismatch'};",
+        "$s='replace';[System.IO.File]::Copy($t,$f,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;$t=$null;",
+      ];
+      const body = on
+        ? [
+            "$s='commands';",
+            "foreach($p in @(@('hwax-ask',$env:HWAX_OFF_ASK),@('hwax-draft',$env:HWAX_OFF_DRAFT))){$f=[System.IO.Path]::Combine($cd,$p[0]+'.md');",
+            `if((Test-Path -LiteralPath $f) -and -not ([System.IO.File]::ReadAllText($f,$u).Contains('${OFFLOAD_MARK}'))){Write-Host ('          ['+$bg+'] 같은 이름의 다른 파일이 있어 두었습니다: '+$f);continue};`,
+            '[void][System.IO.Directory]::CreateDirectory($cd);',
+            '[System.IO.File]::WriteAllText($f,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p[1])),$u);',
+            "Write-Host ('          명령: '+$f)};",
+            "$s='read';",
+            ...read,
+            // 줄바꿈은 그 파일의 것을 따른다 — LF 만 쓰는 파일이면 LF, 아니면 CRLF(새 파일 포함)
+            "$s='rules';$nl=$crlf;if($x.Contains($lf) -and -not $x.Contains($crlf)){$nl=$lf};",
+            '$r=[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:HWAX_OFF_RULES)).Replace($lf,$nl);$b=$mb+$nl+$r+$nl+$me;',
+            // 표지가 있으면 그 사이만 바꾸고, 없으면 끝에 붙인다(끝 줄에 줄바꿈이 없으면 하나 넣고)
+            'if($i -ge 0){$y=$x.Substring(0,$i)+$b+$x.Substring($k+$me.Length)}else{$y=$x;if($y.Length -gt 0 -and -not $y.EndsWith($lf,$oc)){$y+=$nl};$y+=$b+$nl};',
+            'if($y -cne $x){',
+            ...write,
+            '};',
+            "Write-Host ('          규칙 묶음: '+$f);exit 0",
+          ]
+        : [
+            "$g=@();$s='commands';",
+            // 우리가 만든 명령만 지운다 — 끝 줄의 표지로 가른다(같은 이름의 사람 파일은 그대로)
+            `foreach($n in @('hwax-ask','hwax-draft')){$f=[System.IO.Path]::Combine($cd,$n+'.md');if((Test-Path -LiteralPath $f) -and ([System.IO.File]::ReadAllText($f,$u).Contains('${OFFLOAD_MARK}'))){Remove-Item -LiteralPath $f -Force;$g+=$f}};`,
+            "$s='read';",
+            ...read,
+            // 표지 두 줄과 그 사이, 끝 표지 뒤의 줄바꿈 하나를 걷는다 — 그 밖은 바이트 그대로. 남는 것이 없으면(우리 묶음뿐이던 파일) 파일을 지운다(백업은 남긴다).
+            'if($i -ge 0){$z=$x.Substring($k+$me.Length);if($z.StartsWith($crlf,$oc)){$z=$z.Substring(2)}elseif($z.StartsWith($lf,$oc)){$z=$z.Substring(1)};$y=$x.Substring(0,$i)+$z;',
+            "if($y.Length -eq 0){$s='backup';Copy-Item -LiteralPath $f -Destination ($f+'.hwax-bak') -Force;$s='remove';Remove-Item -LiteralPath $f -Force}else{",
+            ...write,
+            '};$g+=$f};',
+            "if($g.Count -gt 0){Write-Host '  [5b] 서버 LLM 에 일 맡기기 - 칸이 꺼져 있어 전에 넣은 명령 · 규칙을 걷었습니다';foreach($q in $g){Write-Host ('          '+$q)}};exit 0",
+          ];
+      return [
+        "$ErrorActionPreference='Stop';$s='path';$t=$null;$f=$null;$bg=[string][char]33;",
+        'try{',
+        "$h=[Environment]::GetFolderPath('UserProfile');if(-not $h){$h=$env:USERPROFILE};",
+        "$d=[System.IO.Path]::Combine($h,'.claude');if($env:CLAUDE_CONFIG_DIR){$d=$env:CLAUDE_CONFIG_DIR};",
+        "$cd=[System.IO.Path]::Combine($d,'commands');",
+        '$u=New-Object System.Text.UTF8Encoding($false);$v=New-Object System.Text.UTF8Encoding($false,$true);$oc=[StringComparison]::Ordinal;',
+        `$mb=${psBang(OFFLOAD_BEGIN)};$me=${psBang(OFFLOAD_END)};$lf=[string][char]10;$crlf=[string][char]13+[char]10;`,
+        ...body,
+        '}catch{if($t){Remove-Item -LiteralPath $t -Force -EA SilentlyContinue};',
+        "if($s -eq 'marker'){Write-Host ('     ['+$bg+'] CLAUDE.md 에 시작 표지만 있고 끝 표지가 없어 건드리지 않았습니다: '+$f)}",
+        "elseif($s -eq 'read'){Write-Host ('     ['+$bg+'] CLAUDE.md 를 UTF-8 로 읽지 못해 건드리지 않았습니다: '+$f)}",
+        "else{Write-Host ('     '+$s+' failed: '+$_.Exception.GetType().Name)};exit 1}",
+      ]
+        .filter((l) => l)
+        .join(' ');
+    };
+    L.push(
+      ...(offload
+        ? [
+            'echo  [5b] 서버 LLM 에 일 맡기기 - Claude Code 명령 /hwax-ask · /hwax-draft 와 CLAUDE.md 규칙 묶음',
+            `set "HWAX_OFF_ASK=${b64(OFFLOAD_ASK)}"`,
+            `set "HWAX_OFF_DRAFT=${b64(OFFLOAD_DRAFT)}"`,
+            `set "HWAX_OFF_RULES=${b64(OFFLOAD_RULES)}"`,
+            `powershell -NoProfile -ExecutionPolicy Bypass -Command "${offPs(true)}"`,
+            'if errorlevel 1 echo      [!] 명령 · 규칙을 다 넣지 못했습니다 - 위 메시지 확인. MCP 등록은 그대로 끝났습니다.',
+            'echo          Claude Code 를 새로 열면 /hwax-ask · /hwax-draft 가 보입니다. 이 포털 박스에서 기능이 꺼져 있으면 명령이 그렇다고 말하고 멈춥니다.',
+            'echo          걷으려면 토큰 화면에서 칸을 끄고 받은 배치를 다시 실행하세요 - CLAUDE.md 는 표지 두 줄 사이만 걷습니다.',
+            '',
+          ]
+        : [
+            `powershell -NoProfile -ExecutionPolicy Bypass -Command "${offPs(false)}"`,
+            'if errorlevel 1 echo      [!] 전에 넣은 서버 LLM 명령 · 규칙을 걷지 못했습니다 - 위 메시지 확인. MCP 등록은 그대로 끝났습니다.',
+          ]),
     );
 
     L.push(

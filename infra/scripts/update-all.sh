@@ -1550,6 +1550,36 @@ PY
 else
   hwax_skip "agent-server .env 보정" "HWAXAgentServer 리포가 없다(챗·심의 스택)" "../HWAXAgentServer 를 클론하고 재실행"
 fi
+# ── 3.5e) 서버 LLM 에 일 맡기기 A ~ D(토큰 절감 2판 — docs/token-saving/offload-v2.md · TS-6) — 안 켠 것만 ○ ──────────────────────
+# 3.5 의 갈래 밖에 둔다 — 그 갈래(옛 심의 타임아웃 알림까지)를 떼어 가짜 함수로 돌리는 시험들이 있다. AGENT_ENV 는 3.5 가 정한다(리포가 없으면 빈 값 — 건너뛴다).
+if [ -n "${AGENT_ENV:-}" ]; then
+  # 스위치는 모두 기본 꺼짐이고 켜는 것은 사람이다 — 에이전트 서버 .env 의 DELEGATE_ENABLED · DRAFT_ENABLED · TRANSFORM_ENABLED · RESULT_ASK_ENABLED,
+  # 게이트웨이 provision.env 의 GATEWAY_RESULT_REFS. update-all 은 고쳐 쓰지 않고 안 켠 것을 ○ 로 남긴다(안 켠 기능도 로그에 — 사용자 지시 09-25).
+  # 켠 것은 말하지 않는다 — 켜진 뒤의 수는 그쪽 /health 몫이다. 값은 _envfile_value 로 읽고(마지막 활성 줄 · 줄 끝 설명 · 따옴표를 벗긴다)
+  # 1 · true · yes · on(대소문자 무시)만 켬이다 — 빈 값 · 줄 없음 · 그 밖은 꺼짐. 개인 PC 쪽(E)은 토큰 화면 설정 배치의 '서버 LLM 에 일 맡기기' 칸이다.
+  _off_on() { case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in 1|true|yes|on) return 0 ;; esac; return 1; }
+  _off_re="도는 심의가 없을 때 에이전트 서버 재기동(cd ../HWAXAgentServer && ./start.sh -d) — docs/token-saving/offload-v2.md"
+  _off_on "$(_envfile_value "$AGENT_ENV" DELEGATE_ENABLED)" || hwax_skip "서버 LLM 위임(A — delegate_start)" \
+    "에이전트 서버 .env 에 DELEGATE_ENABLED=1 이 없다 — 개인 Claude 가 여러 도구를 도는 조사를 서버 Qwen 에 맡기는 위임 도구(delegate_start · delegate_status · delegate_result · delegate_cancel)를 등록하지 않는다" \
+    "에이전트 서버 .env 에 DELEGATE_ENABLED=1 을 적고 $_off_re"
+  if [ -n "${GW_DIR:-}" ]; then
+    if ! _off_on "$(_envfile_value "$GW_DIR/provision.env" GATEWAY_RESULT_REFS)"; then
+      hwax_skip "결과 손잡이 · 결과에 묻기(B — result_get · result_ask)" \
+        "게이트웨이 provision.env 에 GATEWAY_RESULT_REFS=1 이 없다 — 연결 머리 X-HWAX-Result: ref 를 단 연결에도 큰 도구 결과를 머리 + 손잡이(ref)로 줄이지 않고 원문 그대로 준다" \
+        "HWAXMcpGateway/provision.env 에 GATEWAY_RESULT_REFS=1 을 적고 다시 돌린다(provision.env 는 게이트웨이 지문이라 §4 가 재기동한다) + 에이전트 서버 .env 에 RESULT_ASK_ENABLED=1(묻기 창구 — $_off_re)"
+    elif ! _off_on "$(_envfile_value "$AGENT_ENV" RESULT_ASK_ENABLED)"; then
+      hwax_skip "결과 손잡이 · 결과에 묻기(B — result_get · result_ask)" \
+        "게이트웨이 결과 손잡이(GATEWAY_RESULT_REFS)는 켜졌는데 에이전트 서버 .env 에 RESULT_ASK_ENABLED=1 이 없다 — result_get 은 되고 result_ask(서버가 원문에 묻기)는 거절된다" \
+        "에이전트 서버 .env 에 RESULT_ASK_ENABLED=1 을 적고 $_off_re"
+    fi
+  fi
+  _off_on "$(_envfile_value "$AGENT_ENV" DRAFT_ENABLED)" || hwax_skip "서버 긴 글 작성(C — draft_section)" \
+    "에이전트 서버 .env 에 DRAFT_ENABLED=1 이 없다 — 개요와 근거 손잡이로 GLM 이 절 초안을 쓰는(숫자는 코드가 대조) draft_section 을 등록하지 않는다" \
+    "에이전트 서버 .env 에 DRAFT_ENABLED=1 을 적고 $_off_re"
+  _off_on "$(_envfile_value "$AGENT_ENV" TRANSFORM_ENABLED)" || hwax_skip "서버 단순 변환(D — llm_transform)" \
+    "에이전트 서버 .env 에 TRANSFORM_ENABLED=1 이 없다 — 번역 · 요약 · 표 바꾸기 · 용어 통일을 서버 Qwen 이 하는 llm_transform 을 등록하지 않는다" \
+    "에이전트 서버 .env 에 TRANSFORM_ENABLED=1 을 적고 $_off_re"
+fi
 
 # ── 4) 챗 스택만 pull+재기동 — 2)에서 이미 재기동한 사이트들을 다시 내리지 않는다
 #      (mxwp-mcp는 deploy-all이 재기동, reportarchive-mcp는 RA 레포 공유라 update 금지 — 기동은 5에서) ──

@@ -245,3 +245,104 @@ def test_만들어진_conf_가_nginx_t_를_통과한다(tmp_path, infra_env):
                         str(ROOT / "infra/apptainer/nginx.sif"), "nginx", "-c", "/workspace/infra/nginx/hwax.conf", "-t"],
                        capture_output=True, text=True, timeout=120)
     assert r.returncode == 0 and "test is successful" in r.stderr, r.stdout + r.stderr
+
+
+# ── 게이트웨이 내부 창구(/internal/result/<ref> — 토큰 절감 2판 docs/token-saving/offload-v2.md 3-3)도 문 앞에서 막는다 ─────────────────
+# 서비스 자격 전용 창구다 — 게이트웨이가 X-Forwarded-* 가 실린 요청을 거절하지만 겹쳐 막는다. 무인증 진단 길(health · tools-map · refresh ·
+# conn-invalidate)과 같은 404 자리이고, 템플릿(HTTP 서버)과 생성기(TLS 서버)의 사본 둘 다다.
+_GW_BLOCKED = ("/mcp-gw/internal/result/abc123", "/mcp-gw/internal/", "/mcp-gw/health", "/mcp-gw/tools-map",
+               "/mcp-gw/refresh", "/mcp-gw/conn-invalidate")
+_GW_OPEN = ("/mcp-gw/mcp", "/mcp-gw/api/x", "/mcp-gw/fig/abc")
+
+
+@pytest.mark.parametrize("tls", [False, True], ids=["http", "tls"])
+def test_게이트웨이_내부_창구와_진단_길은_서버마다_404_다(tmp_path, tls):
+    _repo, conf, _out = _generate(tmp_path, tls=tls)
+    servers = [s for s in re.split(r"^    server \{\n", conf, flags=re.M)[1:] if re.search(r"^        location /mcp-gw/ \{", s, re.M)]
+    assert len(servers) == (2 if tls else 1), "게이트웨이를 내는 서버 블록마다 본다(TLS 사본 포함)"
+    for srv in servers:
+        deny = re.findall(r"^        location ~ (\^/mcp-gw/\S+) \{\n            return 404;\n        \}", srv, re.M)
+        assert len(deny) == 1, deny
+        rx = re.compile(deny[0])
+        assert [p for p in _GW_BLOCKED if not rx.search(p)] == [], "막을 길"
+        assert [p for p in _GW_OPEN if rx.search(p)] == [], "인증을 지나는 길은 연다"
+        assert "location ^~ /mcp-gw/" not in srv, "^~ 접두 위치는 정규식 위치를 건너뛴다 — 차단이 무력해진다"
+
+
+@pytest.mark.skipif(not (ROOT / "infra/apptainer/nginx.sif").is_file() or not _apptainer(), reason="nginx SIF · apptainer 없음")
+def test_띄운_nginx_가_내부_창구를_404_로_막고_인증_길은_흘려보낸다(tmp_path):
+    """생성한 conf 로 nginx 를 실제로 띄워 묻는다 — 게이트웨이 자리에는 무엇이든 200 'UPSTREAM' 을 내는 가짜를 둔다(404 가 nginx 의 것인지 가른다)."""
+    import http.server
+    import ssl
+    import threading
+    import time
+    import urllib.error
+    import urllib.request
+    if not shutil.which("openssl"):
+        pytest.skip("openssl 없음 — TLS 블록용 임시 인증서를 못 만든다")
+    ports = []
+    for _ in range(2):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0)); ports.append(s.getsockname()[1])
+
+    class Up(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b"UPSTREAM")
+
+        def log_message(self, *a):
+            pass
+    up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Up)
+    threading.Thread(target=up.serve_forever, daemon=True).start()
+    repo, _conf, _out = _generate(tmp_path, tls=True)
+    (repo / "infra/.env").write_text((repo / "infra/.env").read_text().replace(
+        "HTTP_PORT=8088\n", f"HTTP_PORT={ports[0]}\nHTTPS_PORT={ports[1]}\n"))
+    r = subprocess.run(["bash", str(repo / "infra/scripts/gen-nginx-conf.sh")], capture_output=True, text=True, timeout=60,
+                       env={"PATH": os.environ["PATH"], "HOME": str(tmp_path)})
+    assert r.returncode == 0, r.stdout + r.stderr
+    conf_p = repo / "infra/nginx/hwax.conf"
+    conf = conf_p.read_text(encoding="utf-8")
+    assert conf.count("proxy_pass http://127.0.0.1:9110/;") == 2
+    conf_p.write_text(conf.replace("proxy_pass http://127.0.0.1:9110/;", f"proxy_pass http://127.0.0.1:{up.server_address[1]}/;"))
+    (repo / "infra/tls").mkdir()
+    (repo / "infra/data").mkdir(exist_ok=True)
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=hwax.example",
+                    "-keyout", str(repo / "infra/tls/hwax.key"), "-out", str(repo / "infra/tls/hwax.crt")],
+                   check=True, capture_output=True, timeout=60)
+    scratch_tmp = tmp_path / "nginx-tmp"
+    scratch_tmp.mkdir()
+    ng = subprocess.Popen([_apptainer(), "exec", "--bind", f"{repo}:/workspace", "--bind", f"{scratch_tmp}:/tmp",
+                           str(ROOT / "infra/apptainer/nginx.sif"), "nginx", "-c", "/workspace/infra/nginx/hwax.conf",
+                           "-g", "daemon off;"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ctx))
+
+    def get(url: str) -> tuple[int, bytes]:
+        try:
+            with opener.open(url, timeout=10) as resp:
+                return resp.status, resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+    try:
+        bases = (f"http://127.0.0.1:{ports[0]}", f"https://127.0.0.1:{ports[1]}")
+        for _ in range(100):
+            if ng.poll() is not None:
+                pytest.fail("nginx 가 뜨지 못했다: " + ng.stderr.read().decode("utf-8", "replace"))
+            try:
+                get(bases[0] + "/mcp-gw/mcp")
+                break
+            except OSError:
+                time.sleep(0.2)
+        for base in bases:
+            for path in _GW_BLOCKED:
+                code, body = get(base + path)
+                assert code == 404 and b"UPSTREAM" not in body, (base, path, code)
+            for path in ("/mcp-gw/mcp", "/mcp-gw/api/x"):
+                assert get(base + path) == (200, b"UPSTREAM"), (base, path)
+    finally:
+        ng.terminate()
+        try:
+            ng.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            ng.kill()
+        up.shutdown(); up.server_close()

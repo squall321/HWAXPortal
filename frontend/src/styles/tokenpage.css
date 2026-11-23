@@ -91,6 +91,25 @@
   margin-top: var(--sp-3);
 }
 
+/* 서버 LLM 에 일 맡기기(토큰 절감 2판 E) — 설정 배치의 선택 칸과 이 박스의 스위치 한 줄 */
+.tok-offload {
+  margin-top: var(--sp-3);
+}
+.tok-offload label {
+  display: inline-flex;
+  gap: var(--sp-2);
+  align-items: center;
+  cursor: pointer;
+}
+.tok-offload-box {
+  margin-left: var(--sp-3);
+  color: var(--fg-muted);
+  font-size: var(--fs-13);
+}
+.tok-offload-box.is-off {
+  color: var(--warn);
+}
+
 /* 배치 없이 인증서로 직접 설정하는 순서 — 펼치기 */
 .tok-guide {
   margin-top: var(--sp-4);

@@ -342,7 +342,9 @@ stream_locations="$(cat <<'EOF'
         # 실측으로 `/mcp-gw/tools-map` 이 200·43KB(도구 473종 → 앱 매핑 전체)를 냈다.
         # 인증을 지나는 `/mcp-gw/mcp` 와 `/mcp-gw/api/` 만 남긴다(6차가 `/health` 본문에서
         # 권한 지도를 뺐지만, 형제 `/tools-map` 은 그대로였다 — 7차 감사).
-        location ~ ^/mcp-gw/(health|tools-map|refresh|conn-invalidate) {
+        # `/internal/…`(결과 손잡이 원문 창구 — 서비스 자격 전용, docs/token-saving/offload-v2.md 3-3)도 겹쳐 막는다 — 게이트웨이도
+        # X-Forwarded-* 가 실린 요청을 거절하지만 문 앞에서 한 번 더 닫는다.
+        location ~ ^/mcp-gw/(health|tools-map|refresh|conn-invalidate|internal) {
             return 404;
         }
         location /mcp-gw/ {

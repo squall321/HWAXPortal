@@ -3,8 +3,10 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   createPat,
+  fetchOffloadBox,
   listPats,
   revokePat,
+  type OffloadBox,
   type PatCreated,
   type PatMeta,
   type ServicePatCreated,
@@ -70,6 +72,38 @@ function CopyBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
+// '서버 LLM 에 일 맡기기' 칸 옆 한 줄 — 이 박스의 스위치(docs/token-saving/offload-v2.md 3-4). 모두 꺼져 있으면 켜도 도구가 없다고 말하고,
+// 표지를 못 읽은 것은 '모름' 으로 둔다(꺼짐으로 단정하지 않는다 — 에이전트 서버 · 게이트웨이의 새 판이 아직 안 들어온 박스).
+const OFFLOAD_PARTS: [keyof OffloadBox, string][] = [
+  ['delegate', '위임'],
+  ['result_refs', '결과 손잡이'],
+  ['result_ask', '결과에 묻기'],
+  ['draft', '긴 글'],
+  ['transform', '변환'],
+];
+function offloadNote(box: OffloadBox | null): { text: string; off: boolean } {
+  const pick = (want: boolean | null) =>
+    OFFLOAD_PARTS.filter(([k]) => (box ? box[k] : null) === want).map(([, label]) => label);
+  const [on, off, unknown] = [pick(true), pick(false), pick(null)];
+  if (unknown.length === OFFLOAD_PARTS.length)
+    return { text: '이 박스에서 켜져 있는지 모름', off: false };
+  if (off.length === OFFLOAD_PARTS.length)
+    return { text: '이 박스에서 꺼져 있음 — 켜도 도구가 없다', off: true };
+  if (on.length === OFFLOAD_PARTS.length) return { text: '이 박스에서 켜져 있음', off: false };
+  const parts = [
+    ['켜짐', on],
+    ['꺼짐', off],
+    ['모름', unknown],
+  ] as const;
+  return {
+    text: `이 박스 — ${parts
+      .filter(([, l]) => l.length)
+      .map(([h, l]) => `${h}: ${l.join(' · ')}`)
+      .join(' / ')}`,
+    off: false,
+  };
+}
+
 // 배치 없이 인증서로 직접 설정하는 순서(10-20 사용자 요청) — 명령은 생성기(certGuide)가 배치와 같은 파일 · 묶음 본문으로 만든다.
 function CertGuide({ token, open }: { token: string | null; open: boolean }) {
   return (
@@ -130,6 +164,9 @@ export default function TokenPage() {
   const [certError, setCertError] = useState<string | null>(null);
   // '허브에 보일 앱' 을 바꾼 횟수 — 같은 탭의 보기 칸이 끈 앱을 뺀 영역 수를 다시 읽는다
   const [hubRev, setHubRev] = useState(0);
+  // 설정 배치의 '서버 LLM 에 일 맡기기' 칸(기본 끔)과 이 박스의 스위치(null = 모름 — 못 읽었거나 아직 읽는 중)
+  const [offload, setOffload] = useState(false);
+  const [offloadBox, setOffloadBox] = useState<OffloadBox | null>(null);
 
   // 인증서만 따로(10-20 사용자 요청) — 배치를 못 쓰는 PC · 손으로 설정하는 사람 몫이라 토큰을 발급하지 않아도 받는다.
   // 링크(<a download>)로 걸지 않고 받아서 PEM 인지 본 뒤 저장한다 — 실패를 화면에 말하고, 오류 응답이 .crt 이름으로 저장되지 않게.
@@ -170,7 +207,13 @@ export default function TokenPage() {
         pem = await r.text();
       }
       // 사내 프록시는 박스 설정을 발급 응답으로 받는다(공개 리포에 주소를 두지 않는다 — 11-24).
-      const bat = SNIP.buildSetupBat(created.token, created.name, pem, created.fallback_proxy ?? null);
+      const bat = SNIP.buildSetupBat(
+        created.token,
+        created.name,
+        pem,
+        created.fallback_proxy ?? null,
+        offload,
+      );
       const blob = new Blob([bat], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -218,6 +261,10 @@ export default function TokenPage() {
       .catch(() => setTlsUnknown('인증서 정보를 불러오지 못했습니다'));
     fetchMyAccess()
       .then(setAccess)
+      .catch(() => {});
+    // 못 읽으면 '모름' 으로 둔다 — 칸은 그대로 보이고 배치도 만든다
+    fetchOffloadBox()
+      .then(setOffloadBox)
       .catch(() => {});
   }, []);
 
@@ -457,6 +504,37 @@ export default function TokenPage() {
                       )}
                     </div>
                   )}
+                  {/* 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4). 박스가 꺼져 있어도 칸은 보이고 그 사실을 옆에 말한다 */}
+                  <div className="tok-offload">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={offload}
+                        onChange={(e) => setOffload(e.target.checked)}
+                      />
+                      서버 LLM 에 일 맡기기(토큰 절약)
+                    </label>
+                    {(() => {
+                      const note = offloadNote(offloadBox);
+                      return (
+                        <span className={note.off ? 'tok-offload-box is-off' : 'tok-offload-box'}>
+                          {note.text}
+                        </span>
+                      );
+                    })()}
+                    {offload && (
+                      <div className="tok-hint">
+                        배치가 ① Claude Code · Desktop 등록에 <code>X-HWAX-Result: ref</code> 머리를
+                        달고 ② Claude Code 명령 <code>/hwax-ask</code>(조사를 서버에 맡기기) ·{' '}
+                        <code>/hwax-draft</code>(긴 글을 서버가 쓰기)를{' '}
+                        <code>%USERPROFILE%\.claude\commands</code> 에 두고 ③{' '}
+                        <code>%USERPROFILE%\.claude\CLAUDE.md</code> 의 표지 두 줄 사이에 규칙
+                        묶음을 넣습니다(<code>CLAUDE_CONFIG_DIR</code> 이 있으면 그 아래). 칸을 끄고
+                        받은 배치를 다시 실행하면 셋을 걷습니다 — CLAUDE.md 는 표지 사이 밖을
+                        건드리지 않습니다.
+                      </div>
+                    )}
+                  </div>
                   <div className="tok-actions">
                     <button
                       type="button"

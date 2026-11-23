@@ -15,11 +15,13 @@ published (non-expired revoked jtis) at `/auth/pat/revoked.json` for the gateway
 회수는 사람 PAT 과 같은 관리자 회수(`DELETE /auth/pat/{jti}`)와 `revoked.json` 이다.
 """
 
+import asyncio
 import logging
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -369,6 +371,50 @@ def list_all_pats(
             "truncated": total > len(rows),
             "note": ("만료가 먼 것(오래 사는 토큰)부터 보인다 — 폐기가 필요한 쪽이 먼저다."
                      if total > len(rows) else "")}
+
+
+# ── 서버 LLM 에 일 맡기기(토큰 절감 2판 — docs/token-saving/offload-v2.md 3-4) ──
+# 토큰 화면의 설정 배치 선택 칸 옆에 이 박스의 스위치를 보인다.
+#   에이전트 서버 /health 의 offload{delegate, draft, transform, result_ask}
+#   게이트웨이 /health 의 result_refs{enabled, min_chars, head_chars, ttl_days, stored}
+# 둘 다 무인증 프로브다(브라우저는 못 닿는다). 칸이 없거나 못 닿으면 None(모름)이다 —
+# 꺼짐으로 단정하지 않는다(그쪽 새 판이 아직 안 들어온 박스).
+OFFLOAD_AGENT_KEYS = ("delegate", "draft", "transform", "result_ask")
+
+
+def _flag(v) -> bool | None:
+    """표지 하나 — 참 · 거짓, 아니면 {enabled: 참 · 거짓}. 그 밖은 None(모름)."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, dict) and isinstance(v.get("enabled"), bool):
+        return v["enabled"]
+    return None
+
+
+async def _box_health(cli: httpx.AsyncClient, base: str) -> dict:
+    """`<base>/health` 의 JSON 본문 — 못 닿거나 꼴이 틀리면 빈 사전(칸이 모두 모름)."""
+    try:
+        r = await cli.get(f"{(base or '').rstrip('/')}/health")
+        body = r.json() if r.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        body = None
+    return body if isinstance(body, dict) else {}
+
+
+@router.get("/offload")
+async def offload_box(
+    principal: Principal = Depends(get_current_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """이 박스의 '서버 LLM 에 일 맡기기' 스위치 — 칸마다 참 · 거짓 · null(모름)."""
+    async with httpx.AsyncClient(timeout=4) as cli:
+        agent, gw = await asyncio.gather(_box_health(cli, settings.agent_server_url),
+                                         _box_health(cli, settings.mcp_gateway_url))
+    off = agent.get("offload")
+    off = off if isinstance(off, dict) else {}
+    out = {k: _flag(off.get(k)) for k in OFFLOAD_AGENT_KEYS}
+    out["result_refs"] = _flag(gw.get("result_refs"))
+    return out
 
 
 @router.post("/service", response_model=ServicePatCreated)

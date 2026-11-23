@@ -36,3 +36,32 @@ X-Forwarded-* 가 실린 요청을 받지 않고, 포털 nginx 도 `/mcp-gw/inte
 맡긴다) · `llm_transform` 은 ref 를 돌려주지 않는다(B 가 연결 머리로 붙인다) · 위임 결과는 주인만 · 웹 챗 · 심의 좌석 · 루틴은 여섯 도구를 못 부른다(D-18). 읽기 전용
 PAT 에서 `delegate_start` 는 **열지 않는다** — 읽기 전용 토큰으로 서버 잡을 세우는 길을 새로 만들지 않는다(필요해지면 읽기 목록에 이름 하나). 사람별 LLM 사용량의
 `offload` 종류는 포털 · 에이전트 서버를 함께 고쳐야 해 남은 일로 둔다. 정확한 꼴은 offload-v2 §3-5.
+
+**TS-9 게이트웨이 B 스위치는 곁의 provision.env 에서도 읽는다(2026-11-24, 게이트웨이 `c43382b`).** 게이트웨이 `start.sh` 는 `provision.env` 를 프로세스
+환경으로 싣지 않는다(그 파일은 `provision-config.sh` 가 설정을 지을 때만 읽는다) — 박스가 거기 `GATEWAY_RESULT_REFS=1` 을 적어도 먹지 않을 뻔했다(포털 작업자가
+짚음). 띄운 셸의 환경이 먼저고, 비면 곁의 `provision.env` 마지막 활성 줄(포털 `_envfile_value` 와 같은 규칙). update-all 이 같은 파일 · 같은 키를 읽어 ○ 를 내고,
+그 파일은 게이트웨이 지문(identity)에 들어 있어 바뀌면 게이트웨이를 다시 띄운다.
+
+**TS-10 포털 몫(E) — 끈 배치는 걷기만 더한다(2026-11-24, 가지 `wt1124/offload-v2`).** 계약 §4 의 '끄면 지금과 같은 바이트' 와 §3-4 의 '끄고 다시 돌리면 셋을
+걷는다' 가 설정 배치에서는 함께 설 수 없다 — 걷는 줄이 있으면 파일 바이트가 다르다. 걷기를 골랐다(칸을 켰다 끈 PC 에 머리 · 명령 · 규칙이 남으면 꺼진 박스의
+도구를 부르는 습관이 남는다). 대신 끈 배치와 지금 배치의 차이를 걷기로만 묶었다 — http 등록 병합(Code 직접 · Desktop)에 남은 `X-HWAX-Result` 머리를 걷는 한 문장,
+PowerShell 한 줄(명령 · 규칙 걷기), 그 실패 알림 한 줄. stdio(인증서 포털) 등록과 CLI 등록은 인자를 통째로 다시 쓰므로 바꾸지 않았다. 걷기 PowerShell 은 걷은 것이
+있을 때만 말하고, CLAUDE.md 는 표지 글자가 있을 때만 엄격하게 읽는다 — 켠 적 없는 PC 의 화면 출력은 종전과 같다(시험이 Write-Host 자리를 본다).
+
+**TS-11 자리 · 소유 · 글자.** 명령 · CLAUDE.md 자리는 Claude Code 의 규칙 — `CLAUDE_CONFIG_DIR` 이 있으면 그 아래, 없으면 `<프로필 폴더>\.claude`(배치의 Code 설정
+병합 D-11 과 같은 판정, 요청의 `%USERPROFILE%\.claude` 는 그 기본값). 명령 파일은 끝 줄 표지(`hwax-offload`)로 우리 것을 가른다 — 같은 이름의 사람 파일은 덮지도
+지우지도 않는다. CLAUDE.md 는 표지 두 줄(`<!-- hwax-offload:begin/end -->`) 사이만 쓰고 걷는다 — 끝 표지가 없으면 건드리지 않고, 엄격 UTF-8 로 못 읽으면(5.1 이
+ANSI 로 읽은 한글을 다시 쓰면 깨진다) 건드리지 않고, BOM · 줄바꿈은 그 파일의 것을 따른다. 바꿀 때는 Code 설정과 같은 순서(백업 → 임시 파일 → 되읽기 → 바꿔
+넣기). 글은 base64 환경변수로 넘긴다(cmd 이스케이프 · 코드페이지와 무관). PowerShell 줄에는 `!` 를 글자로 두지 않는다 — 지연 확장이 켜진 cmd 는 한 줄의 `!…!`
+짝을 지워 표지 둘이 짝이 된다(`[char]33` 으로 짓는다).
+
+**TS-12 박스 표시는 포털이 두 /health 를 읽는다 — 모름은 꺼짐이 아니다.** `GET /auth/pat/offload`(로그인) — 에이전트 서버 `offload{delegate, draft, transform,
+result_ask}` · 게이트웨이 `result_refs.enabled`(게이트웨이 확정 꼴 `result_refs{enabled, min_chars, head_chars, ttl_days, stored}`), 칸마다 참 · 거짓 · null. 표지는 참 · 거짓이나 `{enabled}` 꼴을 받는다(두 작업자가 같은 날 짓는 칸이라 둘 다 읽는다).
+칸이 없으면(새 판 전) '모름' — 다 꺼졌을 때만 '이 박스에서 꺼져 있음 — 켜도 도구가 없다'. 칸은 박스 상태와 무관하게 늘 보이고 기본 끔이다. 손으로 붙이는 등록
+조각(Claude Code 명령 · Desktop JSON · 직접 설정 안내)에는 머리를 달지 않는다 — 명령 · 규칙은 배치만 깔 수 있어 칸을 배치에만 둔다.
+
+**TS-13 update-all 은 env 파일에서 읽고 안 켠 것만 ○ 로.** 3.5 뒤(3.5e — 3.5 의 갈래 밖, `AGENT_ENV` 가 있을 때만)에서 `_envfile_value` 로 읽는다 — 켬은
+1 · true · yes · on. 갈래 안에 두면 그 갈래를 떼어 가짜 함수로 돌리는 시험(env 킷 · LLM 풀)이 깨진다(첫 회귀에서 31건). B 는 게이트웨이
+`GATEWAY_RESULT_REFS` 가 꺼져 있으면 그것을, 켜졌는데 `RESULT_ASK_ENABLED` 가 꺼져 있으면 그것을 말한다(넷을 넘기지 않는다). 켠 것은 말하지 않는다 — 켜진 뒤의
+수는 그쪽 /health 몫이다. ⚠ 지금 게이트웨이 `start.sh` 는 `provision.env` 를 프로세스 환경으로 싣지 않는다(`GATEWAY_FIG_STORE` 같은 손잡이는 띄운 셸 환경뿐) —
+`GATEWAY_RESULT_REFS` 를 그 파일에서 읽게 하는 것은 게이트웨이 몫이다(합치기 전에 맞춘다).
