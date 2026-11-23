@@ -53,6 +53,7 @@ v141 · v53 은 지금 꼴 그대로 둔다.
 | 별칭(latest) | `SmartTwinPreprocessor.sif` · `SmartTwinPostprocessor.sif` · `SmartTwinPostprocessorGUI.sif` — 가장 새 판 SIF 와 같은 바이트 | 판이 오를 때만 |
 | 별칭 안내 | `<제품>.release.json` — 아래 꼴 | 판이 오를 때만 |
 
+- **쓰는 곳** — 판 해시 · `release.json` 은 pyKooCAE 굽기 스크립트가 Pre · Post 둘 다 쓴다(`serviceApptainers/scripts/release_manifest.py` · 올리기 `notify_build.py --release-json --sums`, 11-23). 날짜는 KST 다(tar 이름도 같은 날짜).
 - `<제품>` 은 `SmartTwinPreprocessor` · `SmartTwinPostprocessor` 둘이다(GUI SIF 는 Post 판에 딸린다). `<YYYYMMDD>` 는 굽은 날(KST), `v<N>` 은 제품마다 한 번만 쓴다 —
   같은 날 다시 구우면 N 을 올린다.
 - 해시 파일을 판마다 따로 두는 것은 두 세션(pyKooCAE · KooD3plotReader)이 같은 파일을 고치지 않게 하려는 것이다.
