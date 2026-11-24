@@ -43,7 +43,8 @@
   기한 `GATEWAY_RESULT_REF_TTL_DAYS` 기본 7), Claude 에는 머리(앞 `…_HEAD_CHARS` 기본 4,000자) + `{ref, chars, sha256, pages, how}` 를 준다. structuredContent 도 같은
   꼴로 줄인다(Claude Code 가 그것을 받는다 — TS-3).
 - `result_get(ref, page=1, page_chars=20000)` — 원문을 쪽으로. 주인이 아니면 거절.
-- `result_ask(ref, question, max_answer_chars?)` — 게이트웨이가 원문을 에이전트 서버 묻기 창구에 넘긴다 → `{answer, quotes: [{page, start, end, text}], numbers, model}`.
+- `result_ask(ref, question, max_answer_chars?)` — 게이트웨이가 원문을 에이전트 서버 묻기 창구에 넘긴다 → `{answer, quotes: [{page, start, end, text}], numbers, model,
+  tokens}`(tokens 는 TS-16 — 창구 답을 칸을 고르지 않고 그대로).
 - 에이전트 서버 묻기 창구 — `POST /llm/ask_over_text`(게이트웨이 서비스 자격 · 사람 이메일 머리) `{text, question, max_answer_chars}` → 위 꼴. 창이 모자라면 쪽마다
   읽고 모은다(리스크 20만 창과 같은 나눠 부르기). 인용은 원문 위치로 — 원문에 없는 인용은 버린다(코드 대조).
 - 그림 · 큰 바이너리는 지금처럼 그림 보관소 ref 로 간다(이것과 따로).
@@ -66,7 +67,7 @@
 
 ### 3-3. C 긴 글 · D 변환(에이전트 서버 MCP)
 
-- `draft_section(outline: str, refs?: [B 의 ref | {tool, args}], style?: "report|memo|minutes|plain", target_chars?: int)` → `{draft, numbers, sources, model}`.
+- `draft_section(outline: str, refs?: [B 의 ref | {tool, args}], style?: "report|memo|minutes|plain", target_chars?: int)` → `{draft, numbers, sources, model, tokens}`.
   LLM 은 GLM(긴 글 · 결정문과 같은 자리). `{tool, args}` 근거는 A 와 같은 읽기 울타리로 부른다. ref 는 게이트웨이 내부 창구(`GET /internal/result/{ref}` — 서비스
   자격 · 주인 이메일 대조)로 읽는다.
 - `llm_transform(instruction: str, text?: str, ref?: str)` → `{text, ref?}` — 결과가 길면 B 저장소에 두고 ref 로 준다. LLM 은 챗 LLM.
@@ -81,12 +82,15 @@
   같은 소속에도 열지 않는다). 위임은 심의 GLM 자리를 쓰지 않고 제 상한으로 줄을 선다 · 도는 수(`delib_active`)에는 든다.
 - 울타리 — 루틴과 같은 `routine_read` 에서 이 서버 백엔드와 게이트웨이 로컬 도구를 뺀다. 웹 챗 · 심의 좌석(리스크 심사 포함) · 루틴은 여섯 도구를 묶지도
   invoke_tool 로 부르지도 못한다(`_OFFLOAD_TOOLS` — D-18).
-- D `llm_transform` — `ref?` 반환은 뺐다. `{text, numbers, model, cut?}` · 20,000자에서 자른다(큰 결과의 ref 는 B 가 연결 머리로 붙인다).
+- D `llm_transform` — `ref?` 반환은 뺐다. `{text, numbers, model, tokens, cut?}` · 20,000자에서 자른다(큰 결과의 ref 는 B 가 연결 머리로 붙인다).
 - C `draft_section` 의 `sources` — `[{n, kind, ref | tool+args, chars, ok, error?}]` + `notes?`.
 - 묻기 창구 — 사람 머리 없음은 400(403 은 게이트웨이가 「공유 비밀 어긋남」 으로 읽는다) · 모르는 칸 422 · 6쪽 넘음 413 · 540초 넘음 504 · LLM 실패 502.
 - 읽기 전용 PAT 와 위임 — 이름 낱말로 `delegate_start` 는 쓰기 쪽으로 갈린다. **열지 않는다**(이 세션 판단 TS-8 — 읽기 전용 토큰이 서버 잡을 세우는 길을 새로
   만들지 않는다. 필요해지면 게이트웨이 읽기 목록에 이름 하나로 연다).
-- 사람별 LLM 사용량 — 지금은 `other` 로 단다. `offload` 종류를 포털 `LLM_KINDS` 와 에이전트 서버에 함께 더한다(남은 일).
+- 서버 LLM 토큰(TS-16) — 작성 · 변환 · 묻기 창구 답에도 위임과 같은 `tokens: {input, output} | null`(AI 메시지 usage 합 · 하나도 없으면 null). 묻기는 쪽마다 +
+  모으기의 합이다.
+- 사람별 LLM 사용량(TS-16) — 넷 모두 종류 `offload` 로 단다(에이전트 서버 `usage_tokens.KINDS` · 포털 `LLM_KINDS` · 화면 이름표 '서버에 맡긴 일'). 위임은 잡 원장이
+  사람을 · 실행기가 종류를, 작성 · 변환 · 묻기는 그 함수 머리에서 사람 + 종류를 단다. 그 전 기록의 그 몫은 `other` 그대로다.
 - 도구 영역 — 위임 넷은 `system`, `draft_section` · `llm_transform` 은 `report`(게이트웨이 `tool_areas.json`).
 
 ### 3-4. E PC 킷(포털)
