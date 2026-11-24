@@ -17,12 +17,14 @@ export interface CertStep {
 export interface Snippets {
   // proxy — 포털이 PAT 발급 응답(fallback_proxy)으로 준 사내 프록시. 비면 npm 레지스트리 폴백 없이 직결만 본다.
   // offload — 토큰 화면의 '서버 LLM 에 일 맡기기' 칸(기본 끔, docs/token-saving/offload-v2.md 3-4). 끄면 전에 넣은 것을 걷는다.
+  // share — '내 Claude 대화를 포털에 공유' 칸(기본 off, docs/interaction-data contract §5) — command(/hwax-share) · auto(+ SessionEnd 훅). off 면 걷는다.
   buildSetupBat: (
     token: string,
     name: string,
     pem: string | null,
     proxy: string | null,
     offload?: boolean,
+    share?: 'off' | 'command' | 'auto',
   ) => string;
   claudeCodeSnippet: (token: string) => string;
   claudeCodeSnippetSelfSigned: (token: string, certPath: string) => string;
@@ -144,6 +146,265 @@ export function makeSnippets(origin: string): Snippets {
     let bin = '';
     for (const c of new TextEncoder().encode(s)) bin += String.fromCharCode(c);
     return btoa(bin);
+  };
+  // 내 Claude 대화를 포털에 공유(docs/interaction-data contract §5 — 사람이 스스로 보낸다, IX-3) — 설정 배치의 선택 칸(기본 끔)을 켜면 올리는 작은
+  // PowerShell(%USERPROFILE%\.hwax\hwax-share.ps1)과 Claude Code 명령 /hwax-share 를 두고, '세션 끝에 자동으로' 를 고르면 사용자 settings.json 에
+  // SessionEnd 훅을 단다. 끄고 다시 돌리면 걷는다(위 서버 LLM 칸과 같은 표지 꼴 — 파일은 표지 낱말로 우리 것인지 가르고, 훅은 명령 글의 스크립트 이름으로).
+  //   기록 파일 자리는 Claude Code 문서(sessions)의 규칙 — <설정 폴더>\projects\<프로젝트>\<세션 id>.jsonl, 설정 폴더는 CLAUDE_CONFIG_DIR 이 있으면 그것.
+  //   토큰은 배치가 hwax 연결에 넣은 자리(.claude.json 의 mcpServers.hwax — headers.Authorization 또는 env.AUTH)에서 그때그때 읽는다(재발급해도 따라간다).
+  const SHARE_MARK = 'hwax-share';
+  const SHARE_HOOK_MARK = 'hwax-share.ps1';
+  const SHARE_FOOT = `<!-- ${SHARE_MARK}: 포털 설정 배치가 만든 파일 — 토큰 화면의 '내 Claude 대화를 포털에 공유' 칸을 끄고 배치를 다시 돌리면 지운다 -->`;
+  const SHARE_CMD = [
+    '---',
+    'description: 지금 이 Claude Code 대화를 HWAX 포털의 내 기록으로 공유한다(원문은 본인과 지정 분석가만 본다)',
+    '---',
+    '사람이 이 대화를 HWAX 포털에 공유하라고 했다. 아래 한 줄을 셸 도구(PowerShell · Bash 어느 쪽이든)로 그대로 실행하고, 나온 줄을 사람에게 그대로 전한다.',
+    '',
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "@@HWAX_SHARE_PS1@@" -SessionId "${CLAUDE_SESSION_ID}"',
+    '',
+    "1. '[O] 공유했습니다' 가 나오면 끝이다.",
+    '2. 실패했고 hwax MCP 에 share_conversation 도구가 있으면, 사람에게 그 도구로 보낼지 묻고 그렇다면 이 대화의 사람 · 어시스턴트 글을 보낸다(session_id 는 이 세션 id).',
+    '3. 둘 다 안 되면 나온 까닭을 그대로 전하고 멈춘다. 토큰 · 키를 대화에 옮겨 적지 않는다.',
+    '',
+    SHARE_FOOT,
+    '',
+  ].join('\n');
+  // 글 가림(contract §4) — 서버(backend/app/interactions/redact.py)와 같은 꼴 · 같은 차례(PEM → 칸 이름 → Bearer → JWT). 줄마다 건다 —
+  // 기록 파일은 JSONL 이라 한 글이 줄을 넘지 않고, 끝 표지 없는 PEM 이 파일의 나머지를 지우지 않게 PEM 의 '끝까지' 는 줄 끝까지다.
+  // 서버가 줄마다 다시 가린다 — 이 가림은 토큰이 PC 를 떠나기 전에 한 번 더 지우는 것이다.
+  const SHARE_RX: [string, string][] = [
+    ['Pem', '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:.*?-----END [A-Z0-9 ]*PRIVATE KEY-----|.*)'],
+    ['Kv', '"((?:[^"\\\\]|\\\\.)*?(?:authorization|token|access_token|refresh_token|api_key|apikey|x-api-key|secret|client_secret|password|passwd|cookie|set-cookie|session|private_key))"(\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"'],
+    ['Bearer', '\\b([Bb][Ee][Aa][Rr][Ee][Rr])[ \\t]+[A-Za-z0-9\\-._~+/]+=*'],
+    ['Jwt', '\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+'],
+  ];
+  const psQ = (s: string): string => `'${s.split("'").join("''")}'`;
+  // 올리는 스크립트 — 파일로 두는 PowerShell(줄 여럿 · UTF-8 BOM 으로 쓴다 — 5.1 은 BOM 없는 .ps1 을 ANSI 로 읽어 한글이 깨진다).
+  //   /hwax-share 는 -SessionId 로, SessionEnd 훅은 -Hook(표준입력의 transcript_path · session_id)으로 부른다. 세션 id 가 없거나 꼴이 아니면 지금
+  //   폴더의 프로젝트 폴더에서 가장 새 기록 파일을 고른다. 토큰은 화면 · 로그에 내지 않는다 — 예외는 단계와 종류만, HTTP 는 상태 코드만 말한다.
+  //   훅에서는 화면이 없어 결과를 %USERPROFILE%\.hwax\hwax-share.log 에 한 줄씩 남긴다.
+  const sharePs1 = (): string =>
+    [
+      `# ${SHARE_MARK} — 포털 설정 배치가 만든 파일(토큰 화면 '내 Claude 대화를 포털에 공유'). 칸을 끄고 배치를 다시 돌리면 지운다.`,
+      '# 지금 Claude Code 세션의 기록 파일(JSONL)을 HWAX 포털의 내 기록으로 올린다(POST /interactions/share — docs/interaction-data contract §5).',
+      "param([string]$SessionId = '', [string]$Path = '', [switch]$Hook)",
+      "$ErrorActionPreference = 'Stop'",
+      'try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}',
+      `$Portal = ${psQ(ORIGIN)}`,
+      '$MaxBytes = 50MB',
+      ...SHARE_RX.map(([k, v]) => `$rx${k} = ${psQ(v)}`),
+      "$Prof = [Environment]::GetFolderPath('UserProfile'); if (-not $Prof) { $Prof = $env:USERPROFILE }",
+      "$Log = [System.IO.Path]::Combine($Prof, '.hwax', 'hwax-share.log')",
+      'function Say([string]$m) {',
+      "  if ($Hook) { try { Add-Content -LiteralPath $Log -Value ((Get-Date -Format s) + ' ' + $m) -Encoding UTF8 } catch {} } else { Write-Output $m }",
+      '}',
+      "$step = 'path'",
+      'try {',
+      "  $d = [System.IO.Path]::Combine($Prof, '.claude'); $o = $Prof",
+      '  if ($env:CLAUDE_CONFIG_DIR) { $d = $env:CLAUDE_CONFIG_DIR; $o = $env:CLAUDE_CONFIG_DIR }',
+      '  Add-Type -AssemblyName System.Web.Extensions',
+      '  $js = New-Object System.Web.Script.Serialization.JavaScriptSerializer; $js.MaxJsonLength = [int]::MaxValue',
+      '  if ($Hook) {',
+      "    $step = 'hook'",
+      '    $in = $js.DeserializeObject([Console]::In.ReadToEnd())',
+      '    if ($in -is [System.Collections.IDictionary]) {',
+      "      if (-not $Path -and $in['transcript_path']) { $Path = [string]$in['transcript_path'] }",
+      "      if (-not $SessionId -and $in['session_id']) { $SessionId = [string]$in['session_id'] }",
+      '    }',
+      '  }',
+      "  if ($SessionId -notmatch '^[0-9A-Za-z][0-9A-Za-z_-]{7,}$') { $SessionId = '' }",
+      "  $step = 'find'",
+      "  $proj = [System.IO.Path]::Combine($d, 'projects')",
+      '  if (-not $Path -and (Test-Path -LiteralPath $proj)) {',
+      '    $dirs = @(Get-ChildItem -LiteralPath $proj -Directory -EA SilentlyContinue)',
+      "    if ($SessionId) { foreach ($x in $dirs) { $c = [System.IO.Path]::Combine($x.FullName, $SessionId + '.jsonl'); if (Test-Path -LiteralPath $c) { $Path = $c; break } } }",
+      '    if (-not $Path) {',
+      "      $here = [System.IO.Path]::Combine($proj, ((Get-Location).Path -replace '[^A-Za-z0-9]', '-'))",
+      '      $pool = $dirs; if (Test-Path -LiteralPath $here) { $pool = @(Get-Item -LiteralPath $here) }',
+      "      $f = @($pool | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Filter '*.jsonl' -File -EA SilentlyContinue } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)",
+      '      if ($f.Count -gt 0) { $Path = $f[0].FullName }',
+      '    }',
+      '  }',
+      "  if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { Say '[X] 이 세션의 기록 파일을 찾지 못해 공유하지 않았습니다.'; exit 1 }",
+      "  if ((Get-Item -LiteralPath $Path).Length -gt $MaxBytes) { Say '[X] 기록 파일이 50 MB 를 넘어 올리지 않았습니다.'; exit 1 }",
+      '  if (-not $SessionId) { $SessionId = [System.IO.Path]::GetFileNameWithoutExtension($Path) }',
+      "  $step = 'token'",
+      "  $cf = [System.IO.Path]::Combine($d, '.config.json'); if (-not (Test-Path -LiteralPath $cf)) { $cf = [System.IO.Path]::Combine($o, '.claude.json') }",
+      '  $auth = $null',
+      '  if (Test-Path -LiteralPath $cf) {',
+      '    $cj = $js.DeserializeObject([System.IO.File]::ReadAllText($cf, [System.Text.Encoding]::UTF8))',
+      "    $hw = $null; if ($cj -is [System.Collections.IDictionary] -and $cj['mcpServers'] -is [System.Collections.IDictionary]) { $hw = $cj['mcpServers']['hwax'] }",
+      '    if ($hw -is [System.Collections.IDictionary]) {',
+      "      if ($hw['headers'] -is [System.Collections.IDictionary]) { $auth = [string]$hw['headers']['Authorization'] }",
+      "      if (-not $auth -and $hw['env'] -is [System.Collections.IDictionary]) { $auth = [string]$hw['env']['AUTH'] }",
+      '    }',
+      '  }',
+      "  if (-not $auth -or $auth -notlike 'Bearer *') { Say '[X] hwax 연결의 토큰을 찾지 못했습니다 - 토큰 화면의 설정 배치를 다시 실행하세요.'; exit 1 }",
+      "  $step = 'read'",
+      '  $text = [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding($false)))',
+      "  $step = 'mask'",
+      '  $ic = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase',
+      "  $lines = $text -split \"`n\"",
+      '  for ($i = 0; $i -lt $lines.Count; $i++) {',
+      '    $t = $lines[$i]',
+      "    $t = [regex]::Replace($t, $rxPem, '<가림:pem>')",
+      "    $t = [regex]::Replace($t, $rxKv, { param($m) '\"' + $m.Groups[1].Value + '\"' + $m.Groups[2].Value + '\"<가림:' + $m.Groups[1].Value.ToLower() + '>\"' }, $ic)",
+      "    $t = [regex]::Replace($t, $rxBearer, '$1 <가림:bearer>')",
+      "    $lines[$i] = [regex]::Replace($t, $rxJwt, '<가림:jwt>')",
+      '  }',
+      "  $text = $lines -join \"`n\"",
+      "  $step = 'send'",
+      '  $body = [System.Text.Encoding]::UTF8.GetBytes($js.Serialize(@{ session_id = $SessionId; transcript = $text }))',
+      "  if ($body.Length -gt $MaxBytes) { Say '[X] 올릴 본문이 50 MB 를 넘어 올리지 않았습니다.'; exit 1 }",
+      '  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12',
+      "  $q = [System.Net.HttpWebRequest]::Create($Portal.TrimEnd('/') + '/interactions/share')",
+      "  $q.Method = 'POST'; $q.ContentType = 'application/json; charset=utf-8'; $q.Timeout = 120000; $q.ReadWriteTimeout = 120000",
+      '  $q.Proxy = $null',
+      "  $q.Headers.Add('Authorization', $auth)",
+      // 포털 인증서를 배치가 두었으면(사내 공개 루트에 닿지 않는 박스 — [1]) 그 인증서로 고정해 받는다. 윈도우가 믿는 인증서면 그대로 받는다.
+      "  $pin = [System.IO.Path]::Combine($Prof, '.hwax', 'hwax-portal.crt')",
+      '  if (Test-Path -LiteralPath $pin) {',
+      "    $step = 'pin'",
+      "    if (-not ('HwaxSharePin' -as [type])) {",
+      "      Add-Type -TypeDefinition @'",
+      'using System; using System.Net.Security; using System.Security.Cryptography.X509Certificates;',
+      'public static class HwaxSharePin {',
+      '  public static X509Certificate2Collection Pins = new X509Certificate2Collection();',
+      '  public static bool Check(object s, X509Certificate c, X509Chain ch, SslPolicyErrors e) {',
+      '    if (e == SslPolicyErrors.None) return true;',
+      '    if (c == null || Pins.Count == 0 || (e & SslPolicyErrors.RemoteCertificateNameMismatch) != 0) return false;',
+      '    X509Certificate2 leaf = new X509Certificate2(c);',
+      '    foreach (X509Certificate2 p in Pins) if (p.Thumbprint == leaf.Thumbprint) return true;',
+      '    X509Chain x = new X509Chain();',
+      '    x.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;',
+      '    x.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;',
+      '    x.ChainPolicy.ExtraStore.AddRange(Pins);',
+      '    if (!x.Build(leaf)) return false;',
+      '    X509Certificate2 root = x.ChainElements[x.ChainElements.Count - 1].Certificate;',
+      '    foreach (X509Certificate2 p in Pins) if (p.Thumbprint == root.Thumbprint) return true;',
+      '    return false;',
+      '  }',
+      '}',
+      "'@",
+      '    }',
+      '    [HwaxSharePin]::Pins.Clear()',
+      "    foreach ($mm in [regex]::Matches([System.IO.File]::ReadAllText($pin), '-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\\s]+)-----END CERTIFICATE-----')) {",
+      "      [void][HwaxSharePin]::Pins.Add((New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,[Convert]::FromBase64String(($mm.Groups[1].Value -replace '\\s', '')))))",
+      '    }',
+      '    $q.ServerCertificateValidationCallback = [System.Net.Security.RemoteCertificateValidationCallback][HwaxSharePin]::Check',
+      "    $step = 'send'",
+      '  }',
+      '  $w = $q.GetRequestStream(); $w.Write($body, 0, $body.Length); $w.Close()',
+      '  $r = $q.GetResponse(); $rd = New-Object System.IO.StreamReader($r.GetResponseStream(), [System.Text.Encoding]::UTF8)',
+      '  $res = $js.DeserializeObject($rd.ReadToEnd()); $r.Close()',
+      "  $what = '덮어씀'; if ($res['created']) { $what = '새로' }",
+      "  Say ('[O] 공유했습니다 - 메시지 ' + $res['messages'] + '개 · 세션 ' + $res['session_id'] + ' · ' + $what + '. 포털의 내 기록에서 봅니다.')",
+      '  exit 0',
+      '} catch {',
+      '  $ex = $_.Exception; while ($ex -and -not ($ex -is [System.Net.WebException])) { $ex = $ex.InnerException }',
+      '  if ($ex) {',
+      '    $code = 0; if ($ex.Response) { $code = [int]$ex.Response.StatusCode }',
+      "    $why = '포털이 HTTP ' + $code + ' 로 답했습니다.'",
+      "    if ($code -eq 0) { $why = '포털에 닿지 못했습니다(주소 · 방화벽 · 인증서).' }",
+      "    elseif ($code -eq 401) { $why = '토큰이 거부됐습니다(만료 또는 폐기) - 토큰 화면에서 새 토큰으로 배치를 다시 실행하세요.' }",
+      "    elseif ($code -eq 404) { $why = '이 포털 박스는 상호작용 기록을 켜지 않았습니다.' }",
+      "    elseif ($code -eq 413) { $why = '50 MB 상한을 넘었습니다.' }",
+      "    Say ('[X] 공유하지 못했습니다 - ' + $why); exit 1",
+      '  }',
+      "  Say ('[X] 공유하지 못했습니다 - ' + $step + ' 단계에서 ' + $_.Exception.GetType().Name); exit 1",
+      '}',
+      '',
+    ].join('\r\n');
+  // cmd 의 한 줄은 8191자까지다 — 스크립트는 그보다 길어 base64 를 6000자 조각으로 나눠 HWAX_SHARE_PS1_00 · _01 … 에 싣고 PowerShell 이 이름 차례로 잇는다.
+  const b64Sets = (name: string, s: string): string[] => {
+    const all = b64(s);
+    const out: string[] = [];
+    for (let i = 0; i * 6000 < all.length; i++) out.push(`set "${name}_${String(i).padStart(2, '0')}=${all.slice(i * 6000, (i + 1) * 6000)}"`);
+    return out;
+  };
+  /** 설정 배치 [5c] 의 PowerShell 한 줄 — off(걷기) · command(스크립트 + /hwax-share, 전에 단 훅은 걷는다) · auto(그리고 SessionEnd 훅).
+   * 자리는 Claude Code 의 규칙(CLAUDE_CONFIG_DIR 이 있으면 그 아래, 없으면 <프로필 폴더>\.claude — 위 [5b] 와 같은 판정), 스크립트는 <프로필 폴더>\.hwax.
+   * 파일은 표지 낱말(hwax-share)이 있는 것만 우리 것이다 — 같은 이름의 사람 파일은 덮지도 지우지도 않는다. settings.json 은 엄격한 UTF-8 JSON 객체로
+   * 읽고(아니면 건드리지 않는다), SessionEnd 의 훅 가운데 명령 글에 hwax-share.ps1 이 든 것만 빼거나 넣고 나머지는 그대로 둔다. 바꿀 때는 Code 설정과
+   * 같은 순서(백업 .hwax-bak → 임시 파일에 쓰고 되읽어 확인 → 바꿔 넣기). 걷기는 걷을 것이 있을 때만 말한다(켠 적 없는 PC 의 화면은 종전과 같다).
+   * cmd 의 "…" 안이라 큰따옴표 · % · ! 를 글자로 두지 않는다 — 훅 명령의 따옴표는 [char]34, 느낌표는 [char]33 으로 짓는다. */
+  const sharePs = (mode: 'off' | 'command' | 'auto'): string => {
+    const readSettings = (always: boolean) => [
+      "$s='settings';$x='';$w=$u;$j=$null;",
+      'if(Test-Path -LiteralPath $sf){$bb=[System.IO.File]::ReadAllBytes($sf);',
+      always ? '' : 'if($u.GetString($bb).Contains($hm)){',
+      '$o2=0;if($bb.Length -ge 3 -and $bb[0] -eq 239 -and $bb[1] -eq 187 -and $bb[2] -eq 191){$o2=3;$w=New-Object System.Text.UTF8Encoding($true)};',
+      '$x=$v.GetString($bb,$o2,($bb.Length - $o2));if($x.Trim()){$j=$js.DeserializeObject($x)}',
+      always ? '};' : '}};',
+    ];
+    const auto = mode === 'auto';
+    const merge = [
+      `if(($j -ne $null) -and -not ($j -is [System.Collections.IDictionary])){throw 'shape'};if($j -eq $null){$j=${PS_DICT}};`,
+      "$hk=$null;if($j.ContainsKey('hooks')){$hk=$j['hooks']};if(($hk -ne $null) -and -not ($hk -is [System.Collections.IDictionary])){throw 'shape'};",
+      '$keep=@();$rm=0;',
+      "if(($hk -ne $null) -and $hk.ContainsKey('SessionEnd')){foreach($gr in @($hk['SessionEnd'])){",
+      "if(($gr -is [System.Collections.IDictionary]) -and $gr.ContainsKey('hooks')){$hs=@();foreach($e in @($gr['hooks'])){",
+      "if(($e -is [System.Collections.IDictionary]) -and ([string]$e['command']).Contains($hm)){$rm++}else{$hs+=,$e}};",
+      "if($hs.Count -gt 0){$gr['hooks']=[object[]]$hs;$keep+=,$gr}}else{$keep+=,$gr}}};",
+      auto
+        ? `$e=${PS_DICT};$e['type']='command';$e['command']='powershell.exe -NoProfile -ExecutionPolicy Bypass -File '+$q+$spf+$q+' -Hook';$e['timeout']=30;$gr=${PS_DICT};$gr['hooks']=[object[]]@($e);$keep+=,$gr;`
+        : '',
+      `if(($rm -gt 0) -or ${auto ? '$true' : '$false'}){`,
+      `if($hk -eq $null){$hk=${PS_DICT};$j['hooks']=$hk};if($keep.Count -gt 0){$hk['SessionEnd']=[object[]]$keep}else{[void]$hk.Remove('SessionEnd')};if($hk.Count -eq 0){[void]$j.Remove('hooks')};`,
+      "$y=$js.Serialize($j);$s='backup';if(Test-Path -LiteralPath $sf){Copy-Item -LiteralPath $sf -Destination ($sf+'.hwax-bak') -Force};[void][System.IO.Directory]::CreateDirectory($d);",
+      "$t=$sf+'.hwax-tmp';$s='write';[System.IO.File]::WriteAllText($t,$y,$w);",
+      "$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));if($r.Count -ne $j.Count){throw 'mismatch'};",
+      "$s='replace';[System.IO.File]::Copy($t,$sf,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;$t=$null;",
+      auto ? "Write-Host ('          세션 끝 훅: '+$sf)};" : '$g+=$sf};',
+    ];
+    const head = [
+      "$ErrorActionPreference='Stop';$s='path';$t=$null;$bg=[string][char]33;$q=[string][char]34;$g=@();",
+      'try{',
+      "$h=[Environment]::GetFolderPath('UserProfile');if(-not $h){$h=$env:USERPROFILE};",
+      "$d=[System.IO.Path]::Combine($h,'.claude');if($env:CLAUDE_CONFIG_DIR){$d=$env:CLAUDE_CONFIG_DIR};",
+      "$cd=[System.IO.Path]::Combine($d,'commands');$hd=[System.IO.Path]::Combine($h,'.hwax');",
+      "$sp=[System.IO.Path]::Combine($hd,'hwax-share.ps1');$cf=[System.IO.Path]::Combine($cd,'hwax-share.md');$sf=[System.IO.Path]::Combine($d,'settings.json');",
+      '$u=New-Object System.Text.UTF8Encoding($false);$v=New-Object System.Text.UTF8Encoding($false,$true);',
+      `$mk='${SHARE_MARK}';$hm='${SHARE_HOOK_MARK}';$spf=$sp.Replace([string][char]92,'/');`,
+      PS_JSON,
+    ];
+    const body =
+      mode === 'off'
+        ? [
+            "$s='script';if((Test-Path -LiteralPath $sp) -and ([System.IO.File]::ReadAllText($sp,$u).Contains($mk))){Remove-Item -LiteralPath $sp -Force;$g+=$sp};",
+            "$s='command';if((Test-Path -LiteralPath $cf) -and ([System.IO.File]::ReadAllText($cf,$u).Contains($mk))){Remove-Item -LiteralPath $cf -Force;$g+=$cf};",
+            ...readSettings(false),
+            'if($j -ne $null){',
+            ...merge,
+            '};',
+            "if($g.Count -gt 0){Write-Host '  [5c] 내 Claude 대화 공유 - 칸이 꺼져 있어 전에 넣은 스크립트 · 명령 · 훅을 걷었습니다';foreach($z in $g){Write-Host ('          '+$z)}};exit 0",
+          ]
+        : [
+            "$s='script';",
+            "if((Test-Path -LiteralPath $sp) -and -not ([System.IO.File]::ReadAllText($sp,$u).Contains($mk))){Write-Host ('          ['+$bg+'] 같은 이름의 다른 파일이 있어 두었습니다: '+$sp);exit 1};",
+            "$b=(@(Get-ChildItem env: | Where-Object {$_.Name -like 'HWAX_SHARE_PS1_*'} | Sort-Object Name) | ForEach-Object {$_.Value}) -join '';",
+            '[void][System.IO.Directory]::CreateDirectory($hd);',
+            '[System.IO.File]::WriteAllText($sp,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)),(New-Object System.Text.UTF8Encoding($true)));',
+            "Write-Host ('          스크립트: '+$sp);",
+            "$s='command';",
+            "if((Test-Path -LiteralPath $cf) -and -not ([System.IO.File]::ReadAllText($cf,$u).Contains($mk))){Write-Host ('          ['+$bg+'] 같은 이름의 다른 파일이 있어 두었습니다: '+$cf)}",
+            "else{[void][System.IO.Directory]::CreateDirectory($cd);[System.IO.File]::WriteAllText($cf,[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:HWAX_SHARE_CMD)).Replace('@@HWAX_SHARE_PS1@@',$spf),$u);Write-Host ('          명령: '+$cf)};",
+            ...readSettings(auto),
+            auto ? '' : 'if($j -ne $null){',
+            ...merge,
+            auto ? '' : '};',
+            "if($g.Count -gt 0){Write-Host '          전에 단 세션 끝 훅을 걷었습니다(자동 올리기 칸이 꺼져 있다)';foreach($z in $g){Write-Host ('          '+$z)}};exit 0",
+          ];
+    return [
+      ...head,
+      ...body,
+      '}catch{if($t){Remove-Item -LiteralPath $t -Force -EA SilentlyContinue};',
+      "if($s -eq 'settings'){Write-Host ('     ['+$bg+'] settings.json 을 UTF-8 JSON 객체로 읽지 못해 건드리지 않았습니다: '+$sf)}",
+      "else{Write-Host ('     '+$s+' failed: '+$_.Exception.GetType().Name)};exit 1}",
+    ]
+      .filter((l) => l)
+      .join(' ');
   };
 
   // 인증서 자리 — 배치와 화면의 '직접 설정' 안내가 같은 파일을 가리킨다(%USERPROFILE% 은 cmd 가 푼다).
@@ -275,6 +536,7 @@ export function makeSnippets(origin: string): Snippets {
     pem: string | null,
     proxy: string | null,
     offload = false,
+    share: 'off' | 'command' | 'auto' = 'off',
   ): string {
     const CORP_PROXY = fallbackProxy(proxy);
     const certDir = CERT_DIR;
@@ -920,6 +1182,27 @@ export function makeSnippets(origin: string): Snippets {
         : [
             `powershell -NoProfile -ExecutionPolicy Bypass -Command "${offPs(false)}"`,
             'if errorlevel 1 echo      [!] 전에 넣은 서버 LLM 명령 · 규칙을 걷지 못했습니다 - 위 메시지 확인. MCP 등록은 그대로 끝났습니다.',
+          ]),
+    );
+
+    // ── [5c] 내 Claude 대화를 포털에 공유(docs/interaction-data contract §5) ─────────────────────────────────────────
+    // 칸을 켜면 올리는 스크립트(%USERPROFILE%\.hwax\hwax-share.ps1)와 명령 /hwax-share 를 두고, 자동 칸이면 settings.json 에 SessionEnd 훅을 단다.
+    // 끄면 걷는다 — 걷을 것이 있을 때만 말한다(위 sharePs 머리 주석). 글은 base64 환경변수로(스크립트는 조각으로) 넘긴다.
+    L.push(
+      ...(share !== 'off'
+        ? [
+            `echo  [5c] 내 Claude 대화를 포털에 공유 - Claude Code 명령 /hwax-share${share === 'auto' ? ' 와 세션 끝 자동 올리기' : ''}`,
+            ...b64Sets('HWAX_SHARE_PS1', sharePs1()),
+            `set "HWAX_SHARE_CMD=${b64(SHARE_CMD)}"`,
+            `powershell -NoProfile -ExecutionPolicy Bypass -Command "${sharePs(share)}"`,
+            'if errorlevel 1 echo      [!] 공유 스크립트 · 명령을 다 넣지 못했습니다 - 위 메시지 확인. MCP 등록은 그대로 끝났습니다.',
+            'echo          Claude Code 를 새로 열면 /hwax-share 가 보입니다. 이 포털 박스에서 상호작용 기록이 꺼져 있으면 올릴 때 그렇다고 말합니다.',
+            'echo          걷으려면 토큰 화면에서 칸을 끄고 받은 배치를 다시 실행하세요.',
+            '',
+          ]
+        : [
+            `powershell -NoProfile -ExecutionPolicy Bypass -Command "${sharePs('off')}"`,
+            'if errorlevel 1 echo      [!] 전에 넣은 공유 스크립트 · 명령 · 훅을 걷지 못했습니다 - 위 메시지 확인. MCP 등록은 그대로 끝났습니다.',
           ]),
     );
 
