@@ -79,3 +79,21 @@ update-all 끝 요약 「있는데 안 켠 것」 에 둘이 ○ 로 뜬다(켜�
 | `curl -H 'Authorization: Bearer x1y2z3'` | `curl -H 'Authorization: Bearer <가림:bearer>'` |
 | `토큰 eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln 끝` | `토큰 <가림:jwt> 끝` |
 | `{"user_password": "p@ss", "count": 3}` | `{"user_password": "<가림:user_password>", "count": 3}` |
+
+## 8. 짓고 나서 정한 꼴 — 게이트웨이(`wt1124/interactions` `f28ae6c`, 11-24)
+
+- **자리** — 창고 기본 자리는 게이트웨이 곁이 아니라 결과 손잡이 · 그림 보관과 같은 체크아웃 밖 규칙(데이터 루트의 `interaction_spool`, 원장이 리포 안이면 리포
+  옆 `<리포>-interaction_spool`, `GATEWAY_INTERACTION_SPOOL_DIR` 이 덮음). 조각 `ix-<첫 줄 ms>.jsonl` · 0600 · 폴더 0700.
+- **호출을 늦추지 않는 법** — 처리기는 칸만 대기열에 넣고 돌아가고, 가림 · 쓰기는 일꾼 스레드 하나(대기열이 차면 버리고 `dropped`).
+- **`args`** — 1 MB 를 넘으면 앞부분 글이 되고 `args_chars` 칸이 붙는다(객체가 아닐 수 있다). **`result_chars` · `result_sha256`** 은 가린 원문 전체 기준(가리기
+  전 지문은 짧은 비밀을 맞혀 보는 길이 된다). 글 블록이 하나뿐이고 structuredContent 와 같은 JSON 이면 한 번만 싣는다.
+- **가림 차례** — PEM → Bearer → JWT(Bearer 먼저면 `Bearer -----BEGIN…` 덩어리가 남는다). '끝나면' 은 글자 그대로의 끝 · Bearer 뒤 구분은 빈칸 · 탭 · 결과 글이
+  JSON 이면 칸 이름까지 가린다. 포털도 같은 차례.
+- **가져가기** — `max` 1 ~ 2000(기본 500) · 한 번에 ≤16 MB · 적어도 한 줄 · cursor 는 불투명 글(지금 꼴 `v1.<조각 ms>.<바이트 자리>` — 포털은 읽지 않는다) ·
+  ack 답 `{ok, deleted, segments, spool_bytes}` · 내준 적 없는 자리 400. 내부 창구 막기는 `x-forwarded-` 로 시작하는 머리 전부로 넓혔다(결과 손잡이와 같은 함수).
+- **`/health`** — `interactions: {enabled, spool_bytes, segments, dropped, errors, oldest_ts}`.
+- **모든 자격을 적는다** — pat · chat · procedure · mcp-app · gw-token · service 를 다 적고 `via` 로 가른다(IX-1). 웹 챗과 겹치는 줄은 포털이 corr 로 거른다.
+- **`share_conversation`** — 제목 · session_id · client 200자에서 자름 · 포털 200 · 201 둘 다 성공 · 50 MB 넘으면 보내지 않음 · 포털 404 면 「포털에서 수집이 꺼져
+  있다」 · 그 호출 자체도 수집 줄로 남으니 포털 수집기는 `share_conversation` 줄을 건너뛴다(shared_sessions 와 겹치지 않게).
+- **§7 알림** — 게이트웨이 지침이 가장 길 때 이미 2,031자라 계약 문구를 넣으면 2,048자를 넘는다. 들어가면 문구 그대로, 넘으면 「호출은 기록된다.」 한 줄을 싣는다
+  (전체 문구는 `share_conversation` 설명에) — 이 세션 판단(권장안), 문구는 사람이 확정할 때 함께 다시 본다.
