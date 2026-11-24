@@ -24,8 +24,9 @@
 
 ## 답 받기
 
-- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push)
+- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP(R25-10) / 기다림: DocForge · HEAXHub · 브리지 · SmartTwin MCP
 - [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기
 - [ ] 5차 동결 해제(87 알림) → 각 세션에 전하기
-- [ ] 사용자 결정 넷(PLAN 6절 — SF-7 판정 칸은 운영 쪽 R25-Q2 로 돌림) → 해당 세션에 전하기
+- [x] 사용자 결정 넷(11-25 모두 권장안 — R25-9) → StepForge · DocForge 에 전하기
 - [ ] 운영 쪽 답(편지함 2026-11-25) → 해당 세션에 전하기
+- [ ] KooRemapper R-09 · ste PA-02 — 그쪽 세션이 사용자에게 묻는 결정(R25-10)
