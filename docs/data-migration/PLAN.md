@@ -312,6 +312,12 @@ merge 스크립트를 그대로 두고, (1) 입력 덤프가 Drive 다운로드�
 세 단계를 순서대로 부르고 `HWAX_BOX_ROLE × owner` 로 방향을 검사할 뿐이다. 박스 목록은 `infra/boxes.yaml`(gitignore, `{prod: {host, user}}`).
 `--from <box>` 를 다른 박스에서 부르면 `ssh <box> 'backup-local.sh <svc>'` 로 소스에서 덤프를 만들고 받아 온다(3.1b 같은 박스 가정 유지).
 
+> **11-24 지은 꼴(짓기만 — 돌릴지는 사람, context-notes 「2026-11-24」)** — `--plan` 대신 **기본이 미리보기**이고 `--apply` 로만 바꾼다.
+> 소스 덤프는 새로 뜨지 않고 그 박스의 가장 새 daily(`.sha256` 까지)를 쓴다(§8.7 #1). 박스 목록은 `{<박스>: {host, user, role, repo, port}}` ·
+> 확인은 `db-sync.sh ssh-check`. 배선은 레지스트리 `merge_input` · `restore_tool` 을 선언한 AIDH · SF 의 pg 둘이고 나머지는 거부한다.
+
+
+
 ### 8.2 사용자 데이터 mirror — 채널이 없던 4곳도 기존 도구로
 - **postgres**(Koorm·HEAX·그리고 콘텐츠 표 밖의 SF/AIDH/MXWP 사용자 표): 소스 backup-local 덤프 → rsync → 대상에서 pre-sync 후
   **기존 restore 계열**(`restore-db.sh` — DROP DATABASE 지만 staging 에선 그것이 mirror 의 정의). restore 스크립트가 없는 Koorm·HEAX 는

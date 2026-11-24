@@ -176,6 +176,52 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   agent-server artifacts)에 있었다 — cae00 은 deploy-all 이 `git stash -u` 를 하므로 570M SIF 트리를 stash 로 끌고 갔을 것. `*.pre-move-*` gitignore + plan 블로커.
 - **교훈**: 사용자 입력 한 줄도 형식 검증 없이 경로 연산에 넣지 않는다. dev 는 내가 `/data` 를 넣어 통과했으니 "검증 완료" 가 아니었다.
 
+## 2026-11-24 — D5 적용 verbs 짓기(실행 안 함)
+
+**사용자 결정(11-24)으로 짓기만 함 — 10-31 A2 의 보류를 뒤집음, 실제 push · mirror 를 돌릴지는 사람이 정한다.** 11-24 사용자 지시는
+「남은 계획 일을 다 하라」였다. 10-31 의 보류 까닭(운영 전환 중 · 같은 병합 스크립트를 다른 갈래가 고친다)은 그대로 살아 있어서, 그 까닭에
+닿는 일은 하지 않았다 — 형제 리포의 병합 스크립트는 한 줄도 고치지 않았고(줄 54 · 55 · 57 은 그대로), dev · cae00 어디서도 돌리지 않았다.
+지은 것은 checklist 52 · 53 — `infra/boxes.yaml`(gitignore, 꼴은 `.example`) · `db-sync.sh ssh-check` · 적용 verbs `push · pull · mirror · rollback`.
+
+- **기본은 미리보기, `--apply` 로만 바꾼다** — PLAN §8.1 의 `--plan` 플래그를 뒤집었다(호출자 지시). 미리보기는 ssh 도 타지 않는다 — 이 박스의
+  레지스트리 · 덤프 · 원장만 읽고 무엇이 어디로 가는지 찍는다. 원장 폴더도 만들지 않는다(그래서 `_state_path()` 와 `_state_apply()` 를 갈랐다 —
+  기존 `state_dir()` 은 읽기에서도 mkdir 한다, status 가 쓰니 그대로 뒀다). 시험이 박스 셋의 파일 트리 · 가짜 도구 호출 기록을 전후로 맞대 단언한다.
+- **소스 덤프는 그 박스의 가장 새 daily(`.sha256` 까지 쓰인 것)** — PLAN §8.1 은 `ssh <box> backup-local.sh <svc>` 로 새로 뜨자고 했지만 §8.7 #1
+  (덤프는 하루 한 번 — 백업이 곧 동기화 소스)과 D0 메모(AIDH 7분 pg_dump 라이브 부하 — 03:30 daily 재사용)를 따랐다. 덤프가 없으면 거부하고
+  `backup-local.sh <라벨>` 을 안내한다. backup-local 은 덤프를 다 쓴 뒤 `.sha256` 을 쓰므로 `.sha256` 이 있는 것만 고르면 쓰는 중인 파일을 안 집는다.
+- **받는 박스의 일은 그 박스가 한다** — push 는 ssh 로 원격 `db-sync.sh _apply` 를 부른다. 사전 백업 · 병합 · 원장이 그 박스의 코드 · `.env` · 역할로
+  돈다(박스마다 경로 · 인스턴스 이름이 다르다). 그래서 boxes.yaml 에는 `repo`(박스마다 리포 자리가 다르다 — dev `~/claude` · cae00 `~/Projects`)만 받고
+  data_root · backup_root 는 받지 않는다 — 원격이 `_inbound` · `_latest` 로 자기 설정에서 답한다. 안쪽 verbs 넷(`_ping · _latest · _inbound · _apply`)은 ssh 전용이다.
+- **역할은 boxes.yaml 만 믿지 않는다** — 원격이 실제로 내는 `HWAX_BOX_ROLE` 을 `_latest` · `_ping` 답으로 대조하고, 다르면 받지 않는다. push 의 원격
+  `_apply` 도 자기 역할로 방향을 다시 본다. 방향 규칙은 PLAN §3 · §8.3 그대로 — 역할 없음 거부 · publish 는 dev → staging → prod 쪽으로 · mirror 는
+  prod → staging 만(prod 는 받지 않고 dev 로는 안 간다). 지금은 prod 가 없어(결정 14) mirror 는 쓸 자리가 없다.
+- **레지스트리 선언으로만 부른다 — 새 키 둘** `merge_input`(병합 스크립트의 로컬 덤프 입구 변수) · `restore_tool`(통째 복원 스크립트)을 services.yaml
+  의 AIDH · SF pg 클래스에만 적었다. 둘 다 이미 있는 입구다(AIDH `AIDH_MERGE_DUMP` · `restore-db.sh`, SF `SF_MERGE_DUMP` · `drive-sync/restore-db.sh`).
+  거부하는 것 — MXWP(병합기가 받는 꼴이 `data-dump.sh` tar 라 backup-local 의 pg_dump 가 아니다) · HEAX materialtwin(로컬 입구 없음 — 줄 54) ·
+  Koorm · HEAX pg 의 mirror(복원 도구 없음 — 줄 57 의 pg_restore 4줄). 줄 54 를 코드로 확인하니 SF 입구는 이미 들어와 있었다.
+- **입구 탐침** — 병합 스크립트 본문에 입구 변수 이름이 없으면 부르지 않는다. AIDH · SF 둘 다 「변수가 비었거나 그 파일이 없으면 Drive 최신을 받는다」
+  폴백이 있어서, 입구를 모르는 판에 변수만 주면 **다른 덤프를 조용히 병합한다**. 같은 까닭으로 파일 존재 · sha256 대조를 부르기 전에 한다.
+- **사전 백업은 backup-local 한 번 → 새 덤프를 `pre-sync/<id>/` 로 옮긴다.** 처음엔 하드링크로 짰다가 시험을 짜며 잡았다 — backup-local 의 이름은
+  초 단위(`<라벨>-<박스>-<TS>`)라 같은 초에 다시 뜨면 `gzip -c > 같은 이름` 이 같은 inode 를 잘라 쓰고, 하드링크인 사전 백업까지 덮는다. 옮기면
+  daily 세대 정리에도 안 걸린다. 새 덤프는 (inode · mtime · 크기) 가 바뀐 파일로 찾는다 — 같은 이름을 다시 썼어도 잡힌다. id 는 마이크로초까지.
+  부수효과 하나 — backup-local 은 라벨 하나로 불러도 끝에 `hwax/<박스>/*/daily` 세대 정리를 돈다(03:30 크론이 지울 것을 조금 일찍 지울 뿐).
+- **실패해도 자동으로 되돌리지 않는다(D7)** — 원장에 `failed` + `pre_sync` 를 적고 화면에 `rollback --svc … --id …` 를 찍는다. 되돌리기는 restore-db.sh
+  (DROP + 통째)라 사람이 고른다. rollback 도 사전 백업을 먼저 떠서 되돌리기도 되돌릴 수 있다. rollback 은 원장이 있는 박스 — **적용한(받은) 박스**에서.
+- **mirror · rollback 은 이름을 한 번 더 친다** — `<이 박스>/<svc>`(`--confirm` 또는 표준입력 한 줄 — 비었거나 닫혔으면 거부, 그래서 크론은 늘 거부).
+  mirror 는 pull 꼴만 둔다 — 지워지는 쪽에서 그 자리에서 이름을 치게. 원격 `_apply` 는 publish 만 받는다.
+- **곁 안전** — update-all 이 돌면 거부(같은 병합 스크립트를 §3 이 부른다, `services._update_all_running`) · 박스 안 잠금(fcntl — 파이썬 fd 는 자식에
+  안 물려 데몬이 잠금을 쥐는 일이 없다) · ssh 는 BatchMode(비밀번호를 묻지 않는다)라 키가 없으면 rc 255 로 바로 멈춘다 · 래퍼는 update-all ·
+  deploy-all 을 부르지 않는다(dev 리포 리셋 — gotchas 3, 시험이 소스를 본다) · `HWAX_DATA_ROOT` · `BACKUP_ROOT` 가 절대경로가 아니면 손대지 않는다(09-05 사고).
+- **받은 자리(`.staging/inbound/<svc>/<id>`)는 됐으면 비운다** — 같은 파일이 보낸 박스 daily 에 남아 있다. 실패면 진단용으로 남긴다. pre-sync 는
+  지우지 않는다(D7 — `prune` 은 아직 배선하지 않았다). 원장 `src` 칸에 보낸 박스의 원래 경로를 적는다.
+- 시험 — 박스 셋(dev · staging · prod)을 임시 폴더에 세우고 가짜 ssh · rsync · apptainer · 병합 · 복원을 진짜 꼴로(ssh 는 그 박스 환경의 bash, rsync 는
+  원격 지정만 바꿔 진짜 rsync, 병합 · 복원은 진짜와 같은 입구와 Drive 폴백) 둔다. 변이 넷(미리보기 막기 · 입구 탐침 · 이름 확인 · 방향)이 다 잡혔다 —
+  하나는 변이 식의 따옴표 실수로 문법 오류에 죽어 다시 했다(까닭이 맞는지까지 본다).
+
+**사람이 정할 것** — ① 실제로 돌릴지 · 언제(지금 dev → cae00 콘텐츠는 AIDH 조각 길 · SF Drive 병합이 돈다 — db-sync push 는 그 대안이다) ②
+돌린다면 박스마다 `infra/boxes.yaml` 을 채우고 `ssh-check`(양방향) ③ 받은 박스의 pre-sync 보존(지우는 `prune` 미배선 — AIDH 는 한 번에 수 GB)
+④ 남은 D5 줄(54 HEAX 입구 · 55 병합 소규모 수정 · 57 Koorm · HEAX mirror · 58 `DB_SYNC` 이중화)을 열지.
+
 ## 작업 로그
 - 2026-09-05: 인벤토리·패널·계획 수립. 코드 변경 0.
 - 2026-09-05 (오후): 사용자 결정 — 크론 24·1행 삭제 OK, vllm 기준선 제외 OK, a.txt 삭제 OK, "내부 프로젝트 하던 건 다 커밋 push 해서 동기화한 다음".
@@ -196,4 +242,4 @@ dev 에서 읽기 전용 실측. 조정 없이 갔으면 깨졌을 것 셋(★).
   hwax-stack.service 재enable. 커밋 986d058·61cdb5b(+수정 1건). cae00 절차는 cae00-deploy-guide 2026-09-05 절.
 - 2026-09-05 (밤): cae00 첫 update-all 2b 가 `HWAX_DATA_ROOT=data`(상대값)로 실패 — 포털 다운·상대 심링크 2곳. 절대경로 강제·needs_bind 실패 전파·start.sh 가드·
   `*.pre-move-*` gitignore(5 리포) 수정 push. 복구 절차는 cae00-deploy-guide 2026-09-05 실사고 절. 사용자가 cae00 에서 복구 후 재실행.
-
+- 2026-11-24: D5 적용 verbs 짓기(사용자 결정 — 10-31 A2 보류를 뒤집음, 짓기만) — `db-sync.sh push · pull · mirror · rollback · ssh-check` · `infra/boxes.yaml.example` · 레지스트리 `merge_input` · `restore_tool`(AIDH · SF pg) · 시험 21 · 변이 넷. 돌리지 않았다. 결정은 위 「2026-11-24」 절.
