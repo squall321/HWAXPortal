@@ -23,6 +23,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [ ] `fixtures/odb-hub/apps.txt` — `map` 집계 + **`apps` 배열(tool_count·reachable)** +
       사용자 PAT 로 `list_tool_apps(app="odb-hub")` 결과 한 줄 + 허브 버전 한 줄
       → 허브 버전(`0.1.0`)·게이트웨이 등록은 reference.md §1 에 있다. **남은 것: 사용자 PAT 시야 한 줄**(cae00 실주행 전)
+      → 11-24 고정물을 지었다(W-120) — dev 는 무인증 `/tools-map` 실측(odb-hub 없음 — (a) 미등록), cae00 은 기록에서 옮긴 도구 39 · 허브 0.1.0.
+      남은 것은 그대로 cae00 의 사용자 PAT 한 줄(받은 편지함 2026-10-31-backlog Q6 — 답이 오면 apps.txt 의 그 줄을 바꾼다)
 - [x] `fixtures/odb-hub/samples.json` — 읽기 게이트를 통과한 표본. 무인자 도구 전부 · 잡 정보 첫 호출 ·
       IC 계열로 좁힌 부품 목록 · 고의 실패 2건 · 항목마다 `ms`·`bytes`·`is_error`
       → **reference.md §4 로 대체** — 표본 17종(봉투형 실패 1건 포함). `ms`·`bytes` 와 두 번째 고의 실패는 없다
@@ -235,12 +237,18 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] `GET /runs?procedure_id=` + 절차 상세의 이력 + 실행 상세의 "← 이 절차에서"
 - [x] 씨앗 재가져오기 = **판본 올리기**(사본 아님), 옛 판본·이력 보존 · 멱등 스키마 마이그레이션
 - [ ] 포털 **브라우저**에서 로그인해 완주(사람) — PAT 경로는 아직 사람 손으로만 지나간다
+      — 11-24 포털 길(라우트 · 실행기 · 원장 · 게이트)은 시험으로 끝까지 지났다(`test_procedures_r1_flow.py`, W-120). 남은 것은 게이트웨이를 사람 PAT 로 지나는 홉이다
 - [x] `cd backend && pytest` 전체 초록 뒤에만 S1 완료(전역 §8) ✅ 261 통과
 
 ### 검증 (S1 전체)
 - [x] **챗·심의 파일 0개 변경**을 diff 로 확인 ✅ 확인했고 **1건 나왔다** — 개명이 깨뜨린 낱말이었다(W-41, 수정·검사기 추가)
-- [ ] dev 첫 절차 완주 → 저장 → 변수 바꿔 재생(`create_report_draft` 는 `dry_run=true`)
-- [ ] 챗 동시 실행에서 429·지연 없음
+- [x] dev 첫 절차 완주 → 저장 → 변수 바꿔 재생(`create_report_draft` 는 `dry_run=true`) — 11-24(W-120): R1 씨앗 가져오기 → ⑦ 에 dry_run 을 단
+      판본 2 → live 완주(⑦ 확인 카드 → 승인) → `r_unfold` 만 바꿔 재생을 포털 라우트 · 실행기 · 원장으로 끝까지(`backend/tests/test_procedures_r1_flow.py`).
+      게이트웨이는 실제 계산 녹취를 내는 대역이다(LaminateAnalyzerMCP 원천 `1681b66` 로 받은 글 — W-38 의 게이트웨이 실호출과 같은 값). 게이트웨이를
+      사람 PAT 로 지나는 홉은 이 박스에 사람 자격이 없어 사람 몫 두 줄(위 브라우저 완주 · 끝의 '포털 화면에서 R1 완주')로 모은다
+- [ ] 챗 동시 실행에서 429·지연 없음 — 11-24 포털 층은 끝(W-120): 절차 자리를 다 쓰고 게이트웨이에 붙잡힌 동안 챗 한 턴(에이전트 서버 대역)이 429
+      없이 2초 안에 끝나고 넘친 절차는 줄을 선다(`backend/tests/test_procedures_chat_isolation.py` · 변이 둘). 남은 것 — 게이트웨이를 같이 쓰는 층(느린
+      단계의 백엔드 재연결)과 진짜 LLM 지연은 실서비스에서(cae00 · 사람)
 - [x] §6-1 의 네 수가 `GET /procedures-api/stats` 또는 sqlite 질의로 나온다 ✅ `store.stats()` 가 절차수·재생수·타인재생·재생완주율을 낸다(관리자 전용)
 - [ ] cae00 — `update-forges.sh chat` 뒤 `/procedures` 페이지가 실제로 뜬다(dist 가 Drive 를 거쳤는지)
 
@@ -267,7 +275,10 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
       **조용히 제외하고** 경고만 낸다. 임계 ply 가 빠지면 과대평가다
 - [x] `laminate` 는 속성 없는 object(44/465) — 원문 JSON 2단 입력으로 받는다. `unit_system` 은 ✅ 화면이 여러 줄 원문 JSON 칸으로 받고 `coerce_inputs` 가 푼다(W-35)
       `SI`|`SI_mm` 이고 섞이면 조용히 틀린다
-- [ ] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다
+- [x] 검증: dev 에서 완주 → 저장 → `bend_radius` 만 바꿔 재생. 층별 응력·수명이 R 에 따라 변한다 — 11-24(W-120, 위 S1 검증과 같은 시험): D-287 뒤로
+      굽힘반경은 형상에서 읽어 사람이 채우는 반경은 `r_unfold`(펼친 상태) 하나라 그것을 1000 → 100 으로 바꿨다. ④ Mx 23.06 → 230.56, ⑥ 임계 층 진폭
+      9022.9 → 8532.7 · 1번 층 수명 1 → 2.34 사이클로 바뀌고, 예제 형상(R 6)은 굽힌 상태에서 첫 사이클 파손이라 수명 칸 · ⑤ 는 그대로다. 게이트웨이
+      홉은 사람 몫(끝 줄)
 - [x] 검증: 물성 없는 ply 를 일부러 넣어 **W120 이 `notes` 에 올라오는지** (확인 10-17 — backend/tests/test_procedures_r1.py:135 — 실호출 고정물 life_w120(W-29, 09-14)으로 W120 이 notes 에 오르는 것 검증)
 
 ## S2.5 · 2단 도구 — 역량이 도구 뒤에 숨은 자리 (PLAN §9-4·§9-5)
@@ -606,6 +617,8 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 변수 뜻을 도구 스키마에서 끌어온다 + 절차를 **도구 계약**으로(W-49·W-50)
 - [x] `activity[]` 에 `ts`·`ms` + 원장 `duration_ms` 까지 — 짝 키로 시작을 기억해 잰다
 - [ ] 합격 기준 확인 — `predict_sed` 병렬 5회가 **각각 다른 인자에 짝지어지는지** 실제로 본다
+      — 11-24 LLM 없이 본 데까지(W-120, 일회용 점검 — 리포 밖): 에이전트 서버의 진짜 LangGraph 에 가짜 모델이 한 메시지로 다섯을 내고 끝나는 차례를
+      뒤집어도 run_id 다섯이 달랐고, 포털 `from_chat` 이 다섯 줄을 제 인자 · 제 결과로 접었다. 남은 것 — 진짜 LLM 이 병렬로 부르는 챗 한 턴(사람 · LLM)
 - [x] 초안 확정 화면 — 사람이 정할 자리마다 체크상자·이름 칸, 고른 것만 변수로(W-59)
 - [x] 결손 → 장부 **초안**(`POST /gaps/draft`) + 화면 버튼. ⚠ 파일은 포털이 안 쓴다(W-64)
 - [x] 절차를 게이트웨이에 **실제 도구로 등록**(계약은 섰다 — 등록 경로는 사람 결정) — 사용자 결정 10-31 A14: (A) cae00 stats 로 §6-1 쓸모를 본 뒤 정한다(FU-D3 그대로) (10-31 정리)
@@ -617,11 +630,13 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 
 ## S8 · 리스크 패턴화 (가장 뒤)
 
-- [ ] **실행 → 심의 다리** — 실행 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
+- [x] **실행 → 심의 다리** — 실행 상세 "심의로 넘기기". 단계 기록을 `[{source, tool, args, result}]` 로 바꿔
       `POST /agent/conversations` → `POST /agent/chat`(`'/심의 ' + 화두`, `delib_opts.evidence`,
       `chair_template: "risk-review"`). 새 엔드포인트 아님. 상한 40건·결과 150,000자·**인자 1,200자** — 사용자 결정 10-31 A16: (A) §6-1 쓸모 판정 뒤로 (10-31 정리)
       — 11-22 지음(L21-5 ③ · L21-10 ②): **일반 심의로** 넘긴다 — 유형은 사람이 고르고 리스크 심사 계열은 서버가 422 로 거절한다. 화면은
       실행 id 만 싣고(`delib_opts.procedure_run`) 근거는 챗 중계가 그 사람의 원장에서 짓는다(가림 유지 · 실패와 실행 여부 모름 표지, W-114)
+      — 11-24 닫음(W-120): `0aefbc14`(origin/main) · `_attach_procedure_run`(backend/app/agent/routes.py) · `backend/app/procedures/handoff.py` ·
+      `backend/tests/test_procedures_delib_bridge.py` 로 확인
 - [x] **심의 좌석 도구는 읽기 전용 판독 도구만** — `report_summary`·`report_worst_cases`·
       `report_directional`·`report_part_risk`·`report_findings`·`report_query`·`report_case`·
       `report_angle_stats`·`report_scatter`·`report_energy_flow`·`report_part_series`·
@@ -646,3 +661,5 @@ S0 은 사용자 몫이고 나머지와 병렬이다. S1 은 S0 없이 시작할
 - [x] 씨앗 절차 + 실물 응답 고정물 + 회귀 16개 — `save` 경로가 봉투(`data.`) 아래라는 것을
       테스트가 잡았다(W-29). 굽힘반경은 `bend_profile` 이 준다(W-28)
 - [ ] 포털 화면에서 R1 을 **실제로 완주** — StepForge 에 U자 판을 반입하고 절차를 재생한다(사람)
+      — 11-24: 포털 길은 시험이 끝까지 지났다(W-120). 사람이 볼 것은 게이트웨이를 내 PAT 로 지나는 홉 하나다 — dev 면 ⑦ 에 `dry_run: true` 를 단 판본으로
+      완주(dev 예제 과제는 09-14 에 반입했다 — W-33, 지금도 있는지는 자격이 없어 못 봤다) → `r_unfold` 만 바꿔 다시 재생
