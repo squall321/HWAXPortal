@@ -123,8 +123,9 @@
   `--max-loss-rate` · `--max-mismatch-increase` 로 바꾼다.
 - **숫자 대조** — 답의 수(소수점이 있거나 100 이상 — 에이전트 서버 `evidence.sig_numbers` 와 같은 판정)가 그 실행이 본 도구 결과 · 과제 글에 있는지.
 - **합계 · 개선율** — 두 갈래가 다 끝난 짝만 센다. 「줄인 몫」 이 음수면 offload 가 더 썼다(예 도구 호출 수는 위임 기다림 때문에 늘 수 있다).
-- **서버 LLM** — Claude 밖에서 쓴 것을 숨기지 않는다. 위임 잡의 토큰은 `delegate_result` 의 `tokens`(잡마다 한 번)이고, `draft_section` · `llm_transform` ·
-  `result_ask` 는 결과에 tokens 칸이 없어 호출 수만 센다 — 서버 총량은 관리 › 이용 통계의 그 사람 LLM 사용량(종류 other, 평가한 날)으로 함께 본다.
+- **서버 LLM** — Claude 밖에서 쓴 것을 숨기지 않는다. 서버 토큰은 위임 `delegate_result` 의 `tokens`(잡마다 한 번)와 `draft_section` · `llm_transform` ·
+  `result_ask` 결과의 `tokens`(호출마다)를 더한 것이다. tokens 칸이 없거나 null 인 것(옛 에이전트 서버 · 서버가 사용량을 주지 않은 호출)은 「모름」 으로
+  센다 — 그 몫은 관리 › 이용 통계의 그 사람 LLM 사용량(종류 offload — 옛 기록은 other, 평가한 날)으로 함께 본다(TS-16).
 - **꼴 검사** — `tasks.yaml` 의 `expect`(표 행 수 · 줄 수 · 글자 수 · 들어야 할 낱말 · 영어 비율). 데이터가 없는 과제는 두 갈래가 함께 「없다」 로 답할 수 있다.
 - **사람 표본** — 판정 모델과의 일치 수. 4쌍 가운데 어긋나는 것이 많으면 판정 결과를 덜 믿는다.
 
