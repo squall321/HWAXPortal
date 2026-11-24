@@ -416,3 +416,31 @@ openapi 로 같은 꼴인지 견줬다.
   `rev_outline` · `rev_check` 는 RA 가 바뀐 뒤의 가정 꼴이다(어긋남 답은 RA 가 다른 창구에서 내는 꼴 그대로). 새 시험 여섯, 사본 변이 일곱(늘 싣기 · 다시 안 함 ·
   매번 올림 · 같은 칸 막기 뺌 · 상한 1 · 아무 409 나 다시 · 앞 판을 다시 씀)이 모두 붉었다.
 
+**RF-42 F3 을 게이트웨이에서 닫는다 — 같은 보고서의 RA 본문 쓰기와 figure_to_report 를 보고서마다 한 줄로(11-24 KST, 게이트웨이 가지 `wt1124/fig-race` `74854f9`).**
+RF-6 의 둘 가운데 게이트웨이 쪽을 지었다. RA 쪽(RF-41 — 판 번호 · 행 잠금)은 v0.186.3 에 없어 기다리지 않는다.
+- 재현 — 게이트웨이 시험(`test_같은_보고서의_figure_to_report_와_RA_쓰기는_줄을_서서_그림_칸이_지워지지_않는다`)이 figure_to_report(→ 가짜 포털 → 가짜 RA)와
+  `update_report_draft`(→ 등록 토큰 길의 단발 세션 → 가짜 RA)를 한꺼번에 부른다. 게이트웨이의 `_call_tool` 은 진짜이고 전송만 막았다. 가짜 RA 는 v0.186.3 처럼 모든 쪽을 읽고
+  합쳐 통째로 쓰며, 읽은 뒤 다른 쓰기가 들어올 틈을 0.3초까지 열어 둔다(시간에 기대지 않는다). 고치기 전 판에서 그림 넣기는 ok 를 받았는데 그 쪽이
+  `['minutes', 'summary']` 로 남았다 — 그림 칸이 지워졌다(직접 이름 · 호출 별칭 · invoke_tool 세 갈래 모두).
+- 원인 — RA 원본(v0.186.3 `b552f09`, 읽기만)에서 보고서 본문을 통째로 다시 쓰는 창구는 셋이다. `PATCH …/ai-draft`(`update_report_draft`), `PATCH …/ai-draft/rows`
+  (`append_rows` · `patch_cells` · `remove_rows` — 설명은 '서버가 현재 값을 읽어 부분만 바꾼다' 지만 그 쪽을 고친 뒤 `ReportUpdate(pages=kept)` 로 모든 쪽을 쓴다),
+  `POST …/versions/{vid}/restore`(`restore_version`). 모두 `services.update_report` 로 가고 행 잠금이 없다. 포털의 잠금은 to-report 끼리만 줄 세운다.
+- 고친 자리 — 게이트웨이 `_call_tool`(바깥 호출과 게이트웨이 안쪽 호출이 함께 지나는 자리). `_ra_write_key` 가 RA 백엔드(`reportarchive`)의 그 다섯(겹쳐 접두가 붙은
+  이름 · 호출 별칭 · invoke_tool 의 안쪽 이름도)과 `figure_to_report` 를 보고서 id(정수 글자 — `41` · `"41"` · `" 041 "` 이 같다)로 묶고, 그 id 의 asyncio 잠금 안에서
+  부른다. 게이트웨이는 프로세스 하나(start.sh 가 gateway.py 하나를 띄운다 · uvicorn workers 없음)라 asyncio 잠금으로 된다. 잠금은 기다리거나 쥔 호출이 0 이 되면
+  뺀다 — 쌓이지 않고, 시험처럼 이벤트 루프가 바뀌어도 다른 루프의 잠금이 남지 않는다.
+- 왜 게이트웨이인가 — 포털 to-report 를 부르는 것은 게이트웨이뿐이다(에이전트 서버는 `/upload` 만 쓴다). 우리 쪽의 RA 본문 쓰기(개인 Claude · 에이전트 서버
+  심의 이어붙이기 · 루틴 · 절차)도 모두 게이트웨이 MCP 를 지난다. 포털이 RA 에 바로 쓰는 길은 to-report 와 리스크 보고서 초안(방금 만든 초안에 쪽을 더하는 만들기
+  흐름) 둘뿐이다. 그래서 두 길이 다 지나는 게이트웨이 한 자리에서 닫힌다.
+- 줄을 서지 않는 것 — 읽기와 태그 · 게시 같은 다른 RA 도구(본문 쪽을 쓰지 않는다 — `update_report` 의 pages 를 건드리지 않는다), 다른 보고서, id 를 모르는 호출(RA 가
+  거절한다), 그림 저장을 끈 박스의 figure_to_report. 잠금이 감싸는 것은 호출 하나다 — 에이전트 서버 심의 이어붙이기의 `get_report` → `update_report_draft(page=쪽 수+1)`
+  두 호출 사이의 틈(RF-41)은 그대로다.
+- 기다림 — 앞 쓰기가 끝날 때까지 기다린다. 상한을 따로 두지 않았다 — 앞 호출이 자기 시간 한도(RA 도구 `GATEWAY_CALL_TIMEOUT` 600초 · 그림 넣기
+  `GATEWAY_PORTAL_SAVE_TIMEOUT` 120초)에서 끝나므로 앞 한 건의 기다림은 그 안이다. dry_run 호출도 줄을 선다(가려내지 않았다 — 짧다).
+- 남는 것 — 게이트웨이를 지나지 않는 쓰기(RA 화면의 'Local LLM 작성' · 다른 길로 RA MCP 에 바로 붙은 클라이언트)와의 경합은 RA 의 행 잠금(요청서
+  `docs/leftovers-1121/ra-request-1122.md` 3)으로만 닫힌다. 그 3 은 ai-draft 만 적었는데 ai-draft/rows · versions restore 도 같은 꼴(모든 쪽을 통째로 · 요청 처음의 파이썬
+  판 비교)이라 함께 청할 몫이다. 1 · 2(outline 판 · ai-draft `expected_revision`)는 게이트웨이를 지나는 F3 에는 이제 필요 없다. 포털 to-report 의 판 싣기(RF-41)는 그대로
+  둔다 — 쪽 구성이 바뀌는 것(마지막 쪽이 달라짐)을 막는 몫이다.
+- 시험 — 새 시험 넷(재현 세 갈래 · 열쇠 표 하나). 사본 변이 여섯(줄을 안 세움 · invoke_tool 풀기 뺌 · 별칭 뺌 · 잠금을 안 뺌 · id 글자 그대로 · 그림 넣기 뺌)이 모두
+  붉었다. 게이트웨이 전체 1218 → 1222 통과. 반영은 게이트웨이 재기동이다(5차 동결이라 이번에는 올리지 않았다).
+
