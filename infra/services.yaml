@@ -240,6 +240,7 @@ services:
       backup_want: [aidh]
       classes:
         pg:          { kind: postgres, path: pg/aidh,             current: deploy/apptainer/data/postgres,    bind: /var/lib/postgresql/data, instance: aidh_postgres, port: 5435, sync: publish-merge, merge_tool: deploy/apptainer/merge-from-drive.sh,
+                       merge_input: AIDH_MERGE_DUMP, restore_tool: deploy/apptainer/restore-db.sh,   # db-sync 적용 verbs(D5) — 로컬 덤프 입구 · 통째 복원(mirror · rollback)
                        conn: { env: deploy/apptainer/.env, user: POSTGRES_USER, db: POSTGRES_DB, pw: POSTGRES_PASSWORD } }
         attachments: { kind: blob,     path: svc/aidh/attachments, current: deploy/apptainer/data/attachments, sync: mirror, db_paths: [{ table: record_attachments, column: file_path }] }
         figures:     { kind: blob,     path: svc/aidh/figures,     current: deploy/apptainer/data/figures,     sync: mirror }
@@ -266,6 +267,7 @@ services:
       restart_also: [signalforge-mcp]   # down.sh 가 MCP 도 세운다 — 이관 뒤 같이 올린다
       classes:
         pg:      { kind: postgres, path: pg/signalforge, current: data/postgres, bind: /var/lib/postgresql/data, instance: sf_postgres, port: 5434, sync: publish-merge, merge_tool: scripts/drive-sync/merge-from-drive.sh,
+                   merge_input: SF_MERGE_DUMP, restore_tool: scripts/drive-sync/restore-db.sh,   # db-sync 적용 verbs(D5)
                    conn: { env: .env, user: POSTGRES_USER, db: POSTGRES_DB, pw: POSTGRES_PASSWORD, user_default: signalforge, db_default: signalforge },
                    tables: { voc_categories: { keys: [code] },
                              voc_records: { keys: [platform_id, external_id], exclude_cols: [id],

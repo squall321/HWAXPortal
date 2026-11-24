@@ -1,0 +1,21 @@
+# db-sync 가 rsync · ssh 로 닿는 박스 목록 — 이 파일을 infra/boxes.yaml 로 복사해 채운다(그 파일은 gitignore).
+# 공개 리포다 — 주소 · 계정 · 실제 경로는 추적 파일에 적지 않는다. 아래 값은 전부 자리표시다.
+#
+# 키   박스 이름 — 그 박스의 HWAX_BOX(없으면 hostname -s)와 같게 둔다. 다르면 ssh-check 가 ⚠ 로 알린다.
+# host ssh 로 닿는 이름(~/.ssh/config 의 별칭도 된다) · user ssh 계정(키 인증만 — BatchMode 라 비밀번호를 묻지 않는다)
+# role 그 박스의 HWAX_BOX_ROLE — dev | staging | prod. 원격이 실제로 내는 값과 다르면 받지 않는다
+# repo 그 박스의 포털 리포 루트. 박스마다 다르다(리포 CLAUDE.md 의 박스별 경로 표). / 또는 ~/ 로 시작
+# port (선택) ssh 포트, 기본 22
+#
+# 확인: ./infra/scripts/db-sync.sh ssh-check   — 박스마다 따로 돈다(가는 쪽과 오는 쪽은 다른 키다).
+boxes:
+  devbox:
+    host: dev.example.invalid
+    user: someone
+    role: dev
+    repo: ~/path/to/HWAXPortal
+  stagebox:
+    host: staging.example.invalid
+    user: someone
+    role: staging
+    repo: ~/path/to/HWAXPortal
