@@ -87,3 +87,9 @@ result_ask}` · 게이트웨이 `result_refs.enabled`(게이트웨이 확정 꼴
 - **눈가림은 갈래 이름을 싣지 않고, 답 안의 2판 도구 이름 · 결과 손잡이를 두 답 모두 같은 표지로 바꾼다.** 합계 · 판정은 두 갈래가 다 끝난 짝만 센다.
 - **진짜 `claude -p` 는 dev 에서 부르지 않는다(비용)** — 시험은 공식 문서의 stream-json 꼴을 그대로 내는 가짜 claude 와 가짜 게이트웨이로 돈다. 판정 기준
   「패배율 ≤ 10% 이고 어긋남이 늘지 않음」 은 제안이고 손잡이다.
+
+**TS-15 테스트셋 남은 결정 여섯은 권장안으로(2026-11-24, 사용자 「빨리」 — 바꿀 수 있는 것은 손잡이).** ① 큰 MCP 결과를 Claude Code 가 파일로 뺀 자리만
+Read 허용(기본) — 다 막으면 baseline 이 큰 결과를 못 읽어 결과가 offload 쪽으로 기운다 · 요청대로 막으려면 `--no-spill-read` ② `rest_call` 도 두 갈래 모두
+뺀다(`invoke_tool` 과 같은 까닭) ③ 판정 기준은 제안값(패배율 ≤ 10% · 숫자 대조 어긋남 늘지 않음 — `--max-loss-rate` · `--max-mismatch-increase`) ④ 서버
+LLM 토큰은 위임 몫만 정확 — `draft_section` · `llm_transform` · `result_ask` 에 tokens 칸을 더하는 일은 다음 라운드(그 전엔 이용 통계 `other` 로 함께 본다)
+⑤ `routine_read` 와 `write` 에 함께 드는 여섯(읽기 목록이 이름으로 읽기라 확인한 것)은 연다 ⑥ cae00 에 없는 앱의 과제는 두 갈래 모두 「없다」 로 답하게 둔다.
