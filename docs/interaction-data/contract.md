@@ -18,13 +18,15 @@ update-all 끝 요약 「있는데 안 켠 것」 에 둘이 ○ 로 뜬다(켜�
 - 표
   - `events` — 한 줄 = 한 사건. 칸 `id`(ULID) · `ts`(초) · `surface`(`web_chat` · `web_delib` · `think` · `routine` · `procedure` · `mcp_call` · `tool_search` ·
     `shared_claude` — M4 에 `delib_job` · `risk`) · `actor`(이메일, 소문자) · `affiliation` · `client`(브라우저 · Claude Code · Claude Desktop · 앱 이름 · 판) · `conv_id` ·
-    `turn_id` · `corr`(게이트웨이 연결 ID) · `rid` · `via`(`pat` · `panel` · `procedure` · `routine` · `agent` · `service`) · `app`(백엔드 키) · `tool` · `model` ·
+    `turn_id` · `corr`(게이트웨이 연결 ID) · `rid` · `via`(게이트웨이 낱말 그대로 — `pat` · `chat` · `procedure` · `mcp-app` · `gw-token` · `service`, 게이트웨이 밖 원천은 비움 · §9) · `app`(백엔드 키) · `tool` · `model` ·
     `status`(`ok` · `error`) · `ms` · `tokens_in` · `tokens_out` · `input`(글) · `output`(글 — 한 줄 상한 1 MB, 넘으면 앞부분) · `output_chars`(원문 크기) ·
     `output_sha256` · `meta`(JSON) · `source`(옮겨 온 저장소 이름) · `source_ref`(그 저장소의 id — `UNIQUE(source, source_ref)` 로 한 번만).
   - `shared_sessions` — 공유한 Claude 대화. `id` · `owner` · `session_id`(같은 세션은 덮어씀 — `UNIQUE(owner, session_id)`) · `title` · `client` · `created` ·
-    `updated` · `messages`(JSON 압축 — zlib) · `chars` · `kind`(`tool` — 도구로 받은 것 · `transcript` — 기록 파일 원문).
+    `updated` · `messages`(JSON 압축 — zlib) · `chars` · `kind`(`tool` — 도구로 받은 것 · `transcript` — 기록 파일 원문) · `raw`(기록 파일 원문 — 가린 뒤 zlib,
+    `transcript` 만 · §9).
   - `ingest_cursors` — 가져오기 자리(`source` → `cursor`).
   - `view_audit` — 원문 열람 감사(`ts` · `viewer` · `owner` · `event_id` 또는 `shared_id` · `action`).
+  - `erase_marks` — 지우기 표지(`actor` · `upto`). 지운 사람의 그 시각까지 기록을 수집기가 다시 옮기지 않는다(§9).
 - 지우기 — 본인 청구는 그 사람의 `events` · `shared_sessions` 를 지운다(M5 가공층 · 임베딩도 같은 id 로 — M5 몫).
 
 ## 3. 게이트웨이 수집 창고(spool)와 가져가기
@@ -37,15 +39,15 @@ update-all 끝 요약 「있는데 안 켠 것」 에 둘이 ○ 로 뜬다(켜�
 - **가져가기**(서비스 자격만 — `Authorization: Bearer <GW_TOKEN>` 정확히 한 번, `X-Forwarded-*` 가 실리면 받지 않음 — 결과 손잡이 내부 창구와 같은 막기)
   - `GET /internal/interactions?cursor=<글>&max=500` → `{events: [...], next_cursor, more}` — cursor 가 비면 가장 오래된 것부터.
   - `POST /internal/interactions/ack` `{cursor}` → 그 자리까지 다 읽힌 조각을 지운다.
-- `/health` 에 `interactions: {enabled, spool_bytes, segments, dropped, oldest_ts}`.
+- `/health` 에 `interactions: {enabled, spool_bytes, segments, dropped, errors, oldest_ts}`.
 - 포털 nginx 는 `/mcp-gw/internal` 을 이미 막는다(TS-9 의 nginx 줄).
 
 ## 4. 비밀 가림(두 리포가 같은 규칙 — 같은 시험 벡터)
 
 - 칸 이름(대소문자 무시)이 `authorization` · `token` · `access_token` · `refresh_token` · `api_key` · `apikey` · `x-api-key` · `secret` · `client_secret` · `password` ·
   `passwd` · `cookie` · `set-cookie` · `session` · `private_key` 이거나 그 말로 끝나면 값을 `<가림:칸>` 으로.
-- 글 안의 꼴 — `Bearer <글>` → `Bearer <가림:bearer>` · JWT(`eyJ` 로 시작하는 세 마디 점 이음) → `<가림:jwt>` · PEM 비밀 키 덩어리 → `<가림:pem>` ·
-  `-----BEGIN … PRIVATE KEY-----` 사이 전부.
+- 글 안의 꼴 — 차례는 **PEM → 칸 이름 → Bearer → JWT**(§8). PEM 비밀 키 덩어리 → `<가림:pem>`(`-----BEGIN … PRIVATE KEY-----` 사이 전부) ·
+  `Bearer <글>` → `Bearer <가림:bearer>`(Bearer 뒤 구분은 빈칸 · 탭) · JWT(`eyJ` 로 시작하는 세 마디 점 이음) → `<가림:jwt>`.
 - 시험 벡터 — 이 문서 끝 부록의 다섯 줄을 두 리포 시험이 그대로 쓴다.
 
 ## 5. 공유 길(M2)
@@ -97,3 +99,17 @@ update-all 끝 요약 「있는데 안 켠 것」 에 둘이 ○ 로 뜬다(켜�
   있다」 · 그 호출 자체도 수집 줄로 남으니 포털 수집기는 `share_conversation` 줄을 건너뛴다(shared_sessions 와 겹치지 않게).
 - **§7 알림** — 게이트웨이 지침이 가장 길 때 이미 2,031자라 계약 문구를 넣으면 2,048자를 넘는다. 들어가면 문구 그대로, 넘으면 「호출은 기록된다.」 한 줄을 싣는다
   (전체 문구는 `share_conversation` 설명에) — 이 세션 판단(권장안), 문구는 사람이 확정할 때 함께 다시 본다.
+
+## 9. 짓고 나서 정한 꼴 — 포털(`wt1124/interactions` `be614294` ~ `88d8910b`, 11-24 — 결정 IX-20)
+
+- **`via` 는 게이트웨이 낱말을 그대로 저장한다** — 처음 적은 여섯(§2 옛 판)은 게이트웨이를 짓기 전에 짐작한 것이다. 대응표를 두면 낱말이 셋째로 늘어 어긋날 곳만
+  생긴다. 웹 챗 · 심의 · 절차처럼 포털이 옮겨 오는 기록은 `surface` 로 가르고 `via` 는 비운다.
+- **`shared_sessions.raw`** — 기록 파일로 받은 공유(`kind` `transcript`)는 아는 꼴만 `messages` 로 풀고, 원문 전체는 가린 뒤 zlib 으로 `raw` 에 둔다(본인 · 분석가의
+  `raw=1` 열기). 풀지 못한 줄도 잃지 않게.
+- **`erase_marks`** — 본인 지우기 뒤 다음 수집 주기가 대화 저장소 · 절차 원장에서 같은 기록을 다시 옮겨 오지 않게, 그 사람 · 그 시각을 남긴다.
+- **게이트웨이 줄의 열쇠** — 창고 줄에 고유 id 를 따로 두지 않는다. 포털이 `ts`(소수 초) · `corr` · `rid` · `actor` · `tool` · `backend` · `result_sha256` · `ms` ·
+  인자 해시를 묶은 해시로 `source_ref` 를 짓는다(겹칠 일이 사실상 없다). 게이트웨이가 나중에 `id` 칸을 실으면 그것을 쓴다.
+- **캡처가 꺼진 게이트웨이** — 가져가기의 401 · 403 은 게이트웨이 `/health` 의 `interactions.enabled` 가 참일 때만 실패로 센다(거짓이면 기다림). 그래서 게이트웨이가
+  꺼졌을 때 404 를 내도록 바꾸지 않는다.
+- **도구 검색 질의** — 게이트웨이 `/search-log` 를 그대로 쓴다. 30일 되돌아보기는 최근 1000줄까지만 된다 — `since` · 쪽 넘김 · 호출자 칸은 게이트웨이에 청할 것으로
+  남긴다(지금 없어도 앞으로 쌓이는 것은 빠지지 않는다).
