@@ -314,6 +314,44 @@ def test_사람별_LLM_토큰은_종류와_모델로_합치고_적기_전은_nul
     assert "모른다" in sec["note"] and "LLM_STREAM_USAGE" in sec["note"]
 
 
+def test_서버에_맡긴_일은_종류_offload_로_접고_모르는_종류는_그_밖이다(tmp_path):
+    """토큰 절감 2판(docs/token-saving TS-16) — 에이전트 서버가 offload 로 단 줄은 offload 로 접는다(그 밖으로 뭉개지 않는다). 모르는 종류는 종전처럼
+    그 밖이다. 옛 기록의 other 는 다시 쓰지 않는다 — 접을 때 받은 종류 그대로다."""
+    box = _box(tmp_path)
+    rem = Remote(tmp_path)
+    rem.llm_since = D19.isoformat()
+    rem.llm = [_tok(D19, A, "offload", "qwen-chat", 2, tin=700, tout=70), _tok(D19, A, "other", "glm-5", 1, tin=50, tout=5),
+               _tok(D19, A, "새-종류", "glm-5", 1, tin=30, tout=3), _tok(D20, A, "chat", "qwen-chat", 1, tin=10, tout=1)]
+    _fold(box, handler=rem)
+    assert sorted({k for _d, _e, k, *_r in _q(box, "SELECT * FROM usage_llm_daily")}) == ["chat", "offload", "other"]
+    sec = box.build(days=7, now=NOW)["sections"]["llm_tokens"]
+    rows = {(r["kind"], r["model"]): r for r in sec["rows"]}
+    assert rows[("offload", "qwen-chat")]["tokens_in"] == 700 and rows[("other", "glm-5")]["tokens_in"] == 80, "모르는 종류는 그 밖에 더한다"
+    assert [r["kind"] for r in sec["rows"]] == ["chat", "offload", "other"], "offload 는 카드 대조 뒤 · 그 밖 앞"
+    assert "서버에 맡긴 일" in sec["note"]
+
+
+def test_LLM_종류는_접기_통계_화면_에이전트_서버가_같은_목록이다():
+    """종류 목록은 네 곳에 있다 — 에이전트 서버 usage_tokens.KINDS(단다) · usage_fold(접는다) · usage_stats(차례) · 화면 이름표. 하나만 더하면 그 종류가 그 밖으로
+    뭉개지거나 화면에 날것으로 뜬다. 에이전트 서버 쪽은 형제 리포 원문(AST)으로 본다."""
+    import ast
+    import re
+    from pathlib import Path
+
+    from app import usage_stats
+    root = Path(__file__).resolve().parents[2]
+    assert usage_fold.LLM_KINDS == usage_stats.LLM_KINDS and usage_fold.LLM_KINDS[-1] == "other"
+    tsx = (root / "frontend" / "src" / "components" / "usage" / "UsageFoldCards.tsx").read_text(encoding="utf-8")
+    block = re.search(r"const LLM_KIND: Record<string, string> = \{(.*?)\};", tsx, re.S).group(1)
+    assert set(re.findall(r"^\s*(\w+):", block, re.M)) == set(usage_fold.LLM_KINDS), "화면 이름표"
+    ag = root.parent / "HWAXAgentServer" / "usage_tokens.py"
+    if not ag.exists():
+        pytest.skip("형제 리포 HWAXAgentServer 가 없다")
+    kinds = next(ast.literal_eval(n.value) for n in ast.parse(ag.read_text(encoding="utf-8")).body
+                 if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "KINDS" for t in n.targets))
+    assert tuple(kinds) == usage_fold.LLM_KINDS, f"에이전트 서버 KINDS {kinds} 와 포털이 다르다 — 함께 고친다"
+
+
 def test_사람별_표는_사람마다_갈래_수와_토큰을_더하고_뺄_계정은_읽을_때_뺀다(decided):
     box, _ = decided
     sec = box.build(days=7, now=NOW, labels={"affiliation": {"CAEG": "CAE그룹"}})["sections"]["people"]

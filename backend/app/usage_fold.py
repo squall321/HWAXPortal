@@ -90,7 +90,8 @@ SCHEMA = (
     " calls INTEGER NOT NULL, unknown INTEGER NOT NULL, tokens_in INTEGER NOT NULL, tokens_out INTEGER NOT NULL, cache_read INTEGER NOT NULL,"
     " affiliation TEXT NOT NULL DEFAULT '', PRIMARY KEY (day, email, kind, model)) WITHOUT ROWID",
 )
-LLM_KINDS = ("chat", "think", "delib", "routine", "card_review", "other")     # 에이전트 서버 usage_tokens.KINDS
+# 에이전트 서버 usage_tokens.KINDS — offload 는 토큰 절감 2판(위임 · 절 초안 · 변환 · 결과에 묻기, docs/token-saving TS-16). 그 전에 접은 날의 그 몫은 other 그대로다
+LLM_KINDS = ("chat", "think", "delib", "routine", "card_review", "offload", "other")
 # 원천이 쓰는 사람 줄의 갈래 — 그 원천의 날을 다시 접을 때 이 갈래만 지운다
 _ACTOR_WHERE = {
     "portal": "source IN ('login', 'chat', 'tile')",
