@@ -65,3 +65,25 @@ result_ask}` · 게이트웨이 `result_refs.enabled`(게이트웨이 확정 꼴
 `GATEWAY_RESULT_REFS` 가 꺼져 있으면 그것을, 켜졌는데 `RESULT_ASK_ENABLED` 가 꺼져 있으면 그것을 말한다(넷을 넘기지 않는다). 켠 것은 말하지 않는다 — 켜진 뒤의
 수는 그쪽 /health 몫이다. ⚠ 지금 게이트웨이 `start.sh` 는 `provision.env` 를 프로세스 환경으로 싣지 않는다(`GATEWAY_FIG_STORE` 같은 손잡이는 띄운 셸 환경뿐) —
 `GATEWAY_RESULT_REFS` 를 그 파일에서 읽게 하는 것은 게이트웨이 몫이다(합치기 전에 맞춘다).
+
+**TS-14 사용자 요청 · 결정(2026-11-24) — 2판 비교 테스트셋을 짓는다(가지 `wt1124/offload-eval`, [eval-plan.md](eval-plan.md) · `infra/offload-eval/`).** 요청은
+「GLM · Qwen 에 맡기는 비중을 만들어도 품질 차이 없이 속도나 토큰량이 나아지는지 확인하는 테스트셋」. 사용자 결정 넷 — 돌릴 곳 cae00(CLI · 로그인은 사람) ·
+실험 대상 Opus 5.5 · 판정은 Claude 눈가림(기본 Sonnet 5.5) + 사람 표본 · 과제 16 × 반복 2. 이 세션이 정한 것과 까닭.
+- **허용 목록은 게이트웨이가 정한 '읽기로 확인된' 것** — `/tools-map` 의 `routine_read`(루틴 울타리와 같은 판정) ∪ 게이트웨이 로컬 조회(`_LOCAL_READ` 그대로 +
+  그림 받기 · 목록, `_gateway` 로 귀속한 이름만). `invoke_tool` 은 요청대로 빼고 `rest_call` 도 뺀다(아무 REST 나 — 같은 까닭). offload 만 2판 여덟. 허용 밖은
+  deny 의 맨 이름으로 문맥에서 지우고(공식 문서) 권한 모드 dontAsk — 목록이 바뀌어 새 도구가 생겨도 묻지 않고 거절된다(겹쳐 막기). dev 에서 `routine_read` 와
+  `write` 가 겹치는 여섯은 게이트웨이 `read_tools.json` 이 이름으로 읽기로 확인한 것이라 연다(check 가 말한다).
+- **서버 LLM 토큰은 따로 센다** — 위임은 `delegate_result.tokens`(잡마다 한 번), `draft_section` · `llm_transform` · `result_ask` 는 결과에 tokens 칸이 없어 호출 수를
+  '모름' 으로 센다. offload 의 숫자 어긋남에는 서버의 `numbers.mismatched` 를 더한다 — 서버 답을 Claude 가 옮기면 Claude 쪽 대조(그 실행이 본 도구 결과)로는 늘
+  출처가 있는 것으로 보이기 때문이다.
+- **결과 파일 Read 는 연다(기본) — 사용자 확인 필요.** 요청은 내장 Read 도 막으라 했지만, Claude Code 는 50,000자가 넘는 MCP 결과를 파일로 빼고 Read 로 읽게 한다(공식
+  문서). 다 막으면 baseline 이 큰 결과를 못 읽어 offload 쪽으로 기운 결과가 나온다. 그 자리(`<설정 폴더>/projects/**/tool-results/**`)만 허용하고 실행 뒤 대조하며,
+  `--no-spill-read` 로 요청 그대로 막을 수 있다.
+- **ToolSearch 는 둔다** — 빼면 MCP 도구를 처음부터 다 싣는다(문서). 허용 도구가 수백이라 문맥이 커지고 PC 의 기본과도 달라진다.
+- **설정 원천은 `--setting-sources local` + 리포 밖 빈 작업 폴더** — `--settings` 의 목록은 사용자 설정과 합쳐져 사람의 허용 규칙 · 훅이 섞인다. `--bare` 는 OAuth
+  로그인을 읽지 않고(문서), `--restricted` 는 파일 도구를 작업 폴더로 가둬 결과 파일 Read 를 막고 낡은 판에는 없다. 훅 끔 · claude.ai 커넥터 끔.
+- **PAT 는 0600 임시 `--mcp-config` 의 머리에 글자로** — `${VAR}` 펼치기는 문서가 `.mcp.json` 에 대해서만 말해 기대지 않았다. 자식 환경에서 빼고 남는 산출물은
+  가린다. 사용자 `CLAUDE.md` 에 2판 규칙 표지가 있으면 baseline 이 오염되므로 사전 점검이 멈춘다.
+- **눈가림은 갈래 이름을 싣지 않고, 답 안의 2판 도구 이름 · 결과 손잡이를 두 답 모두 같은 표지로 바꾼다.** 합계 · 판정은 두 갈래가 다 끝난 짝만 센다.
+- **진짜 `claude -p` 는 dev 에서 부르지 않는다(비용)** — 시험은 공식 문서의 stream-json 꼴을 그대로 내는 가짜 claude 와 가짜 게이트웨이로 돈다. 판정 기준
+  「패배율 ≤ 10% 이고 어긋남이 늘지 않음」 은 제안이고 손잡이다.
