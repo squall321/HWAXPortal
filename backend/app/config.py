@@ -212,6 +212,17 @@ class Settings(BaseSettings):
     # 뒤라 화면에는 아무것도 안 뜬다. 여전히 짧고 유한하다 — 넘으면 저장하는 쪽이 경고 로그를 남긴다.
     # 저장소는 이제 WAL 이다(conv_store.py) — 읽기만 하는 백업은 저장을 막지 않고, 이 대기는 다른 연결이 **쓰는** 동안에만 걸린다.
     conv_store_busy_timeout_s: float = 30.0
+    # 상호작용 기록(docs/interaction-data contract §1 · §2) — 박스 스위치. 기본 꺼짐 — 끄면 /interactions/* 가 404 이고 수집기가 돌지 않으며 화면에 메뉴가
+    # 없다(지금과 바이트까지 같다). 켜는 곳은 포털 infra/.env 의 INTERACTIONS_ENABLED=1(start.sh 가 넘긴다). 원장은 이 박스 안에만 둔다 —
+    # 데이터 레지스트리 클래스 interactions(sync: none)이고 백업은 backup-local portal 이다. 켜기 전에 회사 개인정보 · 보안 규정 확인은 사람 몫(PLAN §5).
+    interactions_enabled: bool = False
+    interactions_store_path: str = "data/interactions.sqlite"
+    # 수집기 주기(초) — 게이트웨이 수집 창고 가져가기 · 대화 저장소 · 절차 원장 · 도구 검색 질의를 이 간격마다 옮긴다. 0 이면 띄우지 않는다(창구는 그대로).
+    interactions_ingest_s: int = 60
+    # 사건 한 줄의 글 상한(바이트, UTF-8) — 넘으면 앞부분만 두고 원래 크기 · sha256 을 남긴다(contract §2 — 1 MB).
+    interactions_output_max_bytes: int = 1_048_576
+    # 공유 창구(POST /interactions/share) 본문 상한(MB, contract §5 — 50 MB). 넘으면 413.
+    interactions_share_max_mb: int = 50
 
     # 절차(업무 절차 인벤토리) — 챗과 자원을 공유하지 않는 격리 모듈(docs/procedures/PLAN.md §3).
     # 동시 실행 상한 2 — 심의 DELIB_JOB_MAX_RUNNING · HWAXRisk risk_concurrency 의 **코드 기본값**과 같을 뿐 따로 간다. 박스가 심의를

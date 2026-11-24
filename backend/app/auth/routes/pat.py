@@ -417,6 +417,18 @@ async def offload_box(
     return out
 
 
+@router.get("/share")
+async def share_box(
+    principal: Principal = Depends(get_current_principal),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """설정 배치의 '내 Claude 대화를 포털에 공유' 칸 옆 한 줄(docs/interaction-data contract §5) — portal 은 이 박스의 INTERACTIONS_ENABLED
+    (꺼지면 /hwax-share 가 올려도 404 다), capture 는 게이트웨이 /health 의 interactions.enabled(share_conversation 도구 · 모름이면 null)."""
+    async with httpx.AsyncClient(timeout=4) as cli:
+        gw = await _box_health(cli, settings.mcp_gateway_url)
+    return {"portal": bool(settings.interactions_enabled), "capture": _flag(gw.get("interactions"))}
+
+
 @router.post("/service", response_model=ServicePatCreated)
 def create_service_pat(
     body: ServicePatCreate,
