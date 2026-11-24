@@ -32,3 +32,10 @@
 - [ ] 포털 — Windows PC 에서 배치 실제 한 번(켬 → 다시 켬 → 끔 — 명령 둘 · CLAUDE.md 표지 사이 · 머리 · 걷은 뒤 바이트 대조, BOM · LF 파일 · 사람 파일 같은 이름)
 - [ ] 합치기 · 리포마다 전체 회귀 · dev 에서 켜고 실제 한 번씩 · 끄면 바이트 같음 확인
 - [ ] cae00 받은 편지함 — 켜는 법(켤지는 사람)
+
+### 2판 비교 테스트셋(TS-14 · [eval-plan.md](eval-plan.md) · `infra/offload-eval/`)
+- [x] 과제 16(R · M · W · T 넷씩 — 읽기만 · 공개 리포라 스스로 찾게) · 기대 꼴 검사
+- [x] 실행기 `run-eval.mjs` — check · run(섞인 차례 · 이어 하기 · 울타리 대조) · judge(눈가림 · 한 번 다시) · human(4쌍) · report(합계 · 중앙값 · 개선율 · 숫자 대조 · 서버 LLM 따로)
+- [x] 시험 `backend/tests/test_offload_eval.py` — 가짜 claude · 가짜 게이트웨이, 변이 열셋 모두 붉음 — 가지 `wt1124/offload-eval`
+- [ ] 사용자 확인 — 결과 파일 Read 허용(README 4-3) · 판정 기준 제안(패배율 ≤ 10% · 어긋남 늘지 않음)
+- [ ] cae00(사람) — 스위치 켜기 · check · 연기 시험 · 본 실행 64 · 판정 32 · 사람 4쌍 · 보고서 돌려받기
