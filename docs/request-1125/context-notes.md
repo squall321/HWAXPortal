@@ -307,3 +307,19 @@
   · 게이트웨이 `63eed05`. MW-08 은 Q50, MW-09 는 「알고 받을 것」. R25-Q12 ~ Q16 은 머리말에서 다시 불렀다. 사용자에게 「cae00 업데이트를 돌려도 된다」 고 전했다.
 - 남은 것 — DocForge 0.4.0 은 판이 오면 87 이 이 글 끝에 덧붙임 절로. SmartTwin MCP SM-01 ~ 03 · 카탈로그는 KooSlurm main 에 넣기 전에 71 에 알려 달라고 c8 에 다시
   전했다(글의 판 `d93017a5` 와 어긋나지 않게). ste · 브리지는 Q35 ste 교체 보고까지 묶음 그대로.
+
+## R25-19 SmartTwin 답 — grant_only 셋은 SM-01 판까지 남긴다 · 6차 글 덧붙임 부탁(11-25)
+
+- c8 답(기동 차례 물음 둘) — dashboard_backend = backend_5010 이 맞다(유닛 WorkingDirectory · 5010 · backend_5010/.env, `start_production.sh` 84 · 129 · 501행). backend 가
+  못 뜨면 MCP 는 닫힌 쪽(`caller_identity` 의 `/api/me` 실패 → StmcError · REST PatVerifier 503).
+- **예외 둘이 6차 글(5절 103행)을 바꾼다.**
+  - 호출자를 보지 않는 읽기 도구(`catalog_*` · `list_slurm_partitions` 류)는 backend 없이도 답한다. 이것은 읽기라 문제는 아니다.
+  - `d93017a5` 판에는 SM-01 이 없다. 그래서 `train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`(1.1.0) 셋은 PAT 를 보지 않고 서비스 계정으로
+    sbatch 를 낸다. 글의 「위임 PAT caller 가 사람 이름이면 푼다」 만 따르면 이 셋이 함께 열린다.
+- 87 에 덧붙임 문안을 부탁했다. 「셋이 `plat:smarttwin-run` 안에 있으면 SM-01 판까지 grant_only 를 풀지 않는다. 셋을 따로 묶을 수 있을 때만 나머지를 푼다.」 그리고
+  Q45 의 「풀었는지」 를 「셋을 어떻게 남겼는지」 로. 까닭 — `plat:smarttwin-run` 은 git 에 없고 cae00 박스 덧씌우기에서 정의한 것이라 셋만 따로 남길 수 있는지
+  dev 에서 모른다(포털 · 게이트웨이 소스에 그 이름이 없다 — grep 0).
+- 같이 부탁한 것 — 6차 글 97 · 106행의 「Pre v141 · Post v54 그대로」 는 리포 기대값이다. 운영 stcx 에 깔린 판은 Pre v128 · Post v50(SP-5 · Q34)이라
+  `image_version_check` 에 v141 · v54 를 주면 「다르다」 가 나오는 게 맞다는 한 줄.
+- c8 은 KooSlurm main push 를 멈췄다(그쪽 사용자 결정 — SM-01 ~ 03 · 카탈로그를 다 끝내고 한 판으로). 그때까지 가지 `feat/sm-security-1125` ·
+  `feat/catalog-regen-1125` 에 두고, main push 전에 71 에 알린다. 6차 판 `d93017a5` 는 그대로 유효하다.
