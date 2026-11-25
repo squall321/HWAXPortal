@@ -244,3 +244,18 @@
   (SignalForge `docs/DEPLOY_CAE00_2026-11-25.md` 2절 해석 세 줄 · 3절 게이트웨이 여섯 부르기). PLM 다시 받기 · `.env` 변경 없음 · DB 이관 없음(alembic 0048).
   들어간 뒤 박스 어휘표에 `ontology_lookup` 다음 호출 `search_voc(core_type=…, core_key=…)` 줄을 넣어도 된다(선택). dev 는 sf-mcp 재기동 · 새 인자와 응답 칸 확인.
   SFO-4 는 R25-Q4 답을 기다린다.
+- **DocForge(준비 끝 · 올리기는 그쪽 사용자 승인 대기)** — 0.4.0 로컬 준비(판 올림 · 시험 319 통과 · req1125 → main 빠른 감기). 차례 — main · push → release 빠른 감기 →
+  HEAXHub 등록 사본(IR-24 — 매니페스트 통째, 판 0.4.0 · `DOCFORGE_MAX_JOBS` 줄 빼기) → 빌드 · 재배치 → Drive → HEAXHub push(SIF 가 Drive 에 오른 뒤 — DEPLOY §7-2)
+  → 일치 점검. HEAXHub 로컬 main 에 그쪽 미푸시 커밋 넷이 있어 heaxhub-4b 가 먼저 push 하지 않으면 함께 내보내지 않고 맞춘다. DB 이관 없음. 해시 · Drive · SIF 값은
+  끝난 뒤 따로 온다. 6차 편지함 꼴은 DocForge 가 준 그대로 싣는다 —
+  ① 잡 수 — 매니페스트에서 `DOCFORGE_MAX_JOBS` 를 뺐다 → `<데이터>/knobs.env` 의 값이 먹는다(없으면 1 · 재기동 없이 다음 잡부터, 이미 적은 값이 있으면 0.4.0 부터
+  그 값). `DOCFORGE_VLM_MAX_CONCURRENCY` 는 잡 수와 상관없이 모델 서버 하나에 대한 전체 상한. ② 고른 쪽 판독 — vlm 이 켜지면 그림 파일로 못 읽는 것(연결선 · 글
+  없는 도형 · 그림 채움 · 잘린 그림 · 웹에서 못 여는 형식 · 빠진 그림 · SmartArt · 묶음 · OLE)이 있는 슬라이드만 쪽 그림으로 판독, snapshot_page 는 켜지 않아도 된다.
+  ③ 새 옵션 `snapshot_blocks`(selected 기본 · all · none) — 판독용으로만 그린 쪽 그림은 보고서에 싣지 않는다. ④ 판독 지시 판 df-vlm-3 — 캐시가 새로 쌓여 첫 변환은
+  한 번 더 든다. ⑤ 생각 끄기 — 기본 그대로, 판독을 심의 모델 끝점으로 옮길 때만 `DOCFORGE_VLM_THINKING_OFF=0`(판단 끝점이 따로면 `DOCFORGE_LLM_THINKING_OFF=0`) —
+  capabilities `vlm.thinking_off` · `llm.thinking_off`. ⑥ SP 연결 — `docforge_package` 응답과 conversion.json 에 `links[{type_slug · key · label · code ·
+  matched_by}]`, capabilities 의 ontology 수는 받는 타입만 · 받지 않는 타입의 옛 행은 stale 묶음. 시험 덱 확인(11-10 덱 · vlm 켬) — 5쪽 흐름 글이 판독 없이 · 7쪽
+  잘라 가린 부분의 코드 없음 · 8쪽 그림 채움이 그림 요소로 · 10쪽 TIFF → PNG · 2쪽 캡션 '[모델 판독] 요약' 꼴 · 4쪽 표 그림이 표 위젯 하나 · 판독 블록의 그림 번호가
+  document.md 의 [그림 N] 과 같음 · capabilities version 0.4.0 · max_jobs 가 knobs.env 값. DFO-1 은 지우지 않고 stale 만 — 옛 행이 키트 수신 규칙(타입별 since
+  커서)과 얽혀 지우면 되돌리기 어렵다. 운영 손 — update-all 로 받기 · 고를 일 둘(잡 여럿이면 knobs.env 의 `DOCFORGE_MAX_JOBS`, 판독을 심의 모델로 옮길 때만
+  `DOCFORGE_VLM_THINKING_OFF=0`).
