@@ -196,3 +196,18 @@
   fig-race → interactions → offload-finish(87) → `wt1124/ste-upload-sha`(71) — gateway.py 가 겹쳐 앞엣것이 들어간 뒤 rebase 사본으로 시험하고 `--no-ff` 로 병합한다.
 - 6차 편지함은 87 이 쓴다. 이 세션은 request-1125 몫의 착지 판(리포 · 커밋 · Drive 이름 · SIF 파일 sha256 과 캐시 열쇠는 이름을 붙여 따로)과 사람 몫을 모아
   건넨다 — 해시는 병합 · push 가 끝난 판으로(로컬 커밋 해시는 rebase 하면 사라진다), 실제 주소 · 이름은 빼고.
+
+## R25-16 5차 동결 해제 — ste · 브리지는 계속 묶는다(11-25)
+
+- cae00 5차 답(11-24 글 Q29 ~ Q39)을 사용자가 이 세션에 붙여 넣었다. update-all 끝 코드 0 · ✗ 0 · 박스는 「풀어도 된다 · 최종 결정은 사용자」. 폴더별 기록은
+  87 이 했다(`42e05012` — leftovers-1121 L21-29 · request-1123 NX-4 · token-saving). 답 원문은 리포에 두지 않는다.
+- **사용자 결정(11-25) — 동결을 푼다.** 일곱 세션(StepForge · DocForge · HEAXHub · SignalForge · MXWP · KooRemapper · SmartTwin MCP c8)에 push · Drive 를
+  알렸고, 착지 판은 push 뒤 해시 · Drive 이름 · SIF 파일 sha256 과 캐시 열쇠를 이름 붙여 따로 · 사람 몫 · DB 이관 유무로 돌려받는다.
+- **ste · 브리지는 계속 묶는다.** cae00 ste 자동 교체(staging `859a02d`)가 아직이다(Q35 — 도는 잡 13 · 기한 11-26). 4차 답 때 정한 「ste · 브리지는 ste 가
+  바뀔 때까지」(SS-12)가 그대로 간다 — 87 도 같은 판단. ste-06 의 17커밋 · CalculiX, 브리지 다음 꾸러미는 cae00 이 ste 교체를 보고한 뒤에 푼다.
+- **StepForge 는 운영이 지난 판을 건너뛴다.** 운영은 아직 `edcddf44`(5차의 `a7c65a5e` 를 넣지 않음 — 시점은 그쪽 사용자). feat-1125 는 운영이 받지 않은 판
+  위에 쌓이므로 87 이 6차 글에 「a7c65a5e 를 건너뛰고 새 판을 바로 받아도 되는지」 를 넣는다 — StepForge 에 그 답(DB 이관 · 설정 변화 · 잡 취소)을 함께 달라고 했다.
+  BG-1 의 StepForge REST 는 먼저 들어가도 된다(브리지 쪽 바꿈은 묶여 있고 레지스트리 part 의미는 둘 다 운영에 든 뒤).
+- ST-25 · ST-27 표본은 이번 착지에 없다 — 운영 답 R25-Q12 ~ Q16(받은 편지함 11-25)은 이번 답에 없었다(update-all 이 그 글 전에 돌았다).
+- request-1125 1-3 절(토큰 절감 쪽)은 87 의 미병합 `wt1124/offload-finish` 와 같은 파일이라 87 이 말할 때까지 아무에게도 보내지 않는다(87 부탁).
+- §5 의 `✓ 기존 kr_ PAT 유효` 줄은 update-all 점검이 아니라 게이트웨이 provision 이 찍은 줄이었다 — 87(포털) 몫, 6차에 묻는다.
