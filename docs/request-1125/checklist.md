@@ -39,3 +39,4 @@
 - [ ] HEAXHub SE-8 착지 때 — dev models-to-drive 한 번(Drive MANIFEST — 그 전에는 모델 건너뛰기가 안 먹는다) · 편지함에 첫 실행 모습(appdata 한 번 병합 · `.pre-merge` 348 → DB 마다 3 · dist 첫 전체 검사)
 - [ ] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭)
 - [ ] ste PA-02 착지 때 — 사용자 PC 에이전트 새로 받기 · 두 번 누르기를 편지함 사람 몫으로
+- [ ] ste CalculiX 착지 때(요청서 밖 · 같은 라운드) — 동결 해제 뒤 ste push + KooCalculiX 꾸러미(SIF) Drive SmartTwinSolutions · 편지함에 「`/data/SmartTwinSolutions/KooCalculiX` 에 푼다」

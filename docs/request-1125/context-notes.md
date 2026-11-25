@@ -109,6 +109,9 @@
   가짜 서버 시험이 「도는 잡 세 번에 큰 파일 0 번 · 끝나면 한 번」 을 지키고 옛 코드에서는 떨어짐 · 서버는 그대로 · 화면 안내 글도) · BG-6 `21a1718`(설명 한 줄) ·
   기록 `79b17ee`. PA-15 는 코드로 확인한 앞 답 그대로 — 그 시각의 로그로 가른다(R25-Q11). `3c36726` 은 서버 쪽 고침이고
   운영이 11-23 에 `269f8c4` 로 바꿔 이미 들었다. **BG-6 은 param 을 더하지 않는다** — 두 번 줄일 틈만 생긴다. part-study 입력 설명에 좌표 · STL 은 m 라고 적는다.
+  **덧붙임(11-25 오후, 요청서 밖)** — 그쪽 사용자 결정으로 새 해석기 CalculiX(ccx 2.23 · ste 앱 `calculix`)를 이번 라운드에 같이 올린다. 솔루션 꾸러미
+  KooCalculiX(SIF 포함 — 원본은 KooSolverContainer `b8cc5bd` · `37b815c`)는 동결이 풀리면 ste 커밋 push 와 함께 Drive SmartTwinSolutions 로 간다.
+  cae00 안내에 「꾸러미를 `/data/SmartTwinSolutions/KooCalculiX` 에 푼다」 가 더해진다(착지 때 편지함에 사람 몫으로).
 - **MXWP** — MW-08 · MW-09 초안 둘 다 맞음. D7 재료 — seed 는 slug 가 겹치면 내용만 덮고 상태는 둔다: **보관한 것은 seed 를 다시 돌려도 보관, 지운 것은
   seed 가 다시 돌면(fresh · recover · clean_db · reset-db --seed · make seed) published restricted 로 되살아난다**(update-all 은 seed 를 돌리지 않는다).
   MW-09 덧 — admin 서비스 계정이면 남의 '내 후보' 에 후보를 넣을 수 있고 사람 신원이 남지 않는다. 연결기(W8)는 막지 말고 전용 계정으로 가른다.
@@ -164,7 +167,6 @@
   자리 인용이 틀렸거나 운영 세션이 따로 쓴 목록을 가리킨다. 넷 다 운영 박스에서만 답이 나오므로 받은 편지함 R25-Q13 ~ Q16 으로 실었다.
 - 공통 블록(D-689 · ST-25-KR)에서 바뀌는 것은 `src_type_slugs` 에 cad_part · 설명의 앱 목록 · rule 근거 층 도움말이다. 블록이 서면 StepForge 가 그 바이트와
   sha 를 포털 · KooRemapper 에 함께 보낸다(R25-4).
-
 
 ## R25-14 SmartTwin MCP 몫은 `smarttwinmcp-c8` 이 맡는다(11-25)
 
