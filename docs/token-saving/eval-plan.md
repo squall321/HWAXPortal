@@ -26,7 +26,7 @@
   허용 밖 · 내장 도구는 deny 맨 이름으로 문맥에서 빼고 권한 모드 dontAsk. 사용자 · 프로젝트 설정은 싣지 않는다. 실행마다 울타리를 대조해 위반이면 멈춘다.
   PAT 는 환경변수로만 받아 0600 임시 파일 머리에만 쓰고 지우며, 남는 산출물은 가린다.
 - **셈** — 실행마다 `result` 의 usage(입력 · 출력 · 캐시 쓰기 · 캐시 읽기) · `total_cost_usd` · `duration_ms` · `num_turns` · 도구 호출 · 막힌 호출 · 쓴 2판 도구,
-  답의 숫자 대조(에이전트 서버 `evidence` 와 같은 판정), 서버 쪽(위임 tokens · 서버 numbers.mismatched · tokens 칸 없는 호출 수). 합계 · 중앙값 · 개선율은
+  답의 숫자 대조(에이전트 서버 `evidence` 와 같은 판정), 서버 쪽(위임 · 작성 · 변환 · 묻기의 tokens · 서버 numbers.mismatched · tokens 를 모르는 잡 · 호출 수). 합계 · 중앙값 · 개선율은
   두 갈래가 다 끝난 짝만.
 - **판정** — 같은 과제 · 반복의 두 답을 A/B 무작위 · 눈가림(갈래 이름 없음, 답 안의 2판 도구 이름 · 손잡이는 같은 표지로)으로 판정 모델에. 꼴
   `{winner, scores{A,B}{correct, complete, clear}, reason}`, 틀리면 한 번 다시. 사람 표본 4쌍은 따로 섞은 A/B 로 `human-review.md` 에.
@@ -40,4 +40,5 @@
 
 - cae00 — 스위치 켜기 → 사전 점검 → 연기 시험 → 본 실행 · 판정 · 사람 표본 → 보고서 돌려받기(사람, README 1).
 - 결과 파일 Read 허용(README 4-3)이 요청의 「Read 도 막는다」 와 다르다 — 사용자 확인.
-- `draft_section` · `llm_transform` · `result_ask` 결과에 tokens 칸이 없어 서버 토큰은 위임 몫만 정확하다 — 셋에 칸을 더할지(에이전트 서버 · 게이트웨이)는 결과를 본 뒤.
+- (풀림 11-24, TS-16) `draft_section` · `llm_transform` · `result_ask` 결과에도 tokens 칸을 더했다 — 새 에이전트 서버를 받은 박스에서는 서버 토큰이 넷 모두
+  정확하고, 옛 판이면 그 호출을 「모름」 으로 센다.

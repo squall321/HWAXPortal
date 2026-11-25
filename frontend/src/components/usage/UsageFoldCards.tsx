@@ -21,6 +21,7 @@ const LLM_KIND: Record<string, string> = {
   delib: '심의',
   routine: '분석 루틴',
   card_review: '카드 대조',
+  offload: '서버에 맡긴 일',
   other: '그 밖',
 };
 const VIA: Record<string, string> = {

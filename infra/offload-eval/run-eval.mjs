@@ -26,7 +26,8 @@ const MCP_PREFIX = 'mcp__hwax__';                          // --mcp-config 의 �
 // 2판 도구 여덟(docs/token-saving/offload-v2.md — A 위임 넷 · C 작성 · D 변환 · B 받기 · 묻기). baseline 은 이것을 문맥에서 뺀다.
 const OFFLOAD_TOOLS = ['delegate_start', 'delegate_status', 'delegate_result', 'delegate_cancel',
   'draft_section', 'llm_transform', 'result_get', 'result_ask'];
-const SERVER_LLM_TOOLS = new Set(['draft_section', 'llm_transform', 'result_ask']);   // 부를 때마다 서버 LLM 을 쓴다(tokens 칸이 없다)
+// 부를 때마다 서버 LLM 을 쓴다 — 결과의 tokens {input, output} 를 호출마다 더한다(칸이 없거나 null 이면 '모름' — 옛 에이전트 서버 · 사용량을 주지 않은 호출, TS-16)
+const SERVER_LLM_TOOLS = new Set(['draft_section', 'llm_transform', 'result_ask']);
 // 넣지 않는 게이트웨이 도구 — 안쪽 이름으로 아무 도구나 부른다(invoke_tool) · 아무 REST 나 부른다(rest_call). 두 갈래 모두 문맥에서 뺀다.
 const FORBIDDEN = ['invoke_tool', 'rest_call'];
 // 게이트웨이 로컬 조회 도구 — 게이트웨이 gateway.py _LOCAL_READ(읽기 전용 PAT 이 부르는 것) 그대로 + 그림 받기 · 목록(_FIG_READ_NAMES).
@@ -387,29 +388,36 @@ function shapeChecks(expect, answer) {
   return out;
 }
 
-// 2판 도구 결과에서 서버 쪽 셈 — 위임 토큰(delegate_result 의 tokens, 잡마다 한 번) · 서버 숫자 어긋남 · tokens 칸이 없는 서버 LLM 호출 수.
+// 2판 도구 결과에서 서버 쪽 셈 — 서버 LLM 토큰(위임은 delegate_result 의 tokens 를 잡마다 한 번, 작성 · 변환 · 묻기는 결과의 tokens 를 호출마다) ·
+// 서버 숫자 어긋남 · tokens 를 모르는 잡 · 호출 수.
+const tokensOf = (t) => (t && typeof t === 'object' && Number.isFinite(Number(t.input)) && Number.isFinite(Number(t.output))
+  ? { input: Number(t.input), output: Number(t.output) } : null);
 function serverSide(dg) {
-  const jobs = new Set(); const jobTokens = new Map(); const jobNums = new Map();
+  const jobs = new Set(); const jobTokens = new Map(); const jobNums = new Map(); const callTokens = [];
   let mismatched = 0; let unknownCalls = 0; let unreadable = 0;
   for (const c of dg.calls) {
     if (!OFFLOAD_TOOLS.includes(c.short) || c.denied || c.is_error !== false) continue;
     let obj = null;
     for (const t of c.texts) { try { const o = JSON.parse(t); if (o && typeof o === 'object') { obj = o; break; } } catch { /* 머리 + ref 로 줄었거나 글 — 아래에서 센다 */ } }
-    if (SERVER_LLM_TOOLS.has(c.short)) unknownCalls++;
-    if (!obj) { if (c.short !== 'result_get') unreadable++; continue; }
+    if (!obj) { if (SERVER_LLM_TOOLS.has(c.short)) unknownCalls++; if (c.short !== 'result_get') unreadable++; continue; }
     const n = obj.numbers ? (obj.numbers.mismatched_total ?? (obj.numbers.mismatched || []).length) : 0;
     if (c.short === 'delegate_start' && obj.job_id) jobs.add(obj.job_id);
     if (c.short === 'delegate_result' && obj.job_id) {
       jobs.add(obj.job_id);
-      if (obj.tokens && typeof obj.tokens === 'object') jobTokens.set(obj.job_id, obj.tokens);
+      const t = tokensOf(obj.tokens);
+      if (t) jobTokens.set(obj.job_id, t);
       if (obj.numbers) jobNums.set(obj.job_id, n);
-    } else if (SERVER_LLM_TOOLS.has(c.short)) mismatched += n;
+    } else if (SERVER_LLM_TOOLS.has(c.short)) {
+      mismatched += n;
+      const t = tokensOf(obj.tokens);
+      if (t) callTokens.push(t); else unknownCalls++;
+    }
   }
-  const tok = [...jobTokens.values()];
+  const tok = [...jobTokens.values(), ...callTokens];
   return {
-    jobs: jobs.size, tokens_in: sum(tok.map((t) => Number(t.input))), tokens_out: sum(tok.map((t) => Number(t.output))),
-    jobs_without_tokens: jobs.size - jobTokens.size, unknown_calls: unknownCalls, mismatched: mismatched + sum([...jobNums.values()]),
-    unreadable,
+    jobs: jobs.size, tokens_in: sum(tok.map((t) => t.input)), tokens_out: sum(tok.map((t) => t.output)),
+    jobs_without_tokens: jobs.size - jobTokens.size, calls_with_tokens: callTokens.length, unknown_calls: unknownCalls,
+    mismatched: mismatched + sum([...jobNums.values()]), unreadable,
   };
 }
 
@@ -812,6 +820,7 @@ async function cmdReport(o) {
       server_mismatched: sum(ms.map((m) => m.server.mismatched)), server_jobs: sum(ms.map((m) => m.server.jobs)),
       server_tokens_in: sum(ms.map((m) => m.server.tokens_in)), server_tokens_out: sum(ms.map((m) => m.server.tokens_out)),
       server_jobs_without_tokens: sum(ms.map((m) => m.server.jobs_without_tokens)), server_unknown_calls: sum(ms.map((m) => m.server.unknown_calls)),
+      server_calls_with_tokens: sum(ms.map((m) => m.server.calls_with_tokens)),
       server_unreadable: sum(ms.map((m) => m.server.unreadable)), runs_using_offload: ms.filter((m) => m.offload_used.length).length,
     };
     agg[a].claude_tokens = agg[a].input + agg[a].output + agg[a].cache_write + agg[a].cache_read;
@@ -874,10 +883,10 @@ async function cmdReport(o) {
   L.push(`| 줄인 몫(offload) | | ${pct(B.cost, F.cost)} | ${pct(B.cost_med, F.cost_med)} | ${pct(B.input, F.input)} | ${pct(B.cache_write, F.cache_write)} | ${pct(B.cache_read, F.cache_read)} | ${pct(B.output, F.output)} | ${pct(B.claude_tokens, F.claude_tokens)} | ${pct(B.tokens_med, F.tokens_med)} | ${pct(B.duration_s, F.duration_s)} | ${pct(B.duration_med, F.duration_med)} | ${pct(B.turns_med, F.turns_med)} | ${pct(B.tool_calls, F.tool_calls)} | | | |`);
   L.push('', '비용은 Claude Code 가 낸 total_cost_usd(클라이언트 어림 — 청구와 다를 수 있다)를 그대로 더했다. 줄인 몫이 음수면 offload 가 더 썼다.');
   L.push('', '## 서버 LLM — Claude 밖에서 쓴 것(숨기지 않는다)', '');
-  L.push('| 갈래 | 2판 도구를 쓴 실행 | 위임 잡 | 위임 토큰 입력 | 위임 토큰 출력 | 토큰 모름(잡) | 토큰 모름(작성 · 변환 · 묻기 호출) | 서버 숫자 어긋남 | 읽지 못한 2판 결과 |');
-  L.push('|---|---|---|---|---|---|---|---|---|');
-  for (const a of ARMS) { const g = agg[a]; L.push(`| ${a} | ${g.runs_using_offload} | ${g.server_jobs} | ${fmt(g.server_tokens_in)} | ${fmt(g.server_tokens_out)} | ${g.server_jobs_without_tokens} | ${g.server_unknown_calls} | ${g.server_mismatched} | ${g.server_unreadable} |`); }
-  L.push('', '위임 토큰은 delegate_result 의 tokens 칸(잡마다 한 번)이다. draft_section · llm_transform · result_ask 는 결과에 tokens 칸이 없어 호출 수만 센다 — 서버 총량은 관리 › 이용 통계의 그 사람 LLM 사용량(종류 other)으로 함께 본다(다른 일과 섞인다).');
+  L.push('| 갈래 | 2판 도구를 쓴 실행 | 위임 잡 | 서버 토큰 입력 | 서버 토큰 출력 | 토큰 모름(잡) | 토큰을 센 호출(작성 · 변환 · 묻기) | 토큰 모름(작성 · 변환 · 묻기 호출) | 서버 숫자 어긋남 | 읽지 못한 2판 결과 |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|');
+  for (const a of ARMS) { const g = agg[a]; L.push(`| ${a} | ${g.runs_using_offload} | ${g.server_jobs} | ${fmt(g.server_tokens_in)} | ${fmt(g.server_tokens_out)} | ${g.server_jobs_without_tokens} | ${g.server_calls_with_tokens} | ${g.server_unknown_calls} | ${g.server_mismatched} | ${g.server_unreadable} |`); }
+  L.push('', '서버 토큰은 위임 delegate_result 의 tokens(잡마다 한 번)와 draft_section · llm_transform · result_ask 결과의 tokens(호출마다)를 더한 것이다. tokens 칸이 없거나 null 인 잡 · 호출(옛 에이전트 서버 · 서버가 사용량을 주지 않은 호출)은 \'모름\' 으로 센다 — 그 몫은 관리 › 이용 통계의 그 사람 LLM 사용량(종류 offload — 옛 기록은 other)으로 함께 본다.');
   L.push('', '## 판정(눈가림)', '');
   L.push(`offload 승 ${wins} · 무 ${ties} · 패 ${losses}(판정 ${judged} / 짝 ${matched.length}) · 판정 실패 ${jfail} · 판정 비용 $${fmt(jcost, 2)}`);
   if (judged) {

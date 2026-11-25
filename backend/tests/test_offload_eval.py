@@ -156,7 +156,11 @@ else:
         use(i, "mcp__hwax__delegate_result", {"job_id": "dj1"})
         res(i, json.dumps(body, ensure_ascii=False))
     use("d4", "mcp__hwax__draft_section", {"outline": "요약"})
-    res("d4", '{"draft": "초안", "numbers": {"checked": 0, "mismatched": []}, "sources": [], "model": "glm"}')
+    res("d4", '{"draft": "초안", "numbers": {"checked": 0, "mismatched": []}, "sources": [], "model": "glm", "tokens": {"input": 900, "output": 100}}')
+    use("d5", "mcp__hwax__llm_transform", {"instruction": "영어로", "text": "초안"})
+    res("d5", '{"text": "draft", "numbers": {"checked": 0, "mismatched": []}, "model": "qwen", "tokens": null}')
+    use("d6", "mcp__hwax__result_ask", {"ref": "res_ABCDEFGH1234", "question": "q"})
+    res("d6", '{"ref": "res_ABCDEFGH1234", "answer": "있다", "quotes": [], "numbers": {"checked": 0, "mismatched": []}, "model": "qwen"}')
     answer = ("| 파트 | 재료 | 부피 |\n|---|---|---|\n" + rows + "\n\n응력은 456.7 이다. delegate_start 로 맡겼고 손잡이 res_ABCDEFGH1234 를 받았다."
               " mcp__hwax__result_ask 로 물었다.")
     cost, u, dur, turns = 0.6, {"input_tokens": 600, "cache_creation_input_tokens": 1500, "cache_read_input_tokens": 30000, "output_tokens": 500}, 45000, 3
@@ -383,12 +387,13 @@ def test_report_counts_tokens_cost_judgement_and_server_side(env):
     assert (b["input"], b["output"], b["cache_write"], b["cache_read"]) == (4000, 3200, 8000, 200000)
     assert f["claude_tokens"] == 4 * (600 + 500 + 1500 + 30000) and b["tokens_med"] == 1000 + 800 + 2000 + 50000
     assert b["duration_s"] == pytest.approx(240) and f["duration_med"] == pytest.approx(45) and b["turns_med"] == 4
-    assert (b["tool_calls"], f["tool_calls"], b["denied"], f["denied"]) == (8, 16, 4, 0)
+    assert (b["tool_calls"], f["tool_calls"], b["denied"], f["denied"]) == (8, 24, 4, 0)
     assert (b["checks_ok"], b["checks_n"], f["checks_ok"], f["checks_n"]) == (2, 4, 2, 4), "R1 표 10행은 통과 · T4 다섯 줄은 실패"
     # 숫자 — baseline 은 999.25 가 출처 없음, offload 는 서버가 표시한 777.5(같은 잡을 두 번 받아도 한 번)
     assert (b["num_unsourced"], f["num_unsourced"], f["server_mismatched"]) == (4, 0, 4)
-    # 서버 LLM — 위임 토큰은 잡마다 한 번, draft_section 은 tokens 칸이 없어 '모름' 호출로 센다
-    assert (f["server_jobs"], f["server_tokens_in"], f["server_tokens_out"], f["server_unknown_calls"]) == (4, 4800, 1200, 4)
+    # 서버 LLM(TS-16) — 위임 토큰은 잡마다 한 번 + 작성 · 변환 · 묻기는 호출마다 tokens 를 더한다. tokens 가 null(변환) · 칸 없음(옛 판 묻기)은 '모름' 호출
+    assert (f["server_jobs"], f["server_tokens_in"], f["server_tokens_out"]) == (4, 4 * (1200 + 900), 4 * (300 + 100))
+    assert (f["server_calls_with_tokens"], f["server_unknown_calls"], f["server_jobs_without_tokens"]) == (4, 8, 0)
     assert b["server_tokens_in"] == 0 and f["runs_using_offload"] == 4
     assert s["judge"] == {**s["judge"], "wins": 4, "ties": 0, "losses": 0, "judged": 4, "failed": 0, "loss_rate": 0}
     v = s["verdict"]
@@ -396,7 +401,7 @@ def test_report_counts_tokens_cost_judgement_and_server_side(env):
     md = (env["out"] / "report.md").read_text()
     assert "품질 차이 없음 = 판정 패배율 ≤ 10%" in md and "충족 — 품질 차이 없음" in md
     assert "| 줄인 몫(offload) | | 40.0% |" in md, "비용 4.00 → 2.40"
-    assert "offload 승 4 · 무 0 · 패 0" in md and "위임 토큰" in md
+    assert "offload 승 4 · 무 0 · 패 0" in md and "| 서버 토큰 입력 | 서버 토큰 출력 |" in md and "종류 offload" in md
     # 손잡이 — 어긋남이 줄어야만 통과로 바꾸면 미충족
     _ok(env["run"]("report", "--max-mismatch-increase", "-1"))
     s2 = json.loads((env["out"] / "summary.json").read_text())

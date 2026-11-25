@@ -57,7 +57,7 @@ TOP_TOOLS = 30
 # 사람 줄의 갈래 — engine 은 호출자가 빈 엔진 호출을 그 일의 사람에게 이은 것(감사 전용 머리 — 검증하지 않은 주장, OD-52)
 _ACTOR_GROUPS = ("login", "chat", "tile", "mcp", "engine", "delib", "nginx")
 PEOPLE_MAX = 1000               # 사람별 표의 줄 상한 — 넘으면 truncated
-LLM_KINDS = ("chat", "think", "delib", "routine", "card_review", "other")
+LLM_KINDS = ("chat", "think", "delib", "routine", "card_review", "offload", "other")   # usage_fold.LLM_KINDS 와 같은 차례(화면도 이 차례)
 _FOLD_PENDING = ("아직 접은 적이 없다 — 포털이 뜬 뒤 첫 접기가 돌면 채워진다(기동 30초 뒤 · 그 뒤 USAGE_FOLD_S 초마다 — 0 이면 접지 않는다).")
 
 
@@ -1079,7 +1079,8 @@ def _llm_tokens(c: sqlite3.Connection, x: _Ctx) -> dict:
     tot = {k: sum(r[k] for r in rows) for k in ("calls", "unknown", "tokens_in", "tokens_out", "cache_read")}
     return {"rows": rows, "daily": _series(x.w.axis(), since, daily), "since": since,
             "totals": {**tot, "people": len(_llm_people(c, x))},
-            "note": "에이전트 서버가 부른 LLM 호출의 토큰이다(챗 · 띵킹 · 심의 · 루틴 · 카드 대조 · 그 밖 × 모델). daily 는 날마다 입력 + 출력 토큰이다. "
+            "note": "에이전트 서버가 부른 LLM 호출의 토큰이다(챗 · 띵킹 · 심의 · 루틴 · 카드 대조 · 서버에 맡긴 일 · 그 밖 × 모델). daily 는 날마다 입력 + 출력 토큰이다. "
+                    "서버에 맡긴 일(offload — 위임 · 절 초안 · 변환 · 결과에 묻기)은 그 종류를 적기 시작한 판부터다 — 그 전 날의 그 몫은 그 밖(other)에 남는다. "
                     "unknown 은 사용량이 오지 않은 호출이다 — 흘려 받는 호출(에이전트 서버 LLM_STREAM_USAGE 를 켜기 전) · 외부 응답자(Claude 워크플로)는 "
                     "토큰을 모른다(지어내지 않는다). 다른 서비스(AIDataHub · SignalForge 등)가 같은 LLM 을 바로 부른 것은 들지 않는다. "
                     + (f"에이전트 서버가 적기 시작한 날({since}) 전은 null 이다." if since else
