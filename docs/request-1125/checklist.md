@@ -52,4 +52,6 @@
 - [ ] cae00 이 `STE_LSTC_LICENSE_SERVER` 를 넣었다는 답 → ste-06 에 전하기(라이선스 기본값 빼는 가지 `0313ceb` 를 그때 올린다)
 - [x] 게이트웨이 `wt1124/ste-upload-sha` — 87 의 셋(`4b3cdc1`) 뒤 사본 시험(1,247 통과 · 3 건너뜀) → `--no-ff` 병합 · push `63eed05`(옛 ste 와도 맞물림 — sha 칸 없으면 대조 생략) · dev 재기동은 87
 - [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — 여섯 곳 묶음 87 에 넘김(11-25) · R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper · HEAXHub · StepForge / 기다림 DocForge(그쪽 사용자 승인) · SmartTwin MCP(SM 넷 진행 중)
-- [ ] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림
+- [x] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림 — `2026-11-26.md`(`4c84e2f5`) · 11-25 알림(R25-18)
+- [ ] DocForge 0.4.0 판 → 87(6차 글 덧붙임 절)
+- [ ] SmartTwin MCP SM-01 ~ 03 · 카탈로그 — KooSlurm main 에 넣기 전 알림 받기(6차 판 `d93017a5` 와 어긋남 막기)

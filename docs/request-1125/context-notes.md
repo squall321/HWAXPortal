@@ -299,3 +299,11 @@
   사람 권한(role user · dashboard)으로 풀린다(MCP 가 부르는 submit · preview · rerun 은 dashboard 만 요구 — 안 막힘). 운영이 11-24 에 건 `grant_only plat:smarttwin-run`
   (요청서 MEMORY-2 — 되돌리기는 운영 배포 리포 README §8)은 이 판이 운영에 든 뒤 **위임 PAT 로 게이트웨이 `list_recent_jobs` 의 caller 가 사람 이름인지 본 다음** 푼다 —
   푸는 결정은 운영 쪽 사용자. SM-01 ~ 03 · 카탈로그는 진행 중, 전달 길(git · Drive 이름)은 c8 이 끝에 준다.
+
+## R25-18 6차 편지함이 나갔다(11-25)
+
+- 87 이 `docs/cae00-inbox/2026-11-26.md`(`4c84e2f5`, Q40 ~ Q50)를 올렸다. request-1125 몫 — StepForge `d7be049c` · KooRemapper(DynaForge) `6a90a416`(main 은 SP 서브모듈만
+  올린 `488168ea`) · HEAXHub `38baee7`(0절 1 맨 앞에 `.pre-merge` 지움) · SignalForge `51ee09b` · MX 백서 `90f5d8d` · stcx KooSlurm `d93017a5`(코드 `89172f14` — SM-04 포함)
+  · 게이트웨이 `63eed05`. MW-08 은 Q50, MW-09 는 「알고 받을 것」. R25-Q12 ~ Q16 은 머리말에서 다시 불렀다. 사용자에게 「cae00 업데이트를 돌려도 된다」 고 전했다.
+- 남은 것 — DocForge 0.4.0 은 판이 오면 87 이 이 글 끝에 덧붙임 절로. SmartTwin MCP SM-01 ~ 03 · 카탈로그는 KooSlurm main 에 넣기 전에 71 에 알려 달라고 c8 에 다시
+  전했다(글의 판 `d93017a5` 와 어긋나지 않게). ste · 브리지는 Q35 ste 교체 보고까지 묶음 그대로.
