@@ -24,7 +24,7 @@
 
 ## 답 받기
 
-- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP · HEAXHub · DocForge · 브리지(R25-10) / 기다림: SmartTwin MCP(c8 로 옮김 — R25-14) · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71) · ste 로컬 main(PA-02 `2397f32` · BG-6 `21a1718`) · HEAXHub 로컬 main(HH-18 `c9f39fd` · HP-71 `0375156` · SE-8 `38baee7`) · DocForge 가지 `req1125`(17건 · 커밋 14 · 0.4.0 배치 대기) · KooRemapper 가지 `corelink-int`(R-04 · HP-71 · R-09 — 해제 뒤 R-04 먼저) · StepForge 갈래 `feat-1125`(ST-20 ~ 24 · 26 · BG-1 · ST-27 틀 — 남은 것 ST-25 · ST-27 표본)
+- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: 아홉 곳 모두(R25-10 · SmartTwin MCP c8 은 R25-17) · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71) · ste 로컬 main(PA-02 `2397f32` · BG-6 `21a1718`) · HEAXHub 로컬 main(HH-18 `c9f39fd` · HP-71 `0375156` · SE-8 `38baee7`) · DocForge 가지 `req1125`(17건 · 커밋 14 · 0.4.0 배치 대기) · KooRemapper 가지 `corelink-int`(R-04 · HP-71 · R-09 — 해제 뒤 R-04 먼저) · StepForge 갈래 `feat-1125`(ST-20 ~ 24 · 26 · BG-1 · ST-27 틀 — 남은 것 ST-25 · ST-27 표본)
 - [x] ST-25 짓기 전 물음 넷 → 편지함 R25-Q13 ~ Q16(R25-13)
 - [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기(StepForge 가 바이트 · sha 를 직접 함께 보낸다 — R25-13)
 - [x] 5차 동결 해제(사용자 결정 11-25 — R25-16) → 일곱 세션에 전함 · ste-06 · 브리지는 계속 묶음 전함

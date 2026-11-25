@@ -270,3 +270,7 @@
   (health revision `6a90a41` · matches true · binary `139036f2…` · tools-map `heax-kooremapper_mcp` 120 · reachable) ④ 알고 받을 것 — stop · 재기동 스크립트가 인스턴스가
   60초 안에 안 사라지면 rc≠0 으로 멈춘다(`KOORM_STOP_WAIT_S`). **포털 `_stop` 이 rc 를 삼키면 그 멈춤이 안 보인다 — 포털(87) 몫으로 넘긴다.** dev — R-04 기다리기
   실물 통과 · 스모크 넷 · supervisor_log 4/4 · 백엔드 1166 · MCP 계약 13/13. KR-10 · KR-19 · KR-12 · ST-25-KR 은 기다린다.
+- **SmartTwin MCP(c8 — 받음 · 차례)** — 11-25 SM 넷 받음(원문 3-10절 · SM 커밋 없음을 git log 로 확인). 그쪽 사용자 결정 — SM-04 → SM-01 → SM-02 → SM-03 → 카탈로그
+  재생성(Pre v141 · Post v54 · KCR 새 명령 9개 도구화 · RIGID_DROP_ENDTIME · unified_analyzer rc 3), 항목마다 시험 통과면 main · push · 재시작. 지금까지 C-1(`e5cb6f41` ·
+  `0b46313f` — push · 재시작 끝). **71 이 짚은 것** — 운영 stcx 는 아직 Pre v128 · Post v50(SP-5 · Q34 — v136/v51 · v141/v53 · v54 모두 안 깔림)이라 카탈로그가
+  새 명령을 내걸면 운영에서 없는 판에 닿는다 → 판을 보고 거절하든지 설명에 「Pre v141 · Post v54 이상」 을 적어 달라고 했다(고르는 것은 c8).
