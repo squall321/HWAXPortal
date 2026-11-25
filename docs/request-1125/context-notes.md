@@ -337,3 +337,5 @@
 - 운영 손일 — update-all 로 받기 · `/health` 0.4.0 · capabilities(max_jobs · vlm.thinking_off) · 11-10 시험 덱 일곱 줄. 고를 일 둘 — `DOCFORGE_MAX_JOBS`(knobs.env, 적어 둔 값이
   있으면 0.4.0 부터 그 값) · 판독을 심의 모델로 옮길 때만 `DOCFORGE_VLM_THINKING_OFF=0`. 운영이 알 것 ① ~ ⑥ · DFO-1 까닭은 앞서 넘긴 정리 그대로.
 - DocForge 는 cae00 update-all 이 끝날 때까지 release 를 옮기지 않는다 — 끝나면 알린다.
+- 덧붙임 — DocForge 원격 main 이 문서 커밋 하나로 `f4422e5e` 로 한 번 더 움직였다(ls-remote 확인). release 는 `3a578a29` 그대로라 운영이 받는 판은 바뀌지 않는다. 87 에 「글의 판은
+  release 로 · main 해시를 적었으면 바꾸거나 빼기」 를 전했다.
