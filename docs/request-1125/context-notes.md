@@ -238,3 +238,9 @@
     챗이 그 계정으로 보내면 아무 범위 · 남의 주인으로 보낼 수 있고 보낸 사람이 기록에 안 남는다. 관리자 아닌 계정으로 바꾸면 연결기가 깨진다. 결론 — 챗에서
     위키 보내기를 켜기 전에 사람별 위임(D7 ②), 연결기(W8)는 막지 말고 전용 계정으로 가른다.
   - MW-06(선택) — 이번 착지에 없다. 코어 받는 코드와 함께 새 이관으로(MX 백서 W8 체크리스트).
+- **SignalForge** — main `4e44497`(병합 `1ea7aa3` — SFO-1 · 2 `abf2e38` · SFO-3 `e78b853` · SFO-5 `842c188` · HP-71 `157a2e6`, 그 위 cae00 문서). Drive 새 이미지
+  없음(`SignalForge/sif/latest/` 그대로 — 11-25 정기 동기화분). SIF 변경 없음 — sf-mcp 의 `mcp.sif` 파일 sha256 `68fed2ae…`, 허브 캐시 열쇠는 해당 없음(자체 빌드 ·
+  Drive SHA256SUMS). 운영 손 — 코드 받기(update-all) → sf-mcp 다시 띄우기(update-all 이 안 했으면 11-07 문서 4절 워치독 락으로 — 다른 인스턴스는 그대로) → 확인
+  (SignalForge `docs/DEPLOY_CAE00_2026-11-25.md` 2절 해석 세 줄 · 3절 게이트웨이 여섯 부르기). PLM 다시 받기 · `.env` 변경 없음 · DB 이관 없음(alembic 0048).
+  들어간 뒤 박스 어휘표에 `ontology_lookup` 다음 호출 `search_voc(core_type=…, core_key=…)` 줄을 넣어도 된다(선택). dev 는 sf-mcp 재기동 · 새 인자와 응답 칸 확인.
+  SFO-4 는 R25-Q4 답을 기다린다.
