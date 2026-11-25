@@ -51,5 +51,5 @@
 - [ ] cae00 ste 교체 보고(Q35 뒤 — 기한 11-26) → ste-06 · 브리지 풀기(ste 로컬 34커밋 · 브리지 SIF `e52a03a`)
 - [ ] cae00 이 `STE_LSTC_LICENSE_SERVER` 를 넣었다는 답 → ste-06 에 전하기(라이선스 기본값 빼는 가지 `0313ceb` 를 그때 올린다)
 - [x] 게이트웨이 `wt1124/ste-upload-sha` — 87 의 셋(`4b3cdc1`) 뒤 사본 시험(1,247 통과 · 3 건너뜀) → `--no-ff` 병합 · push `63eed05`(옛 ste 와도 맞물림 — sha 칸 없으면 대조 생략) · dev 재기동은 87
-- [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper · HEAXHub · StepForge / 기다림 DocForge(그쪽 사용자 승인) · SmartTwin MCP(SM 넷 진행 중)
+- [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — 여섯 곳 묶음 87 에 넘김(11-25) · R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper · HEAXHub · StepForge / 기다림 DocForge(그쪽 사용자 승인) · SmartTwin MCP(SM 넷 진행 중)
 - [ ] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림
