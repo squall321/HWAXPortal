@@ -113,6 +113,16 @@
   DFO-3 은 DFO-2 와 같은 자리라 같이, `PROMPT_VERSION` 은 IR-11 · IR-17 · IR-20 을 한 번에 올린다. IR-11 — 쪽 그림(snapshot_page)이 이미 있으면 그것을 쓰고
   없을 때만 DocForge 가 그린다(같은 쪽을 두 번 그리지 않음). 코드는 따로 작업 폴더의 가지 `req1125` 에만, push · release · Drive 는 알림 뒤 · Drive 는 그쪽
   사용자 승인도 거친다.
+  뒤이어 17건을 가지 `req1125` 에 다 지었다(로컬 커밋 14 · 시험 319 통과 · 그쪽 결정 R-D57 ~ R-D69). 해제 뒤 main 에 합쳐 push 하고 그쪽 사용자 승인으로
+  **0.4.0 배치** — release → HEAXHub 등록 사본(IR-24 줄을 뺀 매니페스트 — 열쇠가 바뀐다) → SIF → Drive 차례. **운영이 알고 받을 것**(그쪽 초안, 착지 때 편지함에)
+  — ① 잡 수는 knobs.env 의 `DOCFORGE_MAX_JOBS`(매니페스트에서 뺌), 판독 동시 수 `DOCFORGE_VLM_MAX_CONCURRENCY` 는 이제 잡 수와 상관없는 서버 전체 상한(4 그대로 둬도 됨)
+  ② vlm 이 켜지면 그림 파일로 못 읽는 것(연결선 · 글 없는 도형 · 그림 채움 · 잘린 그림 · SmartArt · 묶음 등)이 있는 슬라이드만 DocForge 가 그려 판독(snapshot_page 없어도)
+  ③ 새 옵션 `snapshot_blocks`(selected 기본 · all · none — snapshot_page 일 때 보고서에 싣는 쪽 그림) ④ 판독 지시 판 `df-vlm-3` 이라 판독 캐시가 새로 쌓인다
+  ⑤ 판독을 심의 모델로 옮기려면 `DOCFORGE_VLM_THINKING_OFF=0`(capabilities 의 `vlm.thinking_off`) ⑥ `docforge_package` 응답에 `links[{type_slug · key · label · code ·
+  matched_by}]`, capabilities 의 ontology 에 stale 묶음. 확인할 것은 11-10 시험 덱의 쪽별 모습(흐름 글이 판독 없이 · 잘린 코드 없음 · 그림 채움 · TIFF → PNG ·
+  캡션 꼴 · 표 그림이 표 위젯 하나 · 판독 블록 라벨 = document.md 의 [그림 N]).
+  **요청과 다른 곳 하나** — DFO-1 은 옛 행을 지우지 않고 stale 로 따로 보이게만 했다. 요청의 '쓰는 곳이 없으면 지운다' 는 키트 수신 규칙(타입별 since 커서)과
+  얽혀 되돌릴 수 있는 쪽을 골랐다 — 착지 때 편지함에 그 까닭과 함께 적는다. **포털 IR-02(미배정 몫)는 snapshot_page 만 넘기면 된다** — 새 옵션을 넘길 필요 없음.
 
 ## R25-11 IR-24 등록 사본은 DocForge 배치가 고친다(11-25)
 
