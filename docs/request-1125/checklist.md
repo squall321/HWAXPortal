@@ -24,11 +24,12 @@
 
 ## 답 받기
 
-- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP · HEAXHub(R25-10) / 기다림: DocForge · 브리지 · SmartTwin MCP · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71)
+- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP · HEAXHub · DocForge(R25-10) / 기다림: 브리지 · SmartTwin MCP · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71)
 - [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기
 - [ ] 5차 동결 해제(87 알림) → 각 세션에 전하기
 - [x] 사용자 결정 넷(11-25 모두 권장안 — R25-9) → StepForge · DocForge 에 전하기
 - [ ] 운영 쪽 답(편지함 2026-11-25) → 해당 세션에 전하기
+- [x] IR-24 등록 사본은 DocForge 배치가 고친다 — 두 세션에 전함(R25-11)
 - [x] ste PA-02 — 그쪽 사용자 결정 11-25: 도는 잡의 64 MB 넘는 파일은 잡 끝난 뒤 한 번 받기(R25-10)
 - [ ] KooRemapper R-09 — 그쪽 세션이 사용자에게 묻는 결정 둘(R25-10)
 - [ ] ste PA-02 착지 때 — 사용자 PC 에이전트 새로 받기 · 두 번 누르기를 편지함 사람 몫으로

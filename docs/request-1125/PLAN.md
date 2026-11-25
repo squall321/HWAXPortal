@@ -14,8 +14,8 @@
 | 1-1 ~ 1-3 · 2절 G · A · P | 포털 · 게이트웨이 · 에이전트 서버 | **뺌 — 미배정**(hwaxportal-87 이 사용자에게 여쭙기로 함, R25-1). 87 의 미병합 가지가 같은 파일을 만진다 — 아래 '겹침' |
 | 1-6 · 1-8 | 리스크 앱 · AIDataHub | **뺌 — 미배정.** 따로 세션이 없고 포털 세션들이 고쳐 온 저장소다 |
 | 1-4 | StepForge | `stepforge-d4` 에 보냄 |
-| 1-5 · IR-51(DocForge 몫) · IR-24(원본) | DocForge | `docforge-f6` 에 보냄 |
-| 1-7 HH-18 · IR-24(사본) · SE-8 · 1-12 HP-71 | HEAXHub | `heaxhub-4b` 에 보냄 |
+| 1-5 · IR-51(DocForge 몫) · IR-24(원본 + HEAXHub 등록 사본 — R25-11) | DocForge | `docforge-f6` 에 보냄 |
+| 1-7 HH-18 · SE-8 · 1-12 HP-71 | HEAXHub | `heaxhub-4b` 에 보냄(IR-24 사본은 DocForge 배치로 옮김 — R25-11) |
 | 1-7 HH-10 | MaterialTwin | 보내지 않음 — 운영 쪽이 자연 키를 먼저 넘긴다(받은 편지함 10-31 Q1) |
 | 1-9 · HP-71 | SignalForge | `signalforge-c6` 에 보냄 |
 | 1-10 | MXWhitePaper | `mxwhitepaper-26` 에 보냄(질문 둘의 답 초안 확인) |
@@ -99,7 +99,7 @@
 | 차례 | ID | 판정 | 바꿀 것 | 크기 · 기대는 것 |
 |---|---|---|---|---|
 | 1 | HH-18 | 남음(P2) | 런처 세 자리(호스트 · SIF · apt)가 띄울 때마다 `.env` 를 다시 읽어 얹는 도우미 하나 | M · 따옴표 해석 · 지운 키를 뺄지는 세션이 정한다 |
-| 2 | IR-24(사본) | 남음(P2) | `integrations/doc-forge/.portal/manifest.yaml` 의 같은 줄 빼기 | S · DocForge 와 한 묶음 · doc_forge SIF 다시 짓기 · Drive(R25-7). cae00 `manifest.local.yaml` 우회도 같은 까닭으로 안 됨 |
+| 2 | IR-24(사본) | **DocForge 배치로 옮김**(R25-11) | `integrations/doc-forge/.portal/manifest.yaml` 의 같은 줄 빼기 | DocForge `docs/DEPLOY.md` §7 의 2 — release 를 옮긴 바로 뒤 DocForge 세션이 그 파일 하나만 커밋한다. HEAXHub 세션은 이 줄을 고치지 않는다 |
 | 3 | SE-8 | 남음(P2) | `appdata-merge-from-drive.sh` · `models-from-drive.sh` · `dist-from-drive.sh` 반복 줄이기(요청 1 ~ 5) | M · tar 를 영구 캐시에 두면 'DB 밖 심기를 계속 돌릴지' 결정이 필요 없어진다 |
 | 4 | HP-71 | 남음(P3) | `.env.example` 「앱에 넘기는 환경」 절에 코어 주소(포털 경로 꼴) · NO_PROXY 자리표시 | S |
 

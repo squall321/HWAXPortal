@@ -35,6 +35,7 @@
   `MAPS_TO_SHA256`). 근거 층(role+name · role · name)을 basis enum 의 새 값으로 싣는다면 블록의 enum · help 도 바뀐다. 그래서 KooRemapper 에는
   'cad_part 한 줄' 이 아니라 'StepForge 가 확정한 블록 그대로' 를 받으라고 보낸다. enum 이 바뀌는지는 StepForge 가 정한다.
 - **DocForge IR-24 원본 ↔ HEAXHub 등록 사본** — 매니페스트 둘에서 같은 줄을 뺀다. IR-23(동시 수를 서비스 전체로)이 앞이다(줄만 빼면 기본 1 로 같다).
+  고치는 손은 하나다 — DocForge 배치가 등록 사본까지 고친다(R25-11).
 
 ## R25-5 매니페스트를 고치면 SIF 를 다시 짓는다(11-25)
 
@@ -97,3 +98,16 @@
   호스트 · SIF · 프록시 자리에 쓴다 — 따옴표는 백엔드 설정과 같은 python-dotenv 로 풀고, `.env` 에서 지운 키는 `APPTAINERENV_*` 만 뺀다(프록시 · LLM · 검색 키는
   셸 프로필에서 올 수도 있어 `.env` 에 없으면 프로세스 값 그대로 — 그쪽 사용자 결정). HP-71 은 예시 두 줄을 따옴표로. SE-8 은 받기 스크립트 셋의 되풀이를 줄이고
   tar 를 영구 캐시에 두어 'DB 밖 심기' 결정이 필요 없게 한다. **IR-24 는 DocForge 정본 릴리스(IR-23 뒤) 를 따라 doc_forge SIF 다시 짓기와 한 번에**(R25-5).
+- **DocForge** — 17건 받음 · 사용자 결정 둘 받음. 지금 HEAD 의 코드는 `4804aca` 와 같고(그 뒤는 문서뿐) 계획서와 다른 판정은 없다 — srcRect 는 pptx 에만
+  있고 docx · xlsx 에는 아예 없다 · 생각 끄기는 `modelcall.py` 에 고정 · 동시 수 세마포어는 클라이언트마다 따로 · `matched_by` 없음. 차례는 PLAN 그대로이고
+  DFO-3 은 DFO-2 와 같은 자리라 같이, `PROMPT_VERSION` 은 IR-11 · IR-17 · IR-20 을 한 번에 올린다. IR-11 — 쪽 그림(snapshot_page)이 이미 있으면 그것을 쓰고
+  없을 때만 DocForge 가 그린다(같은 쪽을 두 번 그리지 않음). 코드는 따로 작업 폴더의 가지 `req1125` 에만, push · release · Drive 는 알림 뒤 · Drive 는 그쪽
+  사용자 승인도 거친다.
+
+## R25-11 IR-24 등록 사본은 DocForge 배치가 고친다(11-25)
+
+- PLAN 은 처음에 IR-24 를 DocForge(원본) · HEAXHub(사본) 두 세션에 나눠 보냈다. DocForge 가 「등록 사본 고치기는 배치 때 DEPLOY §7 대로 이쪽이 해 왔다」 고
+  짚었다. DocForge `docs/DEPLOY.md` §7 의 2 가 바로 그 절차다 — release 를 옮긴 바로 뒤, 다음 스캔(300초) 전에 HEAXHub 등록 사본 하나만 커밋한다.
+  늦거나 먼저 하면 스캐너가 옛 판 숫자로 한 번 더 짓는다(10-24 · 11-07 · 11-12 배치 기록).
+- 그래서 사본 고치기는 DocForge 배치에 붙이고 HEAXHub 세션 목록에서 뺀다. 두 세션이 같은 줄을 고치면 커밋이 겹치고, 그 차례가 어긋나면 SIF 가 두 번
+  지어진다. HEAXHub 세션에는 HH-18 이 빌드 틀(fastapi 틀 등)을 건드리지 않게 한 줄 덧붙였다 — 틀은 모든 허브 앱의 캐시 열쇠에 든다.
