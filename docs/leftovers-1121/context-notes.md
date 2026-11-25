@@ -566,7 +566,7 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
 ## L21-29 cae00 답(11-25) — 받은 편지함 2026-11-24 다섯째 라운드
 
 답 원문은 리포에 두지 않는다(받은 편지함 README). 다른 폴더로 간 답 — Q31 은 `../request-1123/context-notes.md` NX-4, Q36 · Q39 는
-`../token-saving/context-notes.md` TS-16, request-1125 에 미치는 것(Q32 · Q35)은 `../request-1125/` R25-16.
+`../token-saving/context-notes.md` TS-17, request-1125 에 미치는 것(Q32 · Q35)은 `../request-1125/` R25-16.
 
 - **Q29 update-all** — 끝 코드 0(11-24 16:29) · ✗ 0줄. ○ 열 — 멈춰 둔 kooremapper · `LLM_UPSTREAMS` 없음 · Drive pip · npm 미러 없음 · step_forge 동결 ·
   DynaForge 로컬 스택 멈춰 둠 · StepForge 단언 쓰기 비밀 없음(사람 차례) · Gatus 없음 · `he-cad-stepforge` 목록 밖에 둔 쓰기 3(정의의 `unlisted_writes` —
@@ -586,7 +586,7 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
   검사가 약했다. 6차 글에서 표지 문구가 든 레코드 수를 직접 세는 읽기 한 줄로 바꾼다(dev 에서 같은 줄로 0 을 먼저 본다).
 - **Q34 stcx 후처리** — v54 로 가지 않음(시점은 그쪽 사용자) · v53 은 그대로.
 - **Q35 ste** — 자동 교체 아직(17:07 기준 잡 13 · 기한 11-26) · 라이선스 서버 줄 안 넣음(잡 0 일 때 · 시점은 사용자) · preflight 못 봄.
-- **Q36 · Q39 토큰 절감 2판** — 켜서 64회 비교 뒤 20:08 에 다시 끔. 패배율 25%(기준 10%)로 품질 기준 미달(TS-16).
+- **Q36 · Q39 토큰 절감 2판** — 켜서 64회 비교 뒤 20:08 에 다시 끔. 패배율 25%(기준 10%)로 품질 기준 미달(TS-17).
 - **Q37 릴리스 `manifest.json` 잘림** — 운영 배포 리포 HWAXProd 의 `deploy/lib/bundle.sh` 가 KooRemapper `BUILD_INFO.txt` 를 `[:400]` 으로 자른다 — 의도한 것.
   L21-28 넘김 8 은 닫는다(KooRemapper 몫 아님).
 - **Q38 전문가 고르기 그림자** — 11-30 무렵.
