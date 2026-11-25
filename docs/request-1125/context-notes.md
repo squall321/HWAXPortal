@@ -215,3 +215,8 @@
   끝단이 짚은 둘을 고쳐 다시 지었다 — 옛 StepForge 의 404 를 어느 글이든 `stepforge_outdated` 로 가른다(브리지 `e52a03a`), 고른 파트를 못 받으면 올린 STEP 으로
   잇지 않는다(ste `58508e9`). 06 이 스테이징에서 다시 돌려 확인했다. 꾸러미(KooFEniCS · KooOpenFOAM)는 그대로. StepForge 파트 반출 REST 가 먼저 운영에 들면
   레지스트리 part 의미 바꾸기(06 가지 `b4503ec`)에 남는 조건은 새 브리지 SIF 하나다. 브리지는 ste 교체 보고 뒤 그쪽 사용자에게 Drive 를 묻고 반영 안내 ①②③ 을 쓴다.
+- **바로잡기(ste-06 답 11-25)** — ste 로컬 main 은 origin(`859a02d`)보다 **34 커밋** 앞선다(17 아님 — PA-02 · BG-6 · CalculiX · 선언 둘 `6585583`(레디쉬 빌드만 ·
+  part-study 그 파트만 받기) · 브리지 세션의 래퍼 셋 `47b108f` · `fa1af4b` · `58508e9` · 문서). 레지스트리 part 는 main 이 아니라 가지 `registry-part-fetch`(`b4503ec`)
+  — 새 브리지 SIF 와 StepForge feat-1125 가 운영에 든 다음 라운드에 합친다. 라이선스 서버 기본값을 빼는 가지(`0313ceb`)는 cae00 이 `.env` 에
+  `STE_LSTC_LICENSE_SERVER` 를 넣었다고 알려야 올린다(Q35 — 아직 안 넣음 · 시점은 그쪽 사용자). 스테이징 VM 은 ste `58508e9` · 브리지 SIF `e52a03a` · 솔루션 꾸러미
+  stage-1125(`63b9f91`)로 운영과 다르다. 올리기는 ste 교체 보고 뒤 그쪽 사용자에게 다시 묻는다.

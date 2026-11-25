@@ -47,7 +47,8 @@
 
 - [x] 5차 cae00 update-all 결과(Q29 — 끝 코드 0 · ✗ 0) → 사용자 결정으로 해제(R25-16) → 87 에 전함
 - [x] 일곱 세션에 push · Drive 알리기(SIF 올리기가 막히면 사람 몫) — ste-06 · 브리지는 ste 교체 보고까지 묶음
-- [ ] cae00 ste 교체 보고(Q35 뒤 — 기한 11-26) → ste-06 · 브리지 풀기
+- [ ] cae00 ste 교체 보고(Q35 뒤 — 기한 11-26) → ste-06 · 브리지 풀기(ste 로컬 34커밋 · 브리지 SIF `e52a03a`)
+- [ ] cae00 이 `STE_LSTC_LICENSE_SERVER` 를 넣었다는 답 → ste-06 에 전하기(라이선스 기본값 빼는 가지 `0313ceb` 를 그때 올린다)
 - [ ] 게이트웨이 `wt1124/ste-upload-sha` — 87 의 fig-race → interactions → offload-finish 뒤 rebase 사본 시험 → `--no-ff` 병합 · push
 - [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함)
 - [ ] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림
