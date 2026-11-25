@@ -1,0 +1,52 @@
+/* 상호작용 기록 — 내 기록 · 관리 › 상호작용 기록의 원문 보기(docs/interaction-data) */
+.rec-detail h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.rec-close {
+  margin-left: auto;
+}
+.rec-block {
+  margin: 0.75rem 0;
+}
+.rec-block h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+.rec-block pre,
+.rec-msg pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 28rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+.rec-msgs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.rec-msg b {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.2rem;
+}
+.adm-table tr.is-open td {
+  background: var(--surface-2);
+}
+.rec-erase {
+  margin-top: 2rem;
+}
+.ix-notice {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  margin: 0.5rem 0 0;
+}

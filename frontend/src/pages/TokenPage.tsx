@@ -12,6 +12,8 @@ import {
   type ServicePatCreated,
 } from '../api/pat.api';
 import { fetchMyAccess, type MyAccess } from '../api/access.api';
+import { fetchShareBox, type ShareBox } from '../api/interactions.api';
+import { useInteractionStatus } from '../lib/useInteractionStatus';
 import HubAppsPanel from '../components/HubAppsPanel';
 import HubViewPanel from '../components/HubViewPanel';
 import ServiceTokenPanel from '../components/ServiceTokenPanel';
@@ -104,6 +106,16 @@ function offloadNote(box: OffloadBox | null): { text: string; off: boolean } {
   };
 }
 
+// '내 Claude 대화를 포털에 공유' 칸 옆 한 줄 — 이 박스가 상호작용 기록을 켰나(docs/interaction-data contract §5). 꺼져 있으면 /hwax-share 가
+// 올려도 404 라 켜도 올라가지 않는다고 말한다. 못 읽은 것은 '모름' 이다(꺼짐으로 단정하지 않는다).
+function shareNote(box: ShareBox | null): { text: string; off: boolean } {
+  if (!box) return { text: '이 박스에서 켜져 있는지 모름', off: false };
+  if (!box.portal) return { text: '이 박스에서 꺼져 있음 — 켜도 올라가지 않는다', off: true };
+  if (box.capture === false)
+    return { text: '이 박스에서 켜져 있음(게이트웨이 share_conversation 도구는 꺼짐)', off: false };
+  return { text: '이 박스에서 켜져 있음', off: false };
+}
+
 // 배치 없이 인증서로 직접 설정하는 순서(10-20 사용자 요청) — 명령은 생성기(certGuide)가 배치와 같은 파일 · 묶음 본문으로 만든다.
 function CertGuide({ token, open }: { token: string | null; open: boolean }) {
   return (
@@ -129,6 +141,7 @@ export default function TokenPage() {
   const canToken = useCan()('feat:api-token');
   // 서비스 토큰 탭(docs/core-link design §2)은 관리자에게만 보인다 — 백엔드가 한 번 더 막는다
   const { user } = useAuth();
+  const ix = useInteractionStatus(Boolean(user));
   const isAdmin = Boolean(user?.groups.includes('portal-admin'));
   const [params, setParams] = useSearchParams();
   const q = params.get('tab');
@@ -167,6 +180,10 @@ export default function TokenPage() {
   // 설정 배치의 '서버 LLM 에 일 맡기기' 칸(기본 끔)과 이 박스의 스위치(null = 모름 — 못 읽었거나 아직 읽는 중)
   const [offload, setOffload] = useState(false);
   const [offloadBox, setOffloadBox] = useState<OffloadBox | null>(null);
+  // 설정 배치의 '내 Claude 대화를 포털에 공유' 칸(기본 끔)과 그 아래 '세션 끝에 자동으로' 칸(기본 끔) · 이 박스의 스위치(null = 모름)
+  const [share, setShare] = useState(false);
+  const [shareAuto, setShareAuto] = useState(false);
+  const [shareBox, setShareBox] = useState<ShareBox | null>(null);
 
   // 인증서만 따로(10-20 사용자 요청) — 배치를 못 쓰는 PC · 손으로 설정하는 사람 몫이라 토큰을 발급하지 않아도 받는다.
   // 링크(<a download>)로 걸지 않고 받아서 PEM 인지 본 뒤 저장한다 — 실패를 화면에 말하고, 오류 응답이 .crt 이름으로 저장되지 않게.
@@ -213,6 +230,7 @@ export default function TokenPage() {
         pem,
         created.fallback_proxy ?? null,
         offload,
+        share ? (shareAuto ? 'auto' : 'command') : 'off',
       );
       const blob = new Blob([bat], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
@@ -265,6 +283,9 @@ export default function TokenPage() {
     // 못 읽으면 '모름' 으로 둔다 — 칸은 그대로 보이고 배치도 만든다
     fetchOffloadBox()
       .then(setOffloadBox)
+      .catch(() => {});
+    fetchShareBox()
+      .then(setShareBox)
       .catch(() => {});
   }, []);
 
@@ -344,6 +365,8 @@ export default function TokenPage() {
           </>
         }
       />
+      {/* 수집 사실을 숨기지 않는다 — 이 박스가 상호작용 기록을 켰을 때만(docs/interaction-data contract §7) */}
+      {ix && <p className="tok-note">{ix.notice}</p>}
 
       {/* 성격이 다른 셋을 한 줄로 쌓아 '내 토큰' 이 맨 아래에 묻혀 있었다 — 탭으로 나눈다(docs/ui-refresh 단계 4).
           탭은 주소(?tab=)에 남아 안내문·북마크가 바로 그 탭을 열 수 있다. 방금 발급한 토큰은 이 컴포넌트 상태라 탭을 오가도 남는다. */}
@@ -533,6 +556,44 @@ export default function TokenPage() {
                         받은 배치를 다시 실행하면 셋을 걷습니다 — CLAUDE.md 는 표지 사이 밖을
                         건드리지 않습니다.
                       </div>
+                    )}
+                  </div>
+                  {/* 내 Claude 대화를 포털에 공유(docs/interaction-data contract §5 — 사람이 스스로 보낸다, IX-3). 박스가 꺼져 있어도 칸은 보이고 그 사실을 옆에 말한다 */}
+                  <div className="tok-offload tok-share">
+                    <label>
+                      <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
+                      내 Claude 대화를 포털에 공유
+                    </label>
+                    {(() => {
+                      const note = shareNote(shareBox);
+                      return (
+                        <span className={note.off ? 'tok-offload-box is-off' : 'tok-offload-box'}>
+                          {note.text}
+                        </span>
+                      );
+                    })()}
+                    {share && (
+                      <>
+                        <label className="tok-share-auto">
+                          <input
+                            type="checkbox"
+                            checked={shareAuto}
+                            onChange={(e) => setShareAuto(e.target.checked)}
+                          />
+                          Claude Code 세션이 끝날 때마다 자동으로 올리기
+                        </label>
+                        <div className="tok-hint">
+                          배치가 올리는 작은 PowerShell(<code>%USERPROFILE%\.hwax\hwax-share.ps1</code>)과 Claude Code
+                          명령 <code>/hwax-share</code>(지금 세션의 기록 파일을 이 포털의 내 기록으로 올린다)를 둡니다.
+                          {shareAuto && (
+                            <>
+                              {' '}사용자 설정(<code>settings.json</code>)에 세션 끝(<code>SessionEnd</code>) 훅도 답니다.
+                            </>
+                          )}{' '}
+                          토큰은 배치가 등록한 hwax 연결의 것을 그대로 읽고, 올리기 전에 토큰 · 키를 가립니다. 같은 세션을 다시 올리면
+                          덮어씁니다. 칸을 끄고 받은 배치를 다시 실행하면 넣은 것을 걷습니다.
+                        </div>
+                      </>
                     )}
                   </div>
                   <div className="tok-actions">

@@ -50,6 +50,8 @@ services:
         users:          { kind: sqlite, path: svc/portal/users.sqlite,         current: backend/data/users.sqlite,          env: USER_STORE_PATH,      fs: local, sync: mirror, needs_bind: true }
         conv:           { kind: sqlite, path: svc/portal/conversations.sqlite, current: backend/data/conversations.sqlite,  env: CONV_STORE_PATH,      fs: local, sync: mirror, needs_bind: true }
         procedures:      { kind: sqlite, path: svc/portal/procedures.sqlite,     current: backend/data/procedures.sqlite,      env: PROCEDURES_STORE_PATH, fs: local, sync: mirror, needs_bind: true }
+        # 상호작용 원장(docs/interaction-data) — 원문은 이 박스 안에만(sync: none — 박스 사이 동기화 · Drive 에 싣지 않는다). 백업은 backup-local portal.
+        interactions:    { kind: sqlite, path: svc/portal/interactions.sqlite,   current: backend/data/interactions.sqlite,    env: INTERACTIONS_STORE_PATH, fs: local, sync: none, needs_bind: true }
         audit:          { kind: sqlite, path: svc/portal/agent_audit.sqlite,   current: backend/secrets/agent_audit.sqlite, env: AGENT_AUDIT_LOG_PATH, fs: local, sync: none, needs_bind: true }
         token_store:    { kind: sqlite, path: svc/portal/token_store.sqlite,   current: backend/secrets/token_store.sqlite, env: TOKEN_STORE_PATH,     fs: local, sync: none, keys_with: [jwt], needs_bind: true }
         jwt:            { kind: secret, path: hwax/secrets/portal/jwt,          current: backend/secrets/jwt,                env: JWT_KEYS_DIR,         sync: none, needs_bind: true }

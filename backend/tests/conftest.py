@@ -22,9 +22,14 @@ os.environ.setdefault(
 #   · 대화 — 스키마 이관이 실 DB 에서 돈다.
 # 무엇을 열었는지는 test_suite_isolation 이 포털을 띄워 sqlite 에 직접 물어 본다.
 #   · 연결 토큰 암호 키(HP-05) — 계정 원장을 열면 키가 없을 때 만든다. 그대로 두면 시험이 이 박스의 backend/secrets/conn.key 를 만든다.
+#   · 상호작용 원장(docs/interaction-data) — 켠 박스의 backend/.env 를 읽은 시험이 기동하면 원장을 연다. 실 원장(/data/svc/portal 의 그 파일)에 시험 사건이 쌓인다.
 for _key, _name in (("TOKEN_STORE_PATH", "token_store.sqlite"), ("CONV_STORE_PATH", "conversations.sqlite"),
-                    ("PROCEDURES_STORE_PATH", "procedures.sqlite"), ("CONN_KEY_PATH", "conn.key")):
+                    ("PROCEDURES_STORE_PATH", "procedures.sqlite"), ("CONN_KEY_PATH", "conn.key"),
+                    ("INTERACTIONS_STORE_PATH", "interactions.sqlite")):
     os.environ.setdefault(_key, os.path.join(tempfile.mkdtemp(prefix="hwax-test-store-"), _name))
+# 상호작용 수집기(docs/interaction-data) — 시험이 포털을 띄울 때 켠 박스의 설정을 읽어도 백그라운드 수집이 이 박스에 떠 있는 게이트웨이를
+# backend/.env 의 공유 비밀로 부르지 않게 끈다(창구 · 원장은 그대로 시험한다). 수집을 보는 시험은 run_once 에 Settings · HTTP 대역을 직접 준다.
+os.environ.setdefault("INTERACTIONS_INGEST_S", "0")
 # 사용자를 정지하면 앱 쪽 자격도 회수한다(8차 요청 §7 — 게이트웨이 `/conn-invalidate` · ste `/api/auth/sso/revoke`). 그대로 두면 시험이
 # 사용자를 정지할 때마다 이 박스에 **떠 있는** 게이트웨이를 backend/.env 의 실제 공유 시크릿으로 부른다 — 시험은 공유 서비스를 치면
 # 안 된다(test_procedures_routes 의 같은 경고). 게이트웨이 기본 주소를 닫힌 포트로 돌리고 ste 위임은 끈다. 이 호출을 보는 시험은

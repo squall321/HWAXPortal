@@ -13,6 +13,7 @@ import LaunchPage from './pages/LaunchPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PortalHomePage from './pages/PortalHomePage';
+import RecordsPage from './pages/RecordsPage';
 import TokenPage from './pages/TokenPage';
 import RiskLaunchPage from './pages/risk/RiskLaunchPage';
 import AccessHistoryPage from './pages/admin/AccessHistoryPage';
@@ -20,6 +21,7 @@ import ToolSearchReviewPage from './pages/admin/ToolSearchReviewPage';
 import UsageStatsPage from './pages/admin/UsageStatsPage';
 import SeatReviewPage from './pages/admin/SeatReviewPage';
 import LlmStatusPage from './pages/admin/LlmStatusPage';
+import InteractionsAdminPage from './pages/admin/InteractionsAdminPage';
 import UsersAdminPage from './pages/admin/UsersAdminPage';
 import ProceduresPage from './pages/procedures/ProceduresPage';
 import { ProceduresProvider } from './state/ProceduresContext';
@@ -123,6 +125,17 @@ const router = createBrowserRouter([
       {
         path: '/admin/llm-status',
         element: <LlmStatusPage />,
+      },
+      {
+        // 상호작용 기록(docs/interaction-data contract §6) — 분석가만(페이지 안에서 상태 · 권한을 보고, 백엔드가 한 번 더 막는다).
+        // ⚠ API 접두사는 '/interactions' 다 — SPA 경로와 겹치지 않게 '/admin/interactions' · '/records' 를 쓴다.
+        path: '/admin/interactions',
+        element: <InteractionsAdminPage />,
+      },
+      {
+        // 내 기록 — 모든 사용자(이 박스가 상호작용 기록을 켰을 때만 메뉴가 보인다)
+        path: '/records',
+        element: <RecordsPage />,
       },
       {
         path: '/risk',

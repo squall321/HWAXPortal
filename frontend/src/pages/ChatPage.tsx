@@ -22,6 +22,7 @@ import {
   IconUsers,
 } from '../components/chat/icons';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
+import { useInteractionStatus } from '../lib/useInteractionStatus';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
 
@@ -79,6 +80,7 @@ const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
 export default function ChatPage() {
   const { user } = useAuth();
+  const ix = useInteractionStatus(Boolean(user));
   const can = useCan();
   const { messages, activeId, setInput, newConversation, openServerConversation } = useChat();
   const location = useLocation();
@@ -212,6 +214,8 @@ export default function ChatPage() {
                   </button>
                 </>
               )}
+              {/* 수집 사실을 숨기지 않는다 — 이 박스가 상호작용 기록을 켰을 때만(docs/interaction-data contract §7) */}
+              {ix && <p className="ix-notice cx-ix-notice">{ix.notice}</p>}
             </div>
           </div>
         ) : (

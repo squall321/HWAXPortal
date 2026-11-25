@@ -115,7 +115,7 @@ else
   esac
   # <<< docforge-bind
   for k in USER_STORE_PATH CONV_STORE_PATH TOKEN_STORE_PATH AGENT_AUDIT_LOG_PATH JWT_KEYS_DIR DELIB_ARCHIVE_ROOT \
-           PROCEDURES_STORE_PATH PROCEDURES_ARTIFACT_ROOT; do
+           PROCEDURES_STORE_PATH PROCEDURES_ARTIFACT_ROOT INTERACTIONS_STORE_PATH; do
     [ -n "${!k:-}" ] && DATA_ENVS+=(--env "$k=${!k}")
   done
   # SAML_* 는 **명시해서** 넘긴다 — 호스트 env 상속에만 기대면 --cleanenv 나 다른 기동 경로에서 운영 SAML 설정이 통째로
@@ -150,6 +150,12 @@ else
       *) LLMST_ENVS+=(--env "LLM_STATUS_URL=http://127.0.0.1:${LLM_STATUS_PORT:-8760}") ;;
     esac
   fi
+  # 상호작용 기록(docs/interaction-data contract §1) — 박스 스위치와 수집기 주기도 **값이 있을 때만** 명시해서 넘긴다(위 TIME_ENVS 와 같은 까닭 —
+  #   상속이 끊기면 infra/.env 에 켠 스위치가 조용히 꺼진다. 빈 값은 backend/.env 의 값을 덮어 끈다). 없으면 꺼짐(지금과 같다).
+  IX_ENVS=()
+  for k in INTERACTIONS_ENABLED INTERACTIONS_INGEST_S; do
+    [ -n "${!k:-}" ] && IX_ENVS+=(--env "$k=${!k}")
+  done
   # 사내 프록시(HWAX_FALLBACK_PROXY) — 토큰 화면이 만드는 설치 배치의 npm 레지스트리 폴백 주소를 포털이 PAT 발급 응답으로 준다.
   #   공개 리포에 실제 주소를 두지 않는다(사용자 결정 11-24). 위와 같은 이유로 **값이 있을 때만** 명시해서 넘긴다. 값은 찍지 않는다.
   PROXY_ENVS=()
@@ -193,7 +199,7 @@ else
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
     ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} ${LLMST_ENVS[@]+"${LLMST_ENVS[@]}"} \
-    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} \
+    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} ${IX_ENVS[@]+"${IX_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \

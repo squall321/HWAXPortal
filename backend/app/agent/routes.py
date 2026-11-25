@@ -453,6 +453,8 @@ class ConvMessageIn(BaseModel):
 # 화면과 그 meta 를 읽는 쪽(M2 인사이트 그래프)에 서버가 확인한 주제로 읽힌다(반대 검토 11-02 재현). 화면이 REST 로 남기는 것(보내기 알림)은 이 칸을
 # 쓰지 않는다.
 _RELAY_ONLY_META = ("subject",)
+# 상호작용 기록(docs/interaction-data S2) — SSE meta 에서 답 meta.turn 으로 남기는 칸(답한 모델 · 생각 · 자기검증). 켠 박스에서만 남긴다(중계 keep_turn).
+_TURN_META_KEYS = ("models", "chat_model", "thinking", "effort", "fallback_to", "claude_note", "self_check")
 
 
 def _rest_meta(meta: dict | None) -> dict | None:
@@ -3345,6 +3347,10 @@ async def chat(
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
         embeds: list[dict] = []      # 뷰어 카드(SSE embeds) 포인터(app · tool · url · 제목) — 같은 규칙으로 걸러 답 meta.embeds 로 남긴다(docs/chat-embeds CE-2)
+        # 턴 메타(SSE meta — 답한 모델 · 생각 · 자기검증, SSE confirm — 확인 카드) — 상호작용 기록을 켠 박스에서만 답 meta.turn 으로 남긴다
+        # (docs/interaction-data PLAN S2 · IX-12). 꺼진 박스는 모으지도 남기지도 않는다 — 서버 사본이 바이트까지 종전 그대로다.
+        turn_ix: dict = {}
+        keep_turn = bool(getattr(settings, "interactions_enabled", False))
         cancelled: dict = {}         # 사람이 멈춘 웹 심의의 멈춤 사건(delib kind=cancelled) — 답 meta.delib_cancelled 로 남긴다
         outcome: dict = {}           # 심의 outcome(RA 보고서 번호 · 집계) — 답 meta.delib_outcome 으로 남긴다(docs/wda-deck WD-D12, 새로고침 뒤 단추)
         ra_report: dict = {}         # '/보고서' result 의 ra_report — 답 meta.ra_report 로 남긴다(같은 까닭)
@@ -3450,6 +3456,11 @@ async def chat(
                                     # 길이다(notice). 종전엔 서버 사본에 남지 않아 다른 기기·새로고침 뒤에는 알림이 사라지고,
                                     # 좌석이 조회한 근거(이어하기가 승계한다)도 브라우저 사본 최근 4건만 남았다. 그대로 둔다.
                                     delib_ev.append({kk: vv for kk, vv in data.items() if kk != "kind"})
+                            elif keep_turn and evt == "meta":
+                                turn_ix.update({k: data[k] for k in _TURN_META_KEYS if data.get(k) is not None})
+                            elif keep_turn and evt == "confirm" and len(turn_ix.get("confirm") or []) < 8:
+                                _c = json.dumps(data, ensure_ascii=False, default=str)
+                                turn_ix.setdefault("confirm", []).append(data if len(_c) <= 8000 else {"clipped": True, "chars": len(_c)})
                             elif evt == "user_images" and isinstance(data.get("urls"), list):
                                 # 주소 꼴만 받는다 — 이력 항목(ChatHistoryMessage.images)이 받는 꼴과 같아야 다음 턴에 422 가 안 난다.
                                 user_images = [u for u in data["urls"]
@@ -3606,6 +3617,8 @@ async def chat(
                                     _am["routine"] = {k: routine_ptr.get(k) for k in ("run_id", "routine_id", "title", "state")}
                                 if answered_by:      # 띵킹 · 심의가 답했다(위 answered_by) — 발언 없이 끝난 심의도 'delib' 다
                                     _am["answered_by"] = "delib" if "delib" in answered_by else "think"
+                                if turn_ix:          # 턴 메타 — 상호작용 기록을 켠 박스에서만 모았다(위 keep_turn)
+                                    _am["turn"] = turn_ix
                                 # 다른 탭의 중계가 같은 실행의 같은 끝 · 같은 글을 이미 남겼으면 넣지 않는다 — 보고서가 두 번 남지 않게. 이 턴의
                                 # 사용자 발화는 시작할 때 이미 남았다. 글이 다르면(끝난 실행의 RA 초안 올리기 안내) 이 턴의 답이라 남긴다.
                                 if _rt_key is None or not _routine_answered(store.get(cid, owner), _rt_key[1],

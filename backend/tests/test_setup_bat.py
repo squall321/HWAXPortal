@@ -44,12 +44,13 @@ def gen(tmp_path_factory):
         "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null)\n"
         "  : process.argv[4] === 'guide' ? JSON.stringify(s.certGuide(process.argv[5] === 'notoken' ? null : '" + TOKEN + "'))\n"
         "  : process.argv[4] === 'code' ? s.claudeCodeSnippet('" + TOKEN + "')\n"
-        "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem, process.argv[6] || null, process.argv[7] === 'offload'));\n")
+        "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem, process.argv[6] || null, process.argv[7] === 'offload',"
+        " process.argv[8] || 'off'));\n")
 
-    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY, offload=False):
+    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY, offload=False, share="off"):
         # ⚠ text=True 는 universal newlines 로 CRLF 를 LF 로 바꾼다 — 배치의 줄끝 규약을 검사할 수 없다(실측).
         r = subprocess.run(["node", str(drv), origin, "pem" if pem else "nopem", what, cert, proxy,
-                            "offload" if offload else "plain"],
+                            "offload" if offload else "plain", share],
                            capture_output=True, timeout=120, cwd=str(out))
         assert r.returncode == 0, r.stdout.decode("utf-8", "replace") + r.stderr.decode("utf-8", "replace")
         return r.stdout.decode("utf-8")
@@ -437,7 +438,8 @@ def test_the_generator_has_no_hardcoded_address_and_the_page_passes_the_portal_v
     found = bool(set(re.findall(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){3}(?![\d.])", src)) - {"127.0.0.1"})
     assert not found, "setupBat.ts 에 IPv4 주소 글자가 있다 — 사내 주소면 박스 설정(HWAX_FALLBACK_PROXY)에서 받는다"
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
-    assert re.search(r"buildSetupBat\(\s*created\.token,\s*created\.name,\s*pem,\s*created\.fallback_proxy \?\? null,\s*offload,?\s*\)", page), (
+    assert re.search(r"buildSetupBat\(\s*created\.token,\s*created\.name,\s*pem,\s*created\.fallback_proxy \?\? null,\s*offload,"
+                     r"\s*share \? \(shareAuto \? 'auto' : 'command'\) : 'off',?\s*\)", page), (
         "화면이 발급 응답의 사내 프록시(와 '서버 LLM 에 일 맡기기' 칸)를 배치에 넘긴다")
 
 
@@ -766,7 +768,9 @@ def test_offload_off_registers_nothing_new_and_strips_an_old_header(gen):
         ls = _lines(bat)
         i = ls.index(_off_ps(bat))
         assert ls[i - 2:i] == [":codex_done", ""] and ls[i + 1].startswith("if errorlevel 1 echo      [!] ")
-        assert ls[i + 2:i + 4] == ["echo.", 'if not "%HWAX_DONE%"=="0" goto :ok'], "걷기 뒤는 종전 흐름 그대로"
+        # 그 뒤는 [5c] 공유 걷기 두 줄(꺼진 칸 — tests 아래 공유 묶음), 그다음 종전 흐름 그대로
+        assert ls[i + 2] == _share_ps(bat) and ls[i + 3].startswith("if errorlevel 1 echo      [!] ")
+        assert ls[i + 4:i + 6] == ["echo.", 'if not "%HWAX_DONE%"=="0" goto :ok'], "걷기 뒤는 종전 흐름 그대로"
         if not pem:
             for ps in (_ccj_ps(_no_cli_block(bat)), _desk_ps(bat)):
                 assert "foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + RESULT_H + "'})){[void]$h.Remove($k)};$h['Authorization']" in ps
@@ -841,6 +845,152 @@ def test_offload_check_box_is_on_the_page_and_off_by_default():
     assert '<div className="tok-offload">' in page and "offloadBox &&" not in page, "칸을 박스 상태로 숨기지 않는다"
     assert "이 박스에서 꺼져 있음 — 켜도 도구가 없다" in page and "이 박스에서 켜져 있는지 모름" in page
     assert "fetchOffloadBox()" in page
+
+
+# ── 내 Claude 대화를 포털에 공유(docs/interaction-data contract §5 — 사람이 스스로 보낸다, IX-3) ─────────────────────────────────
+# 칸(기본 끔)을 켜면 ① 올리는 스크립트 %USERPROFILE%\.hwax\hwax-share.ps1 ② Claude Code 명령 /hwax-share ③ 자동 칸이면 settings.json 의 SessionEnd 훅.
+# 끄고 다시 돌리면 걷는다(서버 LLM 칸과 같은 표지 꼴). 스크립트는 cmd 한 줄 상한(8191자) 때문에 base64 조각 여럿으로 싣는다.
+_SHARE_MODES = ("command", "auto")
+
+
+def _share_ps(bat: str) -> str:
+    ps = [l for l in _lines(bat) if l.startswith("powershell ") and "$mk='hwax-share'" in l]
+    assert len(ps) == 1, ps
+    return ps[0]
+
+
+def _share_payload(bat: str) -> tuple[str, str]:
+    import base64
+    ls = _lines(bat)
+    chunks = [l for l in ls if l.startswith('set "HWAX_SHARE_PS1_')]
+    assert [l.split("=", 1)[0] for l in chunks] == [f'set "HWAX_SHARE_PS1_{i:02d}' for i in range(len(chunks))], "이름 차례 = 잇는 차례"
+    ps1 = base64.b64decode("".join(l.split("=", 1)[1][:-1] for l in chunks)).decode("utf-8")
+    return ps1, _payload(bat, "HWAX_SHARE_CMD")
+
+
+def test_share_on_batch_keeps_the_batch_rules_and_the_cmd_line_limit(gen):
+    """켠 배치도 같은 규약을 지키고, 어느 줄도 cmd 의 한 줄 상한(8191자)을 넘지 않는다(넘으면 '명령 줄이 너무 깁니다' 로 그 줄이 죽는다)."""
+    for mode in _SHARE_MODES:
+        def on(**kw):
+            return gen(share=mode, **kw)
+        for t in (test_every_goto_has_a_label_and_labels_are_unique, test_batch_is_crlf_with_a_bom_and_a_sacrificial_first_line,
+                  test_the_token_is_never_echoed_to_the_console, test_the_batch_has_no_multiline_paren_blocks,
+                  test_multi_word_console_messages_escape_what_cmd_eats):
+            t(on)
+    for mode in ("off", *_SHARE_MODES):
+        for pem in (True, False):
+            for offload in (True, False):
+                long = [len(l) for l in _lines(gen(pem=pem, share=mode, offload=offload)) if len(l) > 8000]
+                assert not long, (mode, pem, offload, long)
+
+
+def test_share_off_writes_nothing_and_cleans_up_quietly(gen):
+    """끈 배치 — 스크립트 · 명령 · 글을 싣지 않고 걷기 한 줄뿐이다. 걷은 것이 있을 때만 말한다(켠 적 없는 PC 의 화면은 종전과 같다)."""
+    for pem in (True, False):
+        bat = gen(pem=pem)
+        assert "HWAX_SHARE_PS1_" not in bat and "HWAX_SHARE_CMD" not in bat
+        assert not [l for l in _lines(bat) if l.startswith("echo") and "[5c]" in l]
+        body = _share_ps(bat).split('-Command "', 1)[1]
+        main, catch = body.split("}catch{", 1)
+        assert main.count("Write-Host") == 2 and "if($g.Count -gt 0){Write-Host '  [5c] " in main
+        assert "ReadAllText($sp,$u).Contains($mk))){Remove-Item -LiteralPath $sp -Force;$g+=$sp}" in main, "우리 표지가 있는 스크립트만"
+        assert "ReadAllText($cf,$u).Contains($mk))){Remove-Item -LiteralPath $cf -Force;$g+=$cf}" in main, "우리 표지가 있는 명령만"
+        assert "if($u.GetString($bb).Contains($hm)){" in main and main.index("Contains($hm)){") < main.index("$v.GetString($bb"), \
+            "settings.json 은 우리 훅 이름이 있을 때만 엄격하게 읽는다"
+        assert "Copy($t,$sf,$true)" in main and "WriteAllText($sf" not in main, "settings.json 에 직접 쓰지 않는다 — 임시 파일을 되읽은 뒤 바꿔 넣는다"
+        assert "exit 1" in catch and "Exception.Message" not in body
+
+
+def test_share_on_installs_the_script_the_command_and_for_auto_the_session_end_hook(gen):
+    for mode in _SHARE_MODES:
+        bat = gen(pem=False, share=mode)
+        ls = _lines(bat)
+        ps = _share_ps(bat)
+        i = ls.index(ps)
+        assert ls[i - 1].startswith('set "HWAX_SHARE_CMD=') and ls[i - 2].startswith('set "HWAX_SHARE_PS1_') and ls[i + 1].startswith("if errorlevel 1 echo ")
+        head = next(l for l in ls if l.startswith("echo  [5c] "))
+        assert ("세션 끝 자동 올리기" in head) == (mode == "auto")
+        ps1, cmd = _share_payload(bat)
+        assert TOKEN not in ps1 + cmd, "토큰은 배치에 싣지 않는다 — 스크립트가 hwax 연결의 자리에서 그때 읽는다"
+        assert cmd.startswith("---\ndescription: ") and "hwax-share" in cmd.splitlines()[-1], "끝 줄의 표지로 우리 파일인지 가른다"
+        assert 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "@@HWAX_SHARE_PS1@@" -SessionId "${CLAUDE_SESSION_ID}"' in cmd
+        assert "share_conversation" in cmd, "올리기가 안 되면 도구 길로(contract §5)"
+        assert ".Replace('@@HWAX_SHARE_PS1@@',$spf)" in ps and "$spf=$sp.Replace([string][char]92,'/')" in ps, "자리표는 PC 에서 스크립트 자리로"
+        assert "(New-Object System.Text.UTF8Encoding($true))" in ps, "스크립트는 BOM 째로 — 5.1 은 BOM 없는 .ps1 의 한글을 깨뜨린다"
+        assert "-and -not ([System.IO.File]::ReadAllText($cf,$u).Contains($mk))){Write-Host" in ps, "같은 이름의 사람 명령은 덮지 않는다"
+        assert "$hm='hwax-share.ps1'" in ps and "([string]$e['command']).Contains($hm)){$rm++}else{$hs+=,$e}" in ps, "훅은 우리 것만 빼고 나머지는 그대로"
+        hook = "$e['command']='powershell.exe -NoProfile -ExecutionPolicy Bypass -File '+$q+$spf+$q+' -Hook';$e['timeout']=30;"
+        if mode == "auto":
+            assert hook in ps and "if(($rm -gt 0) -or $true){" in ps
+        else:
+            assert hook not in ps and "if(($rm -gt 0) -or $false){" in ps, "자동 칸이 꺼지면 전에 단 훅만 걷는다"
+        assert ps.index("$s='backup'") < ps.index("WriteAllText($t,$y,$w)") < ps.index("throw 'mismatch'") < ps.index("Copy($t,$sf,$true)")
+        for s in ("[Environment]::GetFolderPath('UserProfile')", "if($env:CLAUDE_CONFIG_DIR){$d=$env:CLAUDE_CONFIG_DIR}",
+                  "Combine($d,'commands')", "Combine($d,'settings.json')", "Combine($h,'.hwax')"):
+            assert s in ps, s
+
+
+def test_share_powershell_lines_are_safe_inside_cmd(gen):
+    """cmd 의 \"…\" 안이다 — 큰따옴표 · % · ! 를 글자로 두지 않는다(훅 명령의 따옴표는 [char]34). 화면에 나가는 것은 경로 · 단계 · 예외 종류뿐이다."""
+    for mode in ("off", *_SHARE_MODES):
+        for pem in (True, False):
+            ps = _share_ps(gen(pem=pem, share=mode))
+            body = ps.split('-Command "', 1)[1][:-1]
+            assert ps.endswith('exit 1}"') and body.startswith("$ErrorActionPreference='Stop';")
+            assert '"' not in body and "%" not in body and "!" not in body, mode
+            assert body.index("$q=[string][char]34;") < body.index("try{")
+            for arg in _write_host_args(body):
+                assert set(re.findall(r"\$[A-Za-z_][\w:]*", arg)) <= {"$sp", "$cf", "$sf", "$z", "$s", "$bg", "$_"}, arg
+
+
+def test_share_script_finds_the_transcript_reads_the_hwax_token_and_never_prints_it(gen):
+    ps1, _ = _share_payload(gen(pem=True, share="auto"))
+    assert "hwax-share" in ps1.splitlines()[0], "첫 줄의 표지로 우리 파일인지 가른다"
+    assert "$Portal = 'https://hwax.example.net'" in ps1 and "/interactions/share" in ps1
+    # 기록 파일 자리 — Claude Code 문서(sessions)의 규칙: <설정 폴더>\projects\<프로젝트>\<세션 id>.jsonl, 설정 폴더는 CLAUDE_CONFIG_DIR 이 먼저
+    assert "if ($env:CLAUDE_CONFIG_DIR) { $d = $env:CLAUDE_CONFIG_DIR" in ps1 and "Combine($d, 'projects')" in ps1
+    assert "$SessionId + '.jsonl'" in ps1 and "-replace '[^A-Za-z0-9]', '-'" in ps1, "세션 id 가 없으면 지금 폴더의 프로젝트 폴더에서 가장 새 것"
+    assert "$in['transcript_path']" in ps1 and "[Console]::In.ReadToEnd()" in ps1, "SessionEnd 훅은 표준입력의 transcript_path 로"
+    # 토큰 — 배치가 hwax 연결에 넣은 자리(Code 직접 쓰기와 같은 파일 판정)
+    assert "$hw['headers']['Authorization']" in ps1 and "$hw['env']['AUTH']" in ps1 and "'.config.json'" in ps1 and "'.claude.json'" in ps1
+    assert "$auth -notlike 'Bearer *'" in ps1
+    # 화면 · 로그에 토큰 · 예외 글을 내지 않는다 — Say 의 인자에 $auth · Message 가 없다
+    for m in re.finditer(r"Say \((.*)\)", ps1):
+        assert "$auth" not in m.group(1) and "Message" not in m.group(1), m.group(0)
+    assert "Exception.Message" not in ps1 and "$q.Proxy = $null" in ps1, "포털은 사내 직결(배치가 NO_PROXY 에 넣는 것과 같다)"
+    assert "$MaxBytes = 50MB" in ps1 and ps1.count("-gt $MaxBytes") == 2, "파일과 본문 둘 다 50 MB 상한(contract §5)"
+    assert "hwax-portal.crt" in ps1 and "X509VerificationFlags.AllowUnknownCertificateAuthority" in ps1 and "RemoteCertificateNameMismatch" in ps1, \
+        "배치가 둔 포털 인증서로만 고정해 받는다(이름이 틀리면 받지 않는다)"
+    assert "'@" in ps1.split("\r\n"), "here-string 끝 표지는 줄 맨 앞"
+
+
+def test_share_script_masks_like_the_portal_on_the_contract_vectors(gen):
+    """PC 쪽 가림(줄마다 · PEM → 칸 이름 → Bearer → JWT)이 계약 부록 벡터를 서버(redact_text)와 같게 낸다 — .NET 정규식 글자를 그대로 꺼내 파이썬으로 돌린다."""
+    from app.interactions.redact import redact_text
+    from tests.test_interactions import VECTORS
+    ps1, _ = _share_payload(gen(pem=False, share="command"))
+    rx = {m.group(1): m.group(2).replace("''", "'") for m in re.finditer(r"^\$rx(\w+) = '((?:[^']|'')*)'\r?$", ps1, re.M)}
+    assert set(rx) == {"Pem", "Kv", "Bearer", "Jwt"}
+
+    def pc(line: str) -> str:
+        line = re.sub(rx["Pem"], "<가림:pem>", line)
+        line = re.sub(rx["Kv"], lambda m: f'"{m.group(1)}"{m.group(2)}"<가림:{m.group(1).lower()}>"', line, flags=re.I)
+        line = re.sub(rx["Bearer"], r"\1 <가림:bearer>", line)
+        return re.sub(rx["Jwt"], "<가림:jwt>", line)
+    for got, want in VECTORS:
+        assert pc(got) == want == redact_text(got), got
+    for got in ("키 Bearer\tab.c 끝", "Authorization: bearer zz9 끝"):
+        assert pc(got) == redact_text(got) and "<가림:bearer>" in pc(got), "Bearer 뒤 구분은 빈칸 · 탭(서버 · 게이트웨이와 같다)"
+    assert pc('{"x": "-----BEGIN RSA PRIVATE KEY-----\\nMIIa 잘림') == '{"x": "<가림:pem>', "끝 표지가 없으면 그 줄 끝까지(파일 나머지는 지우지 않는다)"
+    order = [ps1.index(f"$rx{k},") for k in ("Pem", "Kv", "Bearer", "Jwt")]
+    assert order == sorted(order), "서버와 같은 차례"
+
+
+def test_share_check_box_is_on_the_page_off_by_default_and_says_when_the_box_is_off():
+    page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
+    assert "const [share, setShare] = useState(false);" in page and "const [shareAuto, setShareAuto] = useState(false);" in page, "기본 끔"
+    assert "내 Claude 대화를 포털에 공유" in page and '<div className="tok-offload tok-share">' in page and "shareBox &&" not in page
+    assert "이 박스에서 꺼져 있음 — 켜도 올라가지 않는다" in page and "fetchShareBox()" in page
 
 
 # ── PC 문서 도우미 설치 배치(docs/chat-ppt B5 · PP-D9) ─────────────────────────────────────

@@ -414,6 +414,14 @@
 .cx-pick:hover {
   background: var(--accent-soft);
 }
+/* 상호작용 기록 알림(docs/interaction-data contract §7) — 켠 박스에서만 그린다 */
+.cx-ix-notice {
+  margin: var(--sp-4) auto 0;
+  max-width: 560px;
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
 @media (max-width: 600px) {
   .cx-starts {
     grid-template-columns: 1fr;

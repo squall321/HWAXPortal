@@ -111,3 +111,21 @@ def test_수집기가_여는_저장소와_읽는_설정은_이_박스의_실_자
         store.close()
         lock.close()
 
+
+
+# ── 상호작용 원장(docs/interaction-data) — 꺼진 박스는 열지 않고, 켠 설정이 여는 파일도 이 박스의 실 원장이 아니다 ──────────────────────────
+def test_상호작용_원장은_시험_기동이_열지_않고_켠_설정이_여는_파일도_실_원장이_아니다():
+    """conftest 가 INTERACTIONS_STORE_PATH 를 임시 자리로, INTERACTIONS_INGEST_S 를 0 으로 돌린다. 이 박스의 backend/.env 가 INTERACTIONS_ENABLED=1
+    이어도 시험 기동이 실 원장(/data/svc/portal 의 그 파일)에 시험 사건을 쌓거나 떠 있는 게이트웨이를 부르지 않게. 실제로 연 파일은 sqlite 에 묻는다."""
+    from app.config import get_settings
+    from app.interactions.store import InteractionStore
+    with TestClient(app):
+        assert getattr(app.state, "interactions_task", None) is None, "시험 기동이 상호작용 수집기를 띄웠다 — conftest 의 INTERACTIONS_INGEST_S=0 이 빠졌다"
+    s = get_settings().model_copy(update={"interactions_enabled": True})
+    st = InteractionStore(s)
+    try:
+        got = _db_file(st._conn)
+        for root in REAL_ROOTS:
+            assert root not in got.parents, f"상호작용 원장이 실 저장소를 열었다 — {got}"
+    finally:
+        st.close()

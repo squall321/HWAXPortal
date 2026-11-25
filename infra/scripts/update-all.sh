@@ -1550,6 +1550,20 @@ PY
 else
   hwax_skip "agent-server .env 보정" "HWAXAgentServer 리포가 없다(챗·심의 스택)" "../HWAXAgentServer 를 클론하고 재실행"
 fi
+# ── 3.5i) 상호작용 기록(docs/interaction-data contract §1) — 포털 · 게이트웨이 스위치 가운데 안 켠 것만 ○ ───────────────────────────────
+# 3.5e 앞에 둔다 — 3.5e 의 시험이 그 구획을 §4 머리까지 떼어 돌린다. 스위치는 둘 다 기본 꺼짐이고 켜는 것은 사람이다(회사 개인정보 · 보안 규정 확인 뒤) —
+# 포털 infra/.env 의 INTERACTIONS_ENABLED, 게이트웨이 provision.env 의 GATEWAY_INTERACTION_CAPTURE(3.5e 의 GATEWAY_RESULT_REFS 와 같은 읽기).
+# 고쳐 쓰지 않고 안 켠 것을 ○ 로 남긴다(즉시 + 끝 요약 '있는데 안 켠 것'). 켬은 1 · true · yes · on(대소문자 무시)만이다.
+_ix_on() { case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in 1|true|yes|on) return 0 ;; esac; return 1; }
+_ix_doc="docs/interaction-data/contract.md — 켜기 전에 회사 개인정보 · 보안 규정 확인과 알림 문구 확정은 사람 몫"
+_ix_on "$(_envfile_value "$SELF_REPO/infra/.env" INTERACTIONS_ENABLED)" || hwax_skip "상호작용 기록 — 포털 원장 · 수집기(INTERACTIONS_ENABLED)" \
+  "포털 infra/.env 에 INTERACTIONS_ENABLED=1 이 없다 — 웹 챗 · 심의 · 띵킹 · 루틴 · 절차 · 도구 검색 질의 · 게이트웨이 수집 창고를 원장으로 옮기지 않고, 공유 창구 · 내 기록 · 분석가 화면이 404 다" \
+  "infra/.env 에 INTERACTIONS_ENABLED=1 을 적고 다시 돌린다(infra/.env 는 포털 지문이라 포털이 다시 뜬다) — $_ix_doc"
+if [ -n "${GW_DIR:-}" ]; then
+  _ix_on "$(_envfile_value "$GW_DIR/provision.env" GATEWAY_INTERACTION_CAPTURE)" || hwax_skip "상호작용 기록 — 게이트웨이 원문 수집(GATEWAY_INTERACTION_CAPTURE)" \
+    "게이트웨이 provision.env 에 GATEWAY_INTERACTION_CAPTURE=1 이 없다 — 개인 Claude · 앱의 MCP 호출 인자 · 결과를 수집 창고에 남기지 않고 share_conversation 도구를 등록하지 않는다" \
+    "HWAXMcpGateway/provision.env 에 GATEWAY_INTERACTION_CAPTURE=1 을 적고 다시 돌린다(provision.env 는 게이트웨이 지문이라 §4 가 재기동한다) — $_ix_doc"
+fi
 # ── 3.5e) 서버 LLM 에 일 맡기기 A ~ D(토큰 절감 2판 — docs/token-saving/offload-v2.md · TS-6) — 안 켠 것만 ○ ──────────────────────
 # 3.5 의 갈래 밖에 둔다 — 그 갈래(옛 심의 타임아웃 알림까지)를 떼어 가짜 함수로 돌리는 시험들이 있다. AGENT_ENV 는 3.5 가 정한다(리포가 없으면 빈 값 — 건너뛴다).
 if [ -n "${AGENT_ENV:-}" ]; then

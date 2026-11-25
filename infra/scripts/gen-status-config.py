@@ -305,6 +305,25 @@ def _mxwp_wiki(health: str, interval: str, mail: dict | None, notes: list[str]) 
     return ep
 
 
+def _portal_interactions(health: str, interval: str, mail: dict | None, notes: list[str], iv) -> dict | None:
+    """포털 상호작용 수집 끝점(docs/interaction-data — IX-9) — 이 박스의 infra/.env 가 INTERACTIONS_ENABLED 를 켰을 때만(아니면 None · 까닭을 notes 에).
+    끄면 포털이 /health/interactions 를 404 로 낸다 — 실으면 안 켠 박스에서 늘 빨갛다. 수집이 멈췄거나 · 원천이 잇달아 실패하거나 · 게이트웨이
+    수집 창고가 넘치면 503 이다(포털은 살아 있어 /health 만으로는 못 본다)."""
+    if (iv("INTERACTIONS_ENABLED") or "").strip().lower() not in _TRUE:
+        notes.append("포털 상호작용 수집은 보지 않는다 — 이 박스는 상호작용 기록을 켜지 않았다(infra/.env 의 INTERACTIONS_ENABLED)")
+        return None
+    u = urlsplit(health)
+    url = f"{u.scheme}://{u.netloc}/health/interactions"
+    ep: dict = {"name": _endpoint_name(url), "group": "portal", "url": url, "interval": interval,
+                "conditions": ["[CONNECTED] == true", "[STATUS] == 200", "[BODY].ok == true"],
+                "ui": {"resolve-successful-conditions": True}}
+    if mail:
+        ep["alerts"] = [{"type": "email", "description": "포털 상호작용 수집이 멈췄거나 원천이 잇달아 실패하거나 게이트웨이 수집 창고가 넘쳤다 — "
+                                                     "까닭: 포털 로그의 '상호작용 수집' 줄 · 관리 › 상호작용 기록 · 안내 docs/interaction-data/contract.md"}]
+    notes.append("포털 상호작용 수집을 본다 — /health/interactions 가 200 이고 ok 여야 한다(멈춤 · 잇단 실패 · 창고 넘침이면 503)")
+    return ep
+
+
 def _find_repo(name: str) -> Path | None:
     """형제 리포 → ~/Projects → ~/claude — update-all find_repo · drive-drift 와 같은 순서(박스마다 리포 자리가 다르다)."""
     for base in (ROOT.parent, Path.home() / "Projects", Path.home() / "claude"):
@@ -444,6 +463,10 @@ def build(svc_mod) -> tuple[dict, list[str], str, bool, dict]:
             wiki = _mxwp_wiki(urls[0], interval, mail, notes)
             if wiki:
                 endpoints.append(wiki)
+        if name == "portal":
+            ix = _portal_interactions(urls[0], interval, mail, notes, iv)
+            if ix:
+                endpoints.append(ix)
     if not endpoints:
         raise RuntimeError("이 박스에서 볼 리스너가 하나도 없다 — 매니페스트(infra/services.yaml)와 infra/.env 를 본다")
     # 같은 키가 둘이면 Gatus 가 설정을 거부한다 — 뒤에 번호를 붙인다. 키는 Gatus 의 config/key 그대로다(그룹과 이름을 따로 _san 한 뒤

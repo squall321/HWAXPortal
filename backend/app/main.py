@@ -30,6 +30,8 @@ from app.agent import risk_report as agent_risk_report  # 리스크 심사 종�
 from app.agent import team_routes as agent_teams  # 전문가 팀 — 미리 만든 주 1 + 보조 4 조합(docs/expert-teams — 저장소는 절차 저장소의 연결을 같이 쓴다)
 from app.agent.audit import AuditLog
 from app.agent.conv_store import ConversationStore
+from app.interactions import collector as interactions_collector  # 상호작용 기록 수집기(docs/interaction-data — 박스 스위치 INTERACTIONS_ENABLED 기본 꺼짐)
+from app.interactions import routes as interactions_routes
 from app.auth.downstream import JwtDownstreamIssuer
 from app.auth.errors import AuthError
 from app.auth.keystore import KeyStore
@@ -76,7 +78,8 @@ def _tighten_sqlite(settings) -> list[str]:
     users.sqlite 만 손질로 600 이고 나머지 넷은 644 였다(docs/request-1027 HP-05). 심볼릭 링크(/data 이관)는 대상의 권한을 바꾼다.
     못 바꾸면 경고만 — 기동은 막지 않는다."""
     changed: list[str] = []
-    for attr in ("user_store_path", "conv_store_path", "token_store_path", "agent_audit_log_path", "procedures_store_path"):
+    for attr in ("user_store_path", "conv_store_path", "token_store_path", "agent_audit_log_path", "procedures_store_path",
+                 "interactions_store_path"):
         raw = getattr(settings, attr, None)
         if not raw:
             continue
@@ -204,6 +207,16 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         app.state.procedures_error = f"{type(exc).__name__}: {exc}"
         _log.error("절차 기동 실패 — 모듈만 끄고 포털은 계속 뜬다", exc_info=True)
+    # 상호작용 기록(docs/interaction-data) — 켜진 박스에서만 원장을 연다(꺼지면 파일도 만들지 않는다 — 지금과 바이트까지 같다).
+    # 못 열어도 포털은 뜬다 — 창구는 첫 요청에서 다시 열어 보고, /health/interactions 가 collector_dead 로 붉다.
+    app.state.interaction_store = None
+    app.state.interactions_task = None
+    if settings.interactions_enabled:
+        try:
+            app.state.interaction_store = interactions_routes.store_of(app, settings)
+            app.state.interactions_task = interactions_collector.start(app, settings, app.state.interaction_store)
+        except Exception:  # noqa: BLE001
+            _log.error("상호작용 원장 · 수집기를 열지 못했다 — 포털은 계속 뜬다(/health/interactions 가 붉다)", exc_info=True)
     # 저장소를 다 연 뒤에 — 각자 파일을 만들었다(HP-05). 연결 토큰은 UserStore 가 이미 암호문으로 바꿨다.
     _tight = _tighten_sqlite(settings)
     if _tight:
@@ -222,6 +235,9 @@ async def lifespan(app: FastAPI):
     # Shutdown: close the pooled client + the audit sqlite connection.
     await notice_poller.stop(app.state.notice_poller)     # 원장을 닫기 전에 — 도는 틱이 닫힌 연결에 쓰지 않게
     await usage_fold.stop(app.state.usage_fold)           # 도는 접기를 접는다(제 연결이라 원장 닫기와 얽히지 않는다)
+    await interactions_collector.stop(getattr(app.state, "interactions_task", None))   # 원장을 닫기 전에 — 도는 주기가 닫힌 연결에 쓰지 않게
+    if getattr(app.state, "interaction_store", None) is not None:
+        app.state.interaction_store.close()
     await agent_panel.close_all()          # 열린 패널의 게이트웨이 MCP 세션 — 게이트웨이는 세션 유휴 만료가 없다
     await app.state.agent_client.aclose()
     await app.state.card_review_client.aclose()
@@ -299,6 +315,7 @@ app.include_router(agent_figures.router)
 app.include_router(agent_risk_report.router)
 app.include_router(agent_teams.router)
 app.include_router(notice_routes.router)
+app.include_router(interactions_routes.router)   # 꺼진 박스에서는 모든 창구가 404(contract §1)
 
 # 절차 — SPA 폴백보다 위. 등록이 실패해도 포털(챗 릴레이)은 뜬다.
 try:

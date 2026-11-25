@@ -4,6 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { listSetupRequests, SETUP_CHANGED } from '../../api/setup.api';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
+import { useInteractionStatus } from '../../lib/useInteractionStatus';
 import { BrandMark } from '../ui/BrandMark';
 import { Menu, MenuSep } from '../ui/Menu';
 import { NoticeBell } from './NoticeBell';
@@ -30,6 +31,8 @@ export function AppHeader() {
   const sheetRef = useRef<HTMLElement>(null);
   useEffect(() => setSheet(false), [pathname]);
   const isAdmin = Boolean(user?.groups.includes('portal-admin'));
+  // 상호작용 기록(docs/interaction-data) — 이 박스가 켰을 때만 '내 기록'(모두) · '상호작용 기록'(분석가만 — 관리자 전권에 딸려 오지 않는다) 메뉴
+  const ix = useInteractionStatus(Boolean(user));
   // 안 된 배선 건수 — 상자는 사용자 관리 맨 위에 있고, 여기 '관리' 옆 숫자가 그 상자로 부른다(안 본 곳에 둔 할 일은 없는 셈이다).
   // 세션에 한 번 + 상자에서 '확인함' 을 누를 때(SETUP_CHANGED). 확인이 2초 걸릴 수 있어 화면 이동마다 다시 묻지 않는다.
   const [setupN, setSetupN] = useState(0);
@@ -85,18 +88,22 @@ export function AppHeader() {
     { to: '/apps', label: '앱' },
     ...(can('feat:procedures') || can('feat:routines') ? [{ to: '/procedures', label: '절차' }] : []),
   ];
-  const admin: Item[] = isAdmin
-    ? [
-        { to: '/admin/users', label: '사용자 관리', badge: setupN },
-        { to: '/admin/access', label: '접속 이력' },
-        { to: '/admin/usage', label: '이용 통계' },
-        { to: '/admin/tool-search', label: '도구 검색 검토' },
-        { to: '/admin/seat-review', label: '전문가 고르기 검토' },
-        { to: '/admin/llm-status', label: 'LLM · GPU 현황' },
-      ]
-    : [];
+  const admin: Item[] = [
+    ...(isAdmin
+      ? [
+          { to: '/admin/users', label: '사용자 관리', badge: setupN },
+          { to: '/admin/access', label: '접속 이력' },
+          { to: '/admin/usage', label: '이용 통계' },
+          { to: '/admin/tool-search', label: '도구 검색 검토' },
+          { to: '/admin/seat-review', label: '전문가 고르기 검토' },
+          { to: '/admin/llm-status', label: 'LLM · GPU 현황' },
+        ]
+      : []),
+    ...(ix?.analyst ? [{ to: '/admin/interactions', label: '상호작용 기록' }] : []),
+  ];
   const account: Item[] = [
     { to: '/access', label: '내 권한' },
+    ...(ix ? [{ to: '/records', label: '내 기록' }] : []),
     ...(canTokens ? [{ to: '/tokens', label: can('feat:api-token') ? '개인 토큰' : '연결 설정' }] : []),
     { to: '/updates', label: '업데이트 이력' },
   ];

@@ -3,6 +3,7 @@
 import contextlib
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 
 from app.config import Settings, get_settings
 
@@ -28,7 +29,7 @@ def ready(request: Request, settings: Settings = Depends(get_settings)) -> dict[
     with contextlib.suppress(Exception):
         if store is not None and store.no_active_admin(settings.portal_admin_email_set):
             temporary.append("no_active_admin")
-    return {
+    out: dict[str, object] = {
         "status": "ready",
         "auth_provider": getattr(state.auth_provider, "name", "unknown"),
         "systems": catalog_count,
@@ -39,3 +40,20 @@ def ready(request: Request, settings: Settings = Depends(get_settings)) -> dict[
         # 점검이 볼 길이 없었다(docs/request-1027 HP-40). id 만 싣는다.
         "claims_affiliation": sorted(s.id for s in systems if getattr(s, "claims_affiliation", False)),
     }
+    # 상호작용 수집(docs/interaction-data) — 켠 박스에서만 싣는다(꺼진 박스의 답은 바이트까지 종전 그대로). 코드만 — 까닭 글은 로그 · 분석가 화면.
+    if settings.interactions_enabled:
+        from app.interactions import collector
+        ok, body = collector.health(request.app, settings)
+        out["interactions"] = {"ok": ok, "problems": body["problems"]}
+    return out
+
+
+@router.get("/health/interactions")
+def interactions_health(request: Request, settings: Settings = Depends(get_settings)) -> JSONResponse:
+    """상태판 줄(infra/scripts/gen-status-config.py) — 켠 박스에서만 있다(꺼지면 404). 수집이 멈췄거나 · 원천이 잇달아 실패하거나 · 게이트웨이 창고가
+    넘치면 503(IX-9 — 실패가 정상처럼 보이지 않게). 무인증이라 상태 낱말 · 시각 · 코드만 싣는다."""
+    if not settings.interactions_enabled:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    from app.interactions import collector
+    ok, body = collector.health(request.app, settings)
+    return JSONResponse(body, status_code=200 if ok else 503)
