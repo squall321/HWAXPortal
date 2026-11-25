@@ -170,11 +170,12 @@ def _koorm_marker_block() -> str:
     return _DEPLOY[i:j]
 
 
-def _koorm(tmp: Path, start_rc: int, tail: str) -> tuple[subprocess.CompletedProcess, Path]:
+def _koorm(tmp: Path, start_rc: int, tail: str, stop_rc: int = 0) -> tuple[subprocess.CompletedProcess, Path]:
     repo = tmp / "KooRemapper"
     (repo / "platform/infra/scripts").mkdir(parents=True, exist_ok=True)
     (repo / "platform/infra/data").mkdir(parents=True, exist_ok=True)
-    for name, body in (("stop.sh", 'echo "stop marker=$(cat platform/infra/data/deploy.lock.d/pid 2>/dev/null)" >> "$CALLS"'),
+    stop_fail = f'; echo "✗ koorm_postgres 이 stop 뒤 60초 안에 사라지지 않았다" >&2; exit {stop_rc}' if stop_rc else ""
+    for name, body in (("stop.sh", 'echo "stop marker=$(cat platform/infra/data/deploy.lock.d/pid 2>/dev/null)" >> "$CALLS"' + stop_fail),
                        ("start.sh", f'echo "start marker=$([ -d platform/infra/data/deploy.lock.d ] && echo yes || echo no)" >> "$CALLS"; exit {start_rc}')):
         (repo / "platform/infra/scripts" / name).write_text(f"#!/usr/bin/env bash\n{body}\n")
     body = f'( cd "{repo}"\n{_koorm_marker_block()}\n{tail}\n) ; echo "SUB=$?"\n'
@@ -195,6 +196,25 @@ def test_HP01_실패해도_미뤄도_표지는_남지_않는다(tmp_path):
     (tmp_path / "calls").unlink()
     r, marker = _koorm(tmp_path, 0, "_stop; exit 3")                 # 내린 뒤 서브셸이 끝나도(미룸 · 예외) EXIT 가 지운다
     assert "SUB=3" in r.stdout and not marker.exists(), r.stdout
+
+
+def test_R04_stop_이_상한을_넘기면_띄우지_않고_6_으로_끝난다(tmp_path):
+    """KooRemapper stop.sh 는 인스턴스가 KOORM_STOP_WAIT_S 안에 사라지지 않으면 rc≠0 이다(그쪽 R-04). 포털이 그 rc 와 ✗ 줄을 버리면 내려가는
+    중인 인스턴스 위에 start 를 불러 원인 없이 'failed' 만 남았다. 사이클과 같은 꼴(`_stop || true`)로 불러도 start 는 돌지 않고, 서브셸은
+    6 으로 끝나며, ✗ 줄은 보이고, 표지는 지워진다(감시가 다음 회차에 다시 본다)."""
+    r, marker = _koorm(tmp_path, 0, '_stop || true; _start; echo "START_RC=$?"', stop_rc=1)
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert len(calls) == 1 and calls[0].startswith("stop marker="), ("start.sh 는 불리지 않는다", calls)
+    assert "SUB=6" in r.stdout and "START_RC" not in r.stdout, r.stdout
+    assert "사라지지 않았다" in r.stderr and "stop.sh rc=1" in r.stderr, ("stop.sh 의 ✗ 줄과 포털의 ✗ 줄이 둘 다 보인다", r.stderr)
+    assert not marker.exists(), "EXIT 가 표지를 지운다"
+
+
+def test_R04_deploy_all_은_6_을_까닭이_붙은_skip_으로_센다():
+    """6 을 '*) failed (see above)' 로 뭉개면 끝 요약에 까닭이 없다 — 따로 센다."""
+    i = _DEPLOY.index('case "$_krc" in 0) ok "kooremapper up"')
+    block = _DEPLOY[i:_DEPLOY.index("esac", i)]
+    assert re.search(r'\n\s*6\) skip "kooremapper stop 실패', block), block
 
 
 # ── HP-26 §6 — 사람별 위임 일반 앱의 비밀을 상대의 /verify 로 견준다 ──────────────────────────────────────────
