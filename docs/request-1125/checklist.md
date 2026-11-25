@@ -20,7 +20,7 @@
 - [x] KooRemapper `kooremapper-4a` — R-04 → R-09 → ST-25-KR → KR-12(DP-13 뒤) · KR-10 · KR-19(운영 첫 제출 뒤) · HP-71
 - [x] ste `smarttwinexplorer-06` — PA-02 · PA-15 답 · BG-6 units · 동결 뒤 17커밋 푸시
 - [x] 브리지 `koosolvercontainer-da` — BG-1(P0, StepForge REST 길) · ST-1(SF-3 뒤) · ST-7 고를 일 · ST-17 다음 꾸러미
-- [x] SmartTwin MCP `smarttwinmcp-4c`(코드는 KooSlurm) — SM-04 → SM-01 → SM-02 → SM-03
+- [x] SmartTwin MCP `smarttwinmcp-4c` → `smarttwinmcp-c8`(11-25 옮김 — R25-14 · 코드는 KooSlurm) — SM-04 → SM-01 → SM-02 → SM-03
 
 ## 답 받기
 

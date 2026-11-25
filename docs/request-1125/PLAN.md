@@ -21,7 +21,7 @@
 | 1-10 | MXWhitePaper | `mxwhitepaper-26` 에 보냄(질문 둘의 답 초안 확인) |
 | 1-11 · HP-71 | KooRemapper | `kooremapper-4a` 에 보냄 |
 | 3-2 | ste · 연계 브리지 | `smarttwinexplorer-06` · `koosolvercontainer-da` 에 보냄 — 21건 가운데 19건은 11-22 에 이미 보냈다(`../ste-stepforge-1117/`) |
-| 3-10 | SmartTwin MCP | `smarttwinmcp-4c` 에 보냄 |
+| 3-10 | SmartTwin MCP | `smarttwinmcp-4c` 에 보냄 → 답 없어 `smarttwinmcp-c8` 로 옮김(R25-14) |
 | 2절 B-1 · B-2 의 백엔드 몫 | HEAXHub 앱 · AIDataHub · SignalForge · MXWP · KooRemapper | **지금 보내지 않음** — 요청서가 운영 쪽 한 판(결과 손잡이 · 가벼운 보기 · 연결 기다림) 측정 뒤에 시작하라고 적었다 |
 | 3절 나머지 | ReportArchive · PCB체크리스트 · SimFlow · Datahub 플랫폼 · ODB 허브 · ARP · FMEA · PLM 검색 · ComponentCore · GPU 운영 · MatNexus · SIREN · 허브 관리자 넷 · TestScope · SimEngBay | 보내지 않음 — 다른 팀 몫이라 운영 쪽이 담당에게 따로 보낸다(요청서 3절 머리말). ReportArchive 는 이 박스에 세션이 있어도 커밋하지 않는 저장소다 |
 | 4절 | 사용자 결정 먼저 | 보내지 않음. 이 문서 몫과 닿는 것 — SF-6 · SF-10(StepForge) · SG-04(SignalForge) · MW-04 · MW-10 · MW-11(MXWP) · KR-20(KooRemapper) · MEMORY-8(HEAXHub) |
@@ -177,7 +177,7 @@
 | ST-17 | 코드에 있음 · Drive 에 없음 | 다음 꾸러미에 | — |
 | BG-2 · ST-6 · ST-9 · ST-13 · ST-15 | 코드에 있음 · 미배포 | 없음 — 반입 뒤 운영 재시험 | — |
 
-### 5-3. SmartTwin MCP(`smarttwinmcp-4c`, 코드는 KooSlurm)
+### 5-3. SmartTwin MCP(`smarttwinmcp-c8` — 처음엔 4c, R25-14 · 코드는 KooSlurm)
 
 | 차례 | ID | 판정 | 바꿀 것 | 크기 |
 |---|---|---|---|---|

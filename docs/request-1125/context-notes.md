@@ -165,3 +165,11 @@
 - 공통 블록(D-689 · ST-25-KR)에서 바뀌는 것은 `src_type_slugs` 에 cad_part · 설명의 앱 목록 · rule 근거 층 도움말이다. 블록이 서면 StepForge 가 그 바이트와
   sha 를 포털 · KooRemapper 에 함께 보낸다(R25-4).
 
+
+## R25-14 SmartTwin MCP 몫은 `smarttwinmcp-c8` 이 맡는다(11-25)
+
+- 11-24 22:02 UTC 에 `smarttwinmcp-4c` 에 보낸 SM-04 · 01 · 02 · 03 에 답도 커밋도 없었다(11-25 14:35 KST 기준 idle).
+- 같은 날 KooSlurm `dashboard/smarttwin_mcp` 를 실제로 고친 세션은 `smarttwinmcp-c8` 이다. 낙하 트윈 계약 C-1 의 job_status `runs:true`(`e5cb6f41` ·
+  `0b46313f`)로, KooRemapper 가 KR-10 · KR-19 결과 회수에 쓸 칸으로 짚었다. 그래서 묶음을 c8 에 다시 보내고, 4c 에는 손대지 않았으면 두고 시작했으면
+  c8 과 이 세션에 알리라고 했다(겹침 막기 — c8 은 시작 전에 SM-04 커밋이 있는지 본다).
+- 맞댄 판 `ea9ebe59` 뒤의 변경은 C-1 의 job_status 뿐이다. SM-04 · SM-01 자리는 그대로이고, SM-02 는 C-1 이 고친 job_status `meta.yaml` 위에 읽기 칸을 얹는다.
