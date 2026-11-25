@@ -101,6 +101,13 @@
   호스트 · SIF · 프록시 자리에 쓴다 — 따옴표는 백엔드 설정과 같은 python-dotenv 로 풀고, `.env` 에서 지운 키는 `APPTAINERENV_*` 만 뺀다(프록시 · LLM · 검색 키는
   셸 프로필에서 올 수도 있어 `.env` 에 없으면 프로세스 값 그대로 — 그쪽 사용자 결정). HP-71 은 예시 두 줄을 따옴표로. SE-8 은 받기 스크립트 셋의 되풀이를 줄이고
   tar 를 영구 캐시에 두어 'DB 밖 심기' 결정이 필요 없게 한다. **IR-24 는 DocForge 정본 릴리스(IR-23 뒤) 를 따라 doc_forge SIF 다시 짓기와 한 번에**(R25-5).
+  뒤이어 main 로컬에 지었다(빌드 틀 .def · doc-forge 등록 사본은 손대지 않음 — R25-11) — HH-18 `c9f39fd`(런처 호스트 · SIF 와 apt_runner 의 instance start · exec
+  가 띄울 때마다 `.env` 를 다시 읽어 얹는다 · CA 번들 경로도 같은 env · apptainer 는 --cleanenv 여도 호스트의 APPTAINERENV_* 를 넣어 apt_runner 까지) ·
+  HP-71 `0375156`(주석 줄 · 따옴표 · 풀어도 bash source 와 python-dotenv 가 같은 값) · SE-8 `38baee7`(요청 1 ~ 5 전부 · 백업 사본은 DB 마다 최근 3 —
+  요청의 '적어도 하나' 를 지킨다 · DB 밖 심기는 캐시에서 풀어 계속 돈다). 시험 — 백엔드 실패 14 는 변경 전과 같고 새 시험 8 통과, dist · models 는 가짜 rclone 으로 실측.
+  **cae00 첫 실행에서 보일 것**(착지 때 편지함에) — appdata 는 표시가 없어 한 번 병합(0건)한 뒤부터 건너뛰고, 그 실행에서 쌓인 `.pre-merge` 사본 348개가
+  DB 마다 3개로 준다(약 8 GB 회수 — 요청이 바란 것) · models 건너뛰기는 **dev 가 models-to-drive 를 한 번 돌려 Drive 에 MANIFEST 가 생긴 뒤부터**(그 전에는
+  --fast-list 전체 비교) · dist 는 첫 실행만 전체 검사.
 - **DocForge** — 17건 받음 · 사용자 결정 둘 받음. 지금 HEAD 의 코드는 `4804aca` 와 같고(그 뒤는 문서뿐) 계획서와 다른 판정은 없다 — srcRect 는 pptx 에만
   있고 docx · xlsx 에는 아예 없다 · 생각 끄기는 `modelcall.py` 에 고정 · 동시 수 세마포어는 클라이언트마다 따로 · `matched_by` 없음. 차례는 PLAN 그대로이고
   DFO-3 은 DFO-2 와 같은 자리라 같이, `PROMPT_VERSION` 은 IR-11 · IR-17 · IR-20 을 한 번에 올린다. IR-11 — 쪽 그림(snapshot_page)이 이미 있으면 그것을 쓰고
