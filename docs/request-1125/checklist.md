@@ -24,7 +24,7 @@
 
 ## 답 받기
 
-- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP · HEAXHub · DocForge(R25-10) / 기다림: 브리지 · SmartTwin MCP · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71) · ste 로컬 main(PA-02 `2397f32` · BG-6 `21a1718`) · HEAXHub 로컬 main(HH-18 `c9f39fd` · HP-71 `0375156` · SE-8 `38baee7`) · DocForge 가지 `req1125`(17건 · 커밋 14 · 0.4.0 배치 대기) · StepForge 갈래 `feat-1125`(ST-20 ~ 24 · 26 · BG-1 · ST-27 틀 — 남은 것 ST-25 · ST-27 표본)
+- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP · HEAXHub · DocForge(R25-10) / 기다림: 브리지 · SmartTwin MCP · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71) · ste 로컬 main(PA-02 `2397f32` · BG-6 `21a1718`) · HEAXHub 로컬 main(HH-18 `c9f39fd` · HP-71 `0375156` · SE-8 `38baee7`) · DocForge 가지 `req1125`(17건 · 커밋 14 · 0.4.0 배치 대기) · KooRemapper 가지 `corelink-int`(R-04 · HP-71 · R-09 — 해제 뒤 R-04 먼저) · StepForge 갈래 `feat-1125`(ST-20 ~ 24 · 26 · BG-1 · ST-27 틀 — 남은 것 ST-25 · ST-27 표본)
 - [x] ST-25 짓기 전 물음 넷 → 편지함 R25-Q13 ~ Q16(R25-13)
 - [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기(StepForge 가 바이트 · sha 를 직접 함께 보낸다 — R25-13)
 - [ ] 5차 동결 해제(87 알림) → 각 세션에 전하기
@@ -34,7 +34,8 @@
 - [x] ste PA-02 — 그쪽 사용자 결정 11-25: 도는 잡의 64 MB 넘는 파일은 잡 끝난 뒤 한 번 받기(R25-10)
 - [x] StepForge ST-22 · ST-23 — 그쪽 사용자 결정 11-25(새 칸만 · 14,126)
 - [x] ST-27 표본 — 편지함 R25-Q12 에 실음(StepForge `f0e63c5a` — `--counts-only --sample-only`, R25-12) · 답은 StepForge 착지 뒤
-- [ ] KooRemapper R-09 — 그쪽 세션이 사용자에게 묻는 결정 둘(R25-10)
+- [x] KooRemapper R-04 · R-09 — 그쪽 사용자 결정 11-25(같은 뿌리 다섯도 · 풀고 안 되면 거절 · 데이터 뿌리 아래로)
+- [ ] KooRemapper 착지 때 — 편지함에 데이터 뿌리 `svc/kooremapper` 쓰기 권한(API 사용자)
 - [ ] HEAXHub SE-8 착지 때 — dev models-to-drive 한 번(Drive MANIFEST — 그 전에는 모델 건너뛰기가 안 먹는다) · 편지함에 첫 실행 모습(appdata 한 번 병합 · `.pre-merge` 348 → DB 마다 3 · dist 첫 전체 검사)
 - [ ] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭)
 - [ ] ste PA-02 착지 때 — 사용자 PC 에이전트 새로 받기 · 두 번 누르기를 편지함 사람 몫으로
