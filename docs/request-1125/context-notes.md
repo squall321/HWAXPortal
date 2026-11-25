@@ -323,3 +323,6 @@
   `image_version_check` 에 v141 · v54 를 주면 「다르다」 가 나오는 게 맞다는 한 줄.
 - c8 은 KooSlurm main push 를 멈췄다(그쪽 사용자 결정 — SM-01 ~ 03 · 카탈로그를 다 끝내고 한 판으로). 그때까지 가지 `feat/sm-security-1125` ·
   `feat/catalog-regen-1125` 에 두고, main push 전에 71 에 알린다. 6차 판 `d93017a5` 는 그대로 유효하다.
+- 87 이 덧붙임을 올렸다(`4b82e8da`). 확인한 것 — 5절에 「SM-01 없음 · 셋은 SM-01 판까지 grant_only · 셋이 `plat:smarttwin-run` 안이면 통째로 둔다」(문안 그대로) ·
+  나머지를 푸는 조건(위임 PAT caller)은 둘째 단계 · 리포 기대값 v141 · v54 와 운영 v128 · v50 을 갈라 적고 `image_version_check` 의 「다르다」 는 실패 아님 ·
+  기동 차례의 「전부 막힌다」 를 「호출자를 보는 호출은 닫힌 쪽 — 예외 읽기 도구와 셋」 으로 · Q45 는 「어떻게 남겼는지」. KooSlurm main 이 움직이면 87 에 알린다.

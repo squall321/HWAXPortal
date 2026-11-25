@@ -55,5 +55,5 @@
 - [x] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림 — `2026-11-26.md`(`4c84e2f5`) · 11-25 알림(R25-18)
 - [ ] DocForge 0.4.0 판 → 87(6차 글 덧붙임 절)
 - [ ] SmartTwin MCP SM-01 ~ 03 · 카탈로그 — KooSlurm main 에 넣기 전 알림 받기(6차 판 `d93017a5` 와 어긋남 막기)
-- [ ] 6차 글 덧붙임 — grant_only 셋(`train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`)은 SM-01 판까지 남김 · 운영 이미지 v128 · v50 한 줄 → 87(R25-19)
+- [x] 6차 글 덧붙임 — grant_only 셋(`train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`)은 SM-01 판까지 남김 · 운영 이미지 v128 · v50 한 줄 → 87(R25-19) — `4b82e8da`(5절 · Q45 고침 확인)
 - [ ] SM-01 판이 운영에 든 뒤 — 셋의 grant_only 를 풀어도 된다고 운영에 알리기(R25-19)
