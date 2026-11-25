@@ -283,3 +283,11 @@
   둘째부터 「app-data tar 가 지난 병합 때와 같다 — 안전백업 · DB 병합 건너뜀」 · models: cae00 에 지난번 값이 없어 첫 실행은 한 번 더 전체 비교, 둘째부터 「Drive
   MANIFEST 가 지난번과 같다 — 건너뜀」 · dist: 첫 실행 「checksums OK(전체 — 주 1회)」, 그 뒤 「옮긴 파일 없음 — checksum 생략」 또는 「(이번에 옮긴 N개)」,
   frontend 「frontend-dist 그대로 — 풀기 생략」 · 진행 표시는 30초마다 한 줄.
+- **StepForge** — main `d7be049c`(코드 판 `9a7ca9d1` 위 문서 하나 — Drive SIF 는 `d7be049c` 로 지음). Drive `dist-20261125-162758Z`(`latest/` 같음). `step_forge.sif` 파일
+  sha256 `cb3cc68b…` · 허브 캐시 열쇠 `step_forge.sif.hash` `df1db69c…`(로컬 · 묶음 · latest/ 셋 맞댐, SIF 안 BUILD_INFO 는 `d7be049c`). 운영 손 없음 — 설정 변화 없음
+  (reachable false · chat_cut 60000 · MaterialTwin 주소 안 넣음 그대로), 늘 하듯 교체 전에 도는 잡이 없는지만 본다(교체가 도는 잡을 끊는다 · 따로 취소할 일은 없음).
+  DB 이관 없음 — `edcddf44` → `d7be049c` 사이 DB 칸 · 표 · 판 표시(ERA) · 잡 인자 시대 변화 0 · 새 설정 키 0. **`a7c65a5e` 를 건너뛰고 바로 받아도 된다**(그 판은 레디쉬
+  꼴 접기 하나이고 이 판에 들어 있다). 실린 것 — ST-20 · 21 · 22 · 23 · 24 · 26(next 만 R25-Q3 대기) · BG-1 `POST /api/projects/{id}/export-part-step` · ST-27 틀 ·
+  D-709 적층 해석기 통로 · SP 서브모듈 0.4.105(키트 · coreapi 그대로). 알아 둘 것 — 출하 대응표(ST-24)가 역할 → 코어 부품 선 14줄을 긋는다(운영 허브 거울에 그
+  key 가 있으면 선, 없으면 매달린 끝으로만 센다). 미룸 — ST-25 · ST-27 표본(R25-Q12 ~ Q16 답 뒤). 회귀 8015 통과 · 배포 확인 셋 통과.
+  → BG-1: StepForge REST 가 이 판으로 운영에 들면 레지스트리 part 의미 바꾸기(ste 가지 `b4503ec`)에 남는 조건은 새 브리지 SIF(`e52a03a` — ste 교체 보고까지 묶임) 하나.
