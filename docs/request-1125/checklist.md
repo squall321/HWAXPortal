@@ -32,7 +32,7 @@
 - [x] IR-24 등록 사본은 DocForge 배치가 고친다 — 두 세션에 전함(R25-11)
 - [x] ste PA-02 — 그쪽 사용자 결정 11-25: 도는 잡의 64 MB 넘는 파일은 잡 끝난 뒤 한 번 받기(R25-10)
 - [x] StepForge ST-22 · ST-23 — 그쪽 사용자 결정 11-25(새 칸만 · 14,126)
-- [ ] ST-27 표본 — StepForge 가 cae00 에서 돌릴 명령 · 숫자만 내는 인자를 확인하면 편지함 R25-Q12(R25-12)
+- [x] ST-27 표본 — 편지함 R25-Q12 에 실음(StepForge `f0e63c5a` — `--counts-only --sample-only`, R25-12) · 답은 StepForge 착지 뒤
 - [ ] KooRemapper R-09 — 그쪽 세션이 사용자에게 묻는 결정 둘(R25-10)
 - [ ] HEAXHub SE-8 착지 때 — dev models-to-drive 한 번(Drive MANIFEST — 그 전에는 모델 건너뛰기가 안 먹는다) · 편지함에 첫 실행 모습(appdata 한 번 병합 · `.pre-merge` 348 → DB 마다 3 · dist 첫 전체 검사)
 - [ ] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭)
