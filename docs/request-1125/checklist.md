@@ -54,7 +54,7 @@
 - [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — 여섯 곳 묶음 87 에 넘김(11-25) · R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper · HEAXHub · StepForge / 기다림 DocForge(그쪽 사용자 승인) · SmartTwin MCP(SM 넷 진행 중)
 - [x] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림 — `2026-11-26.md`(`4c84e2f5`) · 11-25 알림(R25-18)
 - [x] DocForge 0.4.0 판 → 87(6차 글 덧붙임 절) — release `3a578a29` · Drive `dist-20261125-211307Z` · HEAXHub 판 `b4309c0` 으로 고침 부탁(R25-20)
-- [ ] 87 이 DocForge 덧붙임 · HEAXHub 판 줄을 올렸는지 확인
+- [x] 87 이 DocForge 덧붙임 · HEAXHub 판 줄을 올렸는지 확인 — `0e91cace`(9절 · Q51 · 한눈에 표 HEAXHub `b4309c0` · DocForge release 만)
 - [ ] cae00 update-all 끝 → DocForge 에 알리기(그때까지 release 고정)
 - [ ] SmartTwin MCP SM-01 ~ 03 · 카탈로그 — KooSlurm main 에 넣기 전 알림 받기(6차 판 `d93017a5` 와 어긋남 막기)
 - [x] 6차 글 덧붙임 — grant_only 셋(`train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`)은 SM-01 판까지 남김 · 운영 이미지 v128 · v50 한 줄 → 87(R25-19) — `4b82e8da`(5절 · Q45 고침 확인)

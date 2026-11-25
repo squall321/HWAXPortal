@@ -339,3 +339,5 @@
 - DocForge 는 cae00 update-all 이 끝날 때까지 release 를 옮기지 않는다 — 끝나면 알린다.
 - 덧붙임 — DocForge 원격 main 이 문서 커밋 하나로 `f4422e5e` 로 한 번 더 움직였다(ls-remote 확인). release 는 `3a578a29` 그대로라 운영이 받는 판은 바뀌지 않는다. 87 에 「글의 판은
   release 로 · main 해시를 적었으면 바꾸거나 빼기」 를 전했다.
+- 87 이 올렸다(`0e91cace` — 6차 글 9절 · Q51). 확인 — 한눈에 표 HEAXHub `b4309c0` · DocForge 는 release `3a578a29` 만(main 해시 뺌) · 파일 sha256 과 캐시 열쇠를 이름 붙여 ·
+  머리말에 「HEAXHub 판도 바뀌었다」 한 줄. 이로써 6차 글에 request-1125 몫이 다 실렸다 — 남은 것은 ste · 브리지(Q35 교체 보고 뒤) · SmartTwin SM-01 ~ 03(다음 판).
