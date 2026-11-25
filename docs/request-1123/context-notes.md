@@ -26,3 +26,10 @@
 - 11-23 23:23 에 생성된 conf 에 http 레벨 600s · `worker_rlimit_nofile 65536` · `*-mcp` 스트리밍 묶음을 손으로 넣고 `nginx -t` 뒤 reload 했다. 받은 편지함 덧붙임
   (Q28)은 그 글을 받은 뒤에 붙어 답이 없다 — 다음 update-all 이 이 판(`4cf8e6ff` 뒤)을 받으면 생성기가 같은 값을 만든다. 손으로 다시 넣으면 `duplicate` 로
   `nginx -t` 가 실패한다 — 다음 라운드 글에 Q28 을 다시 싣는다.
+
+## NX-4 cae00 답(11-25) — 다섯째 라운드 Q31
+
+- 생성기가 만든 `hwax.conf` 에 `worker_rlimit_nofile 65536;` 한 줄(9행) · http 레벨 `proxy_read_timeout 600s;` 한 줄(62행) — 두 번 들어간 줄 없음. worker 의
+  `Max open files` 65536 / 65536. `/ste/` 3600s · `/apps/` 600s · `/report-archive/` 600s 그대로. 바깥에서 `/mcp-gw/internal/…` 404.
+- 손으로 넣기는 멈췄다 — update-all 끝에 다시 넣던 박스 훅을 걷었다(그래서 「박스 훅 없음」 ○ 가 난다). 큰 버퍼(`NGINX_LARGE_BUFFER_ROUTES`)는 켜지 않았다.
+- 못 본 것 — `nginx -t`(그 계정에 실행 파일 · sudo 가 없다) · 60초를 넘는 데이터허브 요청(일부러 만들지 않음). HP-79 · HP-80 · HP-73 은 운영에서 확인으로 닫는다.
