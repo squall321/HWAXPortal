@@ -37,7 +37,7 @@
 - [x] KooRemapper R-04 · R-09 — 그쪽 사용자 결정 11-25(같은 뿌리 다섯도 · 풀고 안 되면 거절 · 데이터 뿌리 아래로)
 - [x] KooRemapper 착지 때 — 편지함에 데이터 뿌리 `svc/kooremapper` 쓰기 권한(API 사용자) — 문안 받음(R25-17), 87 에 넘길 묶음에
 - [x] HEAXHub SE-8 착지 때(R25-17 — `38baee7` · MANIFEST 셋) — dev models-to-drive 한 번(Drive MANIFEST — 그 전에는 모델 건너뛰기가 안 먹는다) · 편지함에 첫 실행 모습(appdata 한 번 병합 · `.pre-merge` 348 → DB 마다 3 · dist 첫 전체 검사)
-- [ ] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭)
+- [x] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭) — 87 에 넘김(R25-20)
 - [ ] ste PA-02 착지 때 — 사용자 PC 에이전트 새로 받기 · 두 번 누르기를 편지함 사람 몫으로
 - [ ] ste CalculiX 착지 때(요청서 밖 · 같은 라운드) — 동결 해제 뒤 ste push + KooCalculiX 꾸러미(SIF) Drive SmartTwinSolutions · 편지함에 「`/data/SmartTwinSolutions/KooCalculiX` 에 푼다」
 - [ ] 브리지 다음 꾸러미(ST-17 · `3bc5584` · ST-7 · BG-1 — 브리지 SIF `koo_stebridge-e52a03a.sif`(6c2e83f 아님 — R25-16 바로잡기) · ste 쪽 `47b108f` · `fa1af4b` · `58508e9`) — **ste 교체 보고 뒤** 그쪽 사용자 확인으로 Drive, BG-1 은 StepForge 착지와 함께여야 운영에서 쓰인다
@@ -53,7 +53,9 @@
 - [x] 게이트웨이 `wt1124/ste-upload-sha` — 87 의 셋(`4b3cdc1`) 뒤 사본 시험(1,247 통과 · 3 건너뜀) → `--no-ff` 병합 · push `63eed05`(옛 ste 와도 맞물림 — sha 칸 없으면 대조 생략) · dev 재기동은 87
 - [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — 여섯 곳 묶음 87 에 넘김(11-25) · R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper · HEAXHub · StepForge / 기다림 DocForge(그쪽 사용자 승인) · SmartTwin MCP(SM 넷 진행 중)
 - [x] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림 — `2026-11-26.md`(`4c84e2f5`) · 11-25 알림(R25-18)
-- [ ] DocForge 0.4.0 판 → 87(6차 글 덧붙임 절)
+- [x] DocForge 0.4.0 판 → 87(6차 글 덧붙임 절) — release `3a578a29` · Drive `dist-20261125-211307Z` · HEAXHub 판 `b4309c0` 으로 고침 부탁(R25-20)
+- [ ] 87 이 DocForge 덧붙임 · HEAXHub 판 줄을 올렸는지 확인
+- [ ] cae00 update-all 끝 → DocForge 에 알리기(그때까지 release 고정)
 - [ ] SmartTwin MCP SM-01 ~ 03 · 카탈로그 — KooSlurm main 에 넣기 전 알림 받기(6차 판 `d93017a5` 와 어긋남 막기)
 - [x] 6차 글 덧붙임 — grant_only 셋(`train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`)은 SM-01 판까지 남김 · 운영 이미지 v128 · v50 한 줄 → 87(R25-19) — `4b82e8da`(5절 · Q45 고침 확인)
 - [ ] SM-01 판이 운영에 든 뒤 — 셋의 grant_only 를 풀어도 된다고 운영에 알리기(R25-19)

@@ -326,3 +326,14 @@
 - 87 이 덧붙임을 올렸다(`4b82e8da`). 확인한 것 — 5절에 「SM-01 없음 · 셋은 SM-01 판까지 grant_only · 셋이 `plat:smarttwin-run` 안이면 통째로 둔다」(문안 그대로) ·
   나머지를 푸는 조건(위임 PAT caller)은 둘째 단계 · 리포 기대값 v141 · v54 와 운영 v128 · v50 을 갈라 적고 `image_version_check` 의 「다르다」 는 실패 아님 ·
   기동 차례의 「전부 막힌다」 를 「호출자를 보는 호출은 닫힌 쪽 — 예외 읽기 도구와 셋」 으로 · Q45 는 「어떻게 남겼는지」. KooSlurm main 이 움직이면 87 에 알린다.
+
+## R25-20 DocForge 0.4.0 착지 — HEAXHub 판도 b4309c0 으로(11-25)
+
+- docforge-f6 — 그쪽 사용자 승인(11-25)으로 dev 쪽 배치 끝. 원격 ls-remote 로 맞대 확인 — DocForge release `3a578a29`(배치 판) · main `6e6c10f8`(release 뒤 배치 기록 문서
+  하나) · HEAXHub main `b4309c0`. Drive `latest/doc-forge.sif` · `.sif.hash` · 되돌리기 `dist-20261125-211307Z/` · SHA256SUMS 30줄. SIF 파일 sha256 `71aa8471…de65`
+  (852M) · 허브 캐시 열쇠(.sif.hash 내용) `e06a0152…9932` — SHA256SUMS 의 .sif.hash 파일 sha256 `e160b915…3727` 은 셋째 숫자라 따로 적었다. DB 이관 없음.
+- **HEAXHub 판이 6차 글의 `38baee7` 에서 `b4309c0` 으로 움직였다.** 그 위 커밋 하나(`integrations/doc-forge/.portal/manifest.yaml` — 등록 사본 0.4.0 · IR-24 줄 빼기, R25-11).
+  운영 update-all 은 main 을 받으므로 글의 판 줄을 고쳐 달라고 87 에 함께 전했다.
+- 운영 손일 — update-all 로 받기 · `/health` 0.4.0 · capabilities(max_jobs · vlm.thinking_off) · 11-10 시험 덱 일곱 줄. 고를 일 둘 — `DOCFORGE_MAX_JOBS`(knobs.env, 적어 둔 값이
+  있으면 0.4.0 부터 그 값) · 판독을 심의 모델로 옮길 때만 `DOCFORGE_VLM_THINKING_OFF=0`. 운영이 알 것 ① ~ ⑥ · DFO-1 까닭은 앞서 넘긴 정리 그대로.
+- DocForge 는 cae00 update-all 이 끝날 때까지 release 를 옮기지 않는다 — 끝나면 알린다.
