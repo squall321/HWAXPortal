@@ -147,6 +147,11 @@
   기록용에서 파트 고르기로 바뀌어 part-study 인자 · 레지스트리 선언은 06 과 맞추고, 잡 한정 토큰은 사용자 결정(주소만 먼저)대로 지금은 다루지 않고 발급하는
   곳이 생긴 뒤 stepforge-d4 와 맞춘다. 운영에서 쓰려면 StepForge 착지(동결 해제 뒤)와 다음 브리지 SIF 가 함께 가야 한다. ST-1 은 SF-3 출력 뒤. 다음
   꾸러미에 ST-17(`a9655da`) · `3bc5584` · ST-7 · BG-1 을 싣고 해제 알림 뒤 그쪽 사용자 확인을 받고 낸다. ST-2 · ST-8 은 R25-Q8 · Q9 답을 기다린다.
+  **뒤이어 지음(11-25, 코드만)** — ST-7 은 레디쉬 래퍼 `--build-only 0|1`(ste `47b108f` — 케이스를 짓고 해석기 스키마로 검사한 뒤 멈춘다, 지은 케이스 ·
+  예제 값으로 남은 칸 · 경고 · 파생량을 잡 요약에 · 앱 선언 build_only 는 06), BG-1 은 브리지 `fetch --part`(KooSolverContainer `6c2e83f` — export-part-step
+  REST 로 그 파트만, 크기 · sha256 대조) · part-study `--part`(ste `fa1af4b`), 사유 part_not_found · stepforge_outdated · bridge_outdated(옛 브리지는 과제 전체를
+  조용히 받지 않고 멈춘다). **레지스트리 요청서의 part 를 「그 파트만 받기」 로 바꾸는 일(06 의 선언 + 튜플)은 새 브리지 SIF 와 StepForge `feat-1125` 가 운영에
+  든 뒤로 미룬다** — 먼저 바꾸면 part 를 적은 지금 요청들이 실패한다.
 
 ## R25-11 IR-24 등록 사본은 DocForge 배치가 고친다(11-25)
 

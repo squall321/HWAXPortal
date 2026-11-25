@@ -40,4 +40,5 @@
 - [ ] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭)
 - [ ] ste PA-02 착지 때 — 사용자 PC 에이전트 새로 받기 · 두 번 누르기를 편지함 사람 몫으로
 - [ ] ste CalculiX 착지 때(요청서 밖 · 같은 라운드) — 동결 해제 뒤 ste push + KooCalculiX 꾸러미(SIF) Drive SmartTwinSolutions · 편지함에 「`/data/SmartTwinSolutions/KooCalculiX` 에 푼다」
-- [ ] 브리지 다음 꾸러미(ST-17 · `3bc5584` · ST-7 · BG-1) — 해제 알림 뒤 그쪽 사용자 확인으로 Drive, BG-1 은 StepForge 착지와 함께여야 운영에서 쓰인다
+- [ ] 브리지 다음 꾸러미(ST-17 · `3bc5584` · ST-7 · BG-1 `6c2e83f` — ste 쪽 `47b108f` · `fa1af4b`) — 해제 알림 뒤 그쪽 사용자 확인으로 Drive, BG-1 은 StepForge 착지와 함께여야 운영에서 쓰인다
+- [ ] 레지스트리 part 의미 바꾸기(06 의 선언 + 튜플 — 기록용 → 그 파트만 받기) — **새 브리지 SIF 와 StepForge `feat-1125` 가 운영에 든 뒤에만**(먼저 바꾸면 지금 요청이 실패, R25-10 브리지)
