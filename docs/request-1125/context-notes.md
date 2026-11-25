@@ -274,3 +274,12 @@
   재생성(Pre v141 · Post v54 · KCR 새 명령 9개 도구화 · RIGID_DROP_ENDTIME · unified_analyzer rc 3), 항목마다 시험 통과면 main · push · 재시작. 지금까지 C-1(`e5cb6f41` ·
   `0b46313f` — push · 재시작 끝). **71 이 짚은 것** — 운영 stcx 는 아직 Pre v128 · Post v50(SP-5 · Q34 — v136/v51 · v141/v53 · v54 모두 안 깔림)이라 카탈로그가
   새 명령을 내걸면 운영에서 없는 판에 닿는다 → 판을 보고 거절하든지 설명에 「Pre v141 · Post v54 이상」 을 적어 달라고 했다(고르는 것은 c8).
+- **HEAXHub** — main `38baee7`(`948c98c` 뒤 넷 — `0cf7a45` DynaForge 설명 op 수 · HH-18 `c9f39fd` · HP-71 `0375156` · SE-8 `38baee7`; DocForge 등록 사본 커밋이 곧 얹히므로
+  `38baee7:main` 까지만 내보냄). models-to-drive 끝 — Drive `<remote>:HEAXHub/models/<앱>/MANIFEST` 셋(doc_forge 149 · thermal_shock_mcp 3 · voice_recorder 133 —
+  합 285, 비교만 · 전송 없음). SIF · .def · SIF 앱 등록 사본 변경 없음(integrations/ 는 proxy 앱 둘 설명 두 줄 — 캐시 열쇠와 상관없음). DB 이관 없음.
+  운영 손 — 꼭 할 것 없음. **알아 둘 것** — ① appdata 첫 실행이 옛 `.pre-merge` 사본을 DB 마다 최근 3개만 남기고 지운다(11-24 기준 348개 · 약 8GB 의 대부분) —
+  남기려면 update-all **전에** 다른 곳으로 옮기거나 `.env` 에 `HEAX_APPDATA_PREMERGE_KEEP=<개수>` ② HH-18 — `.env` 를 고친 뒤 떠 있는 앱은 그대로, 새 값은 그 앱의
+  다음 기동부터(허브 재기동 필요 없음). 첫 실행 모습 — appdata: 한 번 병합(「→ merge: <앱>/<db>」 · 0건 추가) 뒤 「옛 안전백업 N개 지움(DB 마다 최근 3개 남김)」,
+  둘째부터 「app-data tar 가 지난 병합 때와 같다 — 안전백업 · DB 병합 건너뜀」 · models: cae00 에 지난번 값이 없어 첫 실행은 한 번 더 전체 비교, 둘째부터 「Drive
+  MANIFEST 가 지난번과 같다 — 건너뜀」 · dist: 첫 실행 「checksums OK(전체 — 주 1회)」, 그 뒤 「옮긴 파일 없음 — checksum 생략」 또는 「(이번에 옮긴 N개)」,
+  frontend 「frontend-dist 그대로 — 풀기 생략」 · 진행 표시는 30초마다 한 줄.

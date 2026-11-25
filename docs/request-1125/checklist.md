@@ -36,7 +36,7 @@
 - [x] ST-27 표본 — 편지함 R25-Q12 에 실음(StepForge `f0e63c5a` — `--counts-only --sample-only`, R25-12) · 답은 StepForge 착지 뒤
 - [x] KooRemapper R-04 · R-09 — 그쪽 사용자 결정 11-25(같은 뿌리 다섯도 · 풀고 안 되면 거절 · 데이터 뿌리 아래로)
 - [x] KooRemapper 착지 때 — 편지함에 데이터 뿌리 `svc/kooremapper` 쓰기 권한(API 사용자) — 문안 받음(R25-17), 87 에 넘길 묶음에
-- [ ] HEAXHub SE-8 착지 때 — dev models-to-drive 한 번(Drive MANIFEST — 그 전에는 모델 건너뛰기가 안 먹는다) · 편지함에 첫 실행 모습(appdata 한 번 병합 · `.pre-merge` 348 → DB 마다 3 · dist 첫 전체 검사)
+- [x] HEAXHub SE-8 착지 때(R25-17 — `38baee7` · MANIFEST 셋) — dev models-to-drive 한 번(Drive MANIFEST — 그 전에는 모델 건너뛰기가 안 먹는다) · 편지함에 첫 실행 모습(appdata 한 번 병합 · `.pre-merge` 348 → DB 마다 3 · dist 첫 전체 검사)
 - [ ] DocForge 0.4.0 착지 때 — 편지함에 운영이 알 것 ① ~ ⑥ · 시험 덱 확인 · DFO-1 은 지우지 않고 stale 만(까닭)
 - [ ] ste PA-02 착지 때 — 사용자 PC 에이전트 새로 받기 · 두 번 누르기를 편지함 사람 몫으로
 - [ ] ste CalculiX 착지 때(요청서 밖 · 같은 라운드) — 동결 해제 뒤 ste push + KooCalculiX 꾸러미(SIF) Drive SmartTwinSolutions · 편지함에 「`/data/SmartTwinSolutions/KooCalculiX` 에 푼다」
@@ -51,5 +51,5 @@
 - [ ] cae00 ste 교체 보고(Q35 뒤 — 기한 11-26) → ste-06 · 브리지 풀기(ste 로컬 34커밋 · 브리지 SIF `e52a03a`)
 - [ ] cae00 이 `STE_LSTC_LICENSE_SERVER` 를 넣었다는 답 → ste-06 에 전하기(라이선스 기본값 빼는 가지 `0313ceb` 를 그때 올린다)
 - [x] 게이트웨이 `wt1124/ste-upload-sha` — 87 의 셋(`4b3cdc1`) 뒤 사본 시험(1,247 통과 · 3 건너뜀) → `--no-ff` 병합 · push `63eed05`(옛 ste 와도 맞물림 — sha 칸 없으면 대조 생략) · dev 재기동은 87
-- [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper / 기다림 StepForge · DocForge(승인 대기) · HEAXHub · SmartTwin MCP
+- [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함) — R25-17 에 모으는 중: 받음 게이트웨이 · MX 백서 · SignalForge · KooRemapper · HEAXHub / 기다림 StepForge · DocForge(승인 대기) · SmartTwin MCP
 - [ ] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림
