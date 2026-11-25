@@ -2359,7 +2359,10 @@ def test_PAT_로는_확인_없이_도는_쓰기_잡_단계가_있는_절차를_l
     h2 = _login(c, "user@corp.com")
     live = c.post(f"{PREFIX}/runs", json={"procedure_id": pid, "vars": {"deck": "a.k"}, "mode": "live"}, headers=h2)
     assert live.status_code == 202 and "ungated_writes" not in live.json(), live.text
-    _until(lambda: started and len(finished) == len(started), "세션 실행이 멈추기")
+    # 그 실행을 기다린다 — 앞의 계획 모드 실행이 이미 started · finished 에 한 줄씩 있어 '센 만큼 끝났다' 는 이 실행이 뜨기도 전에 참이 됐다
+    # (11-24 재현 — 열두 번에 한 번 gw.calls 가 빈 채로 단언에 닿았다, W-120)
+    live_id = live.json()["run_id"]
+    _until(lambda: live_id in finished, "세션 실행이 멈추기")
     assert [n for n, _ in gw.calls] == ["ra_find_reports", "ra_submit_job"], "세션 실행은 gate 단계(run_job) 앞까지 돈다"
 
 
