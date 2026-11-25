@@ -590,3 +590,15 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
 - **Q37 릴리스 `manifest.json` 잘림** — 운영 배포 리포 HWAXProd 의 `deploy/lib/bundle.sh` 가 KooRemapper `BUILD_INFO.txt` 를 `[:400]` 으로 자른다 — 의도한 것.
   L21-28 넘김 8 은 닫는다(KooRemapper 몫 아님).
 - **Q38 전문가 고르기 그림자** — 11-30 무렵.
+
+## L21-30 deploy-all 이 KooRemapper stop 의 rc 를 버리지 않는다(11-26)
+
+- KooRemapper `6a90a416`(R-04)부터 stop · 재기동 스크립트가 인스턴스가 상한(`KOORM_STOP_WAIT_S`, 기본 60초) 안에 사라지지 않으면 ✗ 줄과 함께 rc≠0 으로
+  멈춘다 — 내려가는 중인 인스턴스 위에 start 가 `already exists` 로 실패해 52분 멈춘 일(10-28)의 고침이다. 포털 deploy-all 의 `_stop` 은 그 rc 와
+  stderr 를 버리고(`2>/dev/null || true`) 사이클도 `_stop || true` 라, 멈춤이 사라지고 그 위에 start 가 불려 원인 없는 'failed' 만 남았을 것이다(71 이
+  KooRemapper 착지에서 짚음).
+- 고침 — `_stop` 은 stderr 를 그대로 두고, rc≠0 이면 포털 ✗ 줄 하나를 더 찍고 **띄우지 않고** 서브셸을 6 으로 끝낸다(EXIT 가 배포 표지를 지워 감시가
+  있으면 다음 회차에 다시 본다 — KooRemapper 감시의 '이번 회차는 띄우지 않는다' 와 같은 뜻). 6 은 까닭이 붙은 skip 으로 센다 → deploy-all 4 →
+  update-all 끝 요약에 실패로 남는다. 사이클(`hwax_restart_cycle`)의 `|| true` 는 다른 서비스와 같이 그대로 둔다 — 함수 안의 exit 가 서브셸을 끝낸다.
+- 지금 cae00 은 `KOORM_LOCAL_PARKED` 라 이 구역 앞(5)에서 멈춰 당장 닿지 않는다. dev · 멈춤을 푼 박스에서 먹는다.
+- 시험 — `test_request_1027_update_all.py` R04 둘(사이클 꼴로 불러도 start 0회 · SUB=6 · ✗ 줄 둘 · 표지 지움 / 6 의 skip 줄), 고침을 되돌리면 붉음.

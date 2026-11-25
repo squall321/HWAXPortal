@@ -518,8 +518,12 @@ if want kooremapper; then
       _dl="platform/infra/data/deploy.lock.d"
       _unmark() { rm -rf "$_dl" 2>/dev/null || true; }
       trap _unmark EXIT
+      # stop.sh 는 인스턴스가 상한(KooRemapper KOORM_STOP_WAIT_S, 기본 60초) 안에 사라지지 않으면 rc≠0 으로 멈춘다(그쪽 R-04 — 내려가는 중인
+      # 인스턴스 위에 start 가 `already exists` 로 실패해 52분 멈췄다). 그 rc 와 ✗ 줄을 버리면 사이클이 그 위에 start 를 부르고 원인 없이 'failed'
+      # 만 남는다 — 그래서 줄은 보이고(2>/dev/null 없음) 띄우지 않고 6 으로 끝낸다(EXIT 가 표지를 지워 감시가 있으면 다음 회차에 다시 본다).
       _stop()  { mkdir -p "$_dl" 2>/dev/null && printf '%s %s deploy-all\n' "${BASHPID:-$$}" "$(date +%s)" > "$_dl/pid"
-                 bash platform/infra/scripts/stop.sh 2>/dev/null || true; }
+                 local _sr=0; bash platform/infra/scripts/stop.sh || _sr=$?
+                 [ "$_sr" = 0 ] || { echo "  ✗ kooremapper: stop.sh rc=$_sr — 인스턴스가 상한 안에 내려가지 않았다. 그 위에 띄우지 않는다" >&2; exit 6; }; }
       _start() { local _r=0; bash platform/infra/scripts/start.sh || _r=$?; _unmark; return "$_r"; }
       # 도는 로컬 작업이 있으면 재기동을 미룬다 — 내리면 SIGKILL 로 끊기고 다시 뜰 때 실패로 적힌다(줄 선 작업 · stcx 외부 잡은 넘긴다).
       # 재기동이 필요할 때만 센다(묻기의 장부 줄은 아래 cycle 이 한 번만 적게 비운다). 셀 수 없으면(빈 값) 막지 않는다. 강제는 KOORM_RESTART_FORCE=1.
@@ -540,7 +544,10 @@ if want kooremapper; then
     ) || _krc=$?
     # 3 = 도는 작업 때문에 미뤘다(○ 를 이미 찍었다) — 허브 구역과 같은 꼴로 실패로 세지 않고, 올라왔다고도 말하지 않는다.
     # 5 = 멈춰 둔 되돌림 사본이라 띄우지 않았다(○ 를 이미 찍었다) — 같은 꼴이다.
-    case "$_krc" in 0) ok "kooremapper up" ;; 3) ;; 5) ;; *) skip "kooremapper failed (see above)" ;; esac
+    # 6 = stop.sh 가 상한 안에 인스턴스를 내리지 못해 띄우지 않았다(위 ✗ 줄) — 실패로 센다.
+    case "$_krc" in 0) ok "kooremapper up" ;; 3) ;; 5) ;;
+      6) skip "kooremapper stop 실패 — 인스턴스가 상한(KooRemapper KOORM_STOP_WAIT_S) 안에 내려가지 않아 띄우지 않았다. 감시(supervisor)가 있으면 다음 회차에 다시 띄우고, 없으면 내려간 것을 본 뒤 update-all 을 다시 돌린다 — 위 ✗ 줄 · apptainer instance list 를 본다" ;;
+      *) skip "kooremapper failed (see above)" ;; esac
     # start.sh 가 0 으로 끝나도 업스트림이 안 떠 있으면 DynaForge 는 502 다. 여기서 못 박아 둔다 —
     # 이 두 줄이 없으면 긴 배포 로그 어디에도 '왜 502 인지'가 남지 않는다.
     # 멈춰 둔 사본은 보지 않는다 — 일부러 내려 둔 것을 '무응답' skip 으로 세면 deploy-all 이 4 로 끝나고 update-all 이 실패로 적는다.
