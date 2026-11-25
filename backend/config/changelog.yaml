@@ -22,6 +22,12 @@
 
 entries:
   - date: 2026-11-24
+    title: 기술 — 게이트웨이가 Report Archive 보고서마다 본문 쓰기를 한 줄로 부릅니다(그림 칸이 지워지던 경합)
+    tag: 기술
+    items:
+      - "게이트웨이가 같은 Report Archive 보고서의 본문을 통째로 다시 쓰는 호출(update_report_draft · append_rows · patch_cells · remove_rows · restore_version — 호출 별칭 · invoke_tool 길도)과 보고서에 그림 넣기(figure_to_report)를 보고서 번호마다 한 줄로 부릅니다. 개인 Claude 가 그림 넣기와 보고서 고치기를 한꺼번에 부르면 RA 안에서 둘이 같은 판을 읽어, 나중 쓰기가 포털이 이미 '붙였다' 고 답한 그림 칸을 지웠습니다. 다른 보고서와 읽기 · 태그 같은 다른 RA 도구는 전처럼 바로 갑니다."
+      - "게이트웨이를 지나지 않는 쓰기(RA 화면 · 다른 길로 붙은 RA MCP)와의 경합은 RA 의 행 잠금으로만 닫힙니다 — RA 담당 요청서(docs/leftovers-1121/ra-request-1122.md)의 3 이고, ai-draft/rows · 버전 되돌리기도 같은 꼴입니다. 반영은 게이트웨이 재기동입니다."
+  - date: 2026-11-24
     title: 기술 — 서버 LLM 에 맡기기(토큰 절감 2판)의 비교 테스트셋
     tag: 기술
     items:

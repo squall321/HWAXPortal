@@ -63,10 +63,14 @@
 - [x] CLAUDE.md 문서 표 한 줄 — `8ac1be8c`
 - [x] `/ai-data-hub/attachments/…` 그림(AIDataHub 첨부)은 아직 싣지 않는다(RF-13) — **11-22 싣는다**(사용자 결정 `docs/leftovers-1121` L21-10 ④ — 에이전트 서버 `a291297` · `fd6a4fc` · `26c78f2`: 래스터 · 8 MB · 호스트가 붙은 주소는 건드리지 않음 · 받기가 잇달아 늦게 실패하면 남은 첨부는 받지 않음, 끄기 `REPORT_FIG_ATTACHMENTS=0`)
 - [ ] 분석 루틴의 RA 초안 · 챗에 사람이 올린 그림은 이 길을 타지 않는다(RF-13)
-- [ ] 포털 잠금 밖의 RA 쓰기가 그림 칸을 지우는 경합 — 게이트웨이가 보고서마다 RA 쓰기를 줄 세우거나 RA 가 expected_revision 을(RF-6 · F3)
+- [x] 포털 잠금 밖의 RA 쓰기가 그림 칸을 지우는 경합 — 게이트웨이가 보고서마다 RA 쓰기를 줄 세우거나 RA 가 expected_revision 을(RF-6 · F3) — 게이트웨이 몫으로 닫음(11-24, RF-42), 게이트웨이 밖의 쓰기는 아래 RA 몫
   - [x] 포털 그림 칸 — outline 이 판을 주면 `expected_revision` 으로 싣고 어긋나면 세 번까지 다시 읽어 다시 붙임 · 같은 칸이 생겼으면 붙이지 않음(11-22, RF-41)
+  - [x] 게이트웨이 — 같은 보고서의 RA 본문 쓰기 다섯(`update_report_draft` · `append_rows` · `patch_cells` · `remove_rows` · `restore_version` — 별칭 · invoke_tool 길 포함)과
+    `figure_to_report` 를 보고서 번호마다 한 줄로(11-24, RF-42) — 재현 시험 세 갈래가 고치기 전 판에서 그림 칸을 잃음 · 열쇠 표 시험 · 사본 변이 여섯 붉음 · 게이트웨이 전체 1222 통과(가지 `wt1124/fig-race` `74854f9`)
+  - [ ] 반영 — 게이트웨이 가지 병합 · push · 재기동(5차 동결 뒤 — 이번에는 올리지 않음)
   - [ ] RA 몫(사용자를 거쳐 RA 담당에게 — 요청서 `../leftovers-1121/ra-request-1122.md` 1 ~ 3, 11-22) — v0.186.3 의 ai-draft 는 판을 버리고 outline 은 판을 주지 않아 위 길이 쉰다. outline `revision` · AiDraftUpdate
-    `expected_revision` · ai-draft 쓰기의 행 잠금(`FOR UPDATE` 또는 판 조건 UPDATE) — F3 은 이 셋째로만 닫힌다(RF-41)
+    `expected_revision` · ai-draft 쓰기의 행 잠금(`FOR UPDATE` 또는 판 조건 UPDATE) — F3 은 이 셋째로만 닫힌다(RF-41). 11-24 부터는 게이트웨이를 지나지 않는 쓰기(RA 화면 · 다른 길의 RA MCP)와의
+    경합만 남고, 셋째는 ai-draft/rows · versions restore 에도 같은 꼴이라 함께 청할 몫이다(RF-42)
   - [ ] 에이전트 서버 심의 이어붙이기(`get_report` → `update_report_draft(page=쪽 수+1)`)는 MCP 도구가 판 인자를 받지 않아 못 고침(RF-41)
 - [ ] RA 병합의 곁효과(배치 다시 짓기 · 여러 템플릿 보고서) RA 담당 확인(RF-18)
 - [x] 에이전트 서버 `vision.IMG_URL_RE` 의 `\b`(조사 앞 그림 주소를 놓친다) — 챗 그림 읽기 쪽 세션 몫(RF-13) — 고침 11-22(에이전트 서버 `db4b75e` · 겹친 확장자 `26c78f2`)
