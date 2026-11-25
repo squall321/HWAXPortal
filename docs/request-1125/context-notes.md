@@ -185,3 +185,14 @@
   `0b46313f`)로, KooRemapper 가 KR-10 · KR-19 결과 회수에 쓸 칸으로 짚었다. 그래서 묶음을 c8 에 다시 보내고, 4c 에는 손대지 않았으면 두고 시작했으면
   c8 과 이 세션에 알리라고 했다(겹침 막기 — c8 은 시작 전에 SM-04 커밋이 있는지 본다).
 - 맞댄 판 `ea9ebe59` 뒤의 변경은 C-1 의 job_status 뿐이다. SM-04 · SM-01 자리는 그대로이고, SM-02 는 C-1 이 고친 job_status `meta.yaml` 위에 읽기 칸을 얹는다.
+
+## R25-15 업데이트 차례 — 5차는 지금, request-1125 몫은 6차(11-25)
+
+- 87 확인(11-25) — 5차 라운드는 11-24 글 그대로 cae00 이 돌려도 된다. 원격 머리가 5차 고정 판과 같고(게이트웨이 · 에이전트 · AIDataHub · StepForge · WDA ·
+  MXWP · KooRemapper · HEAXHub · SignalForge 모두 뒤 커밋 0), 포털 main 은 docs 커밋만, Drive latest 도 그대로다. update-all 이 11-25 편지함(R25-Q12 ~ Q16)을
+  새 글로 찍지만 막지는 않는다 — Q29 와 함께 답할 물음이 늘었을 뿐이다.
+- 동결은 Q29(update-all 끝 코드 · ✗ · ○ 줄 · 「풀어도 된다」)가 와야 풀린다. 풀리면 87 이 이 세션에 알린다.
+- 풀린 뒤 — 아홉 세션의 push · Drive 는 87 의 병합과 따로 가도 된다(리포가 다르다). Drive SIF 올리기는 자동 모드가 막으면 사람 몫이다. 게이트웨이 병합 차례는
+  fig-race → interactions → offload-finish(87) → `wt1124/ste-upload-sha`(71) — gateway.py 가 겹쳐 앞엣것이 들어간 뒤 rebase 사본으로 시험하고 `--no-ff` 로 병합한다.
+- 6차 편지함은 87 이 쓴다. 이 세션은 request-1125 몫의 착지 판(리포 · 커밋 · Drive 이름 · SIF 파일 sha256 과 캐시 열쇠는 이름을 붙여 따로)과 사람 몫을 모아
+  건넨다 — 해시는 병합 · push 가 끝난 판으로(로컬 커밋 해시는 rebase 하면 사라진다), 실제 주소 · 이름은 빼고.

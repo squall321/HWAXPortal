@@ -42,3 +42,11 @@
 - [ ] ste CalculiX 착지 때(요청서 밖 · 같은 라운드) — 동결 해제 뒤 ste push + KooCalculiX 꾸러미(SIF) Drive SmartTwinSolutions · 편지함에 「`/data/SmartTwinSolutions/KooCalculiX` 에 푼다」
 - [ ] 브리지 다음 꾸러미(ST-17 · `3bc5584` · ST-7 · BG-1 `6c2e83f` — ste 쪽 `47b108f` · `fa1af4b`) — 해제 알림 뒤 그쪽 사용자 확인으로 Drive, BG-1 은 StepForge 착지와 함께여야 운영에서 쓰인다
 - [ ] 레지스트리 part 의미 바꾸기(06 의 선언 + 튜플 — 기록용 → 그 파트만 받기) — **새 브리지 SIF 와 StepForge `feat-1125` 가 운영에 든 뒤에만**(먼저 바꾸면 지금 요청이 실패, R25-10 브리지)
+
+## 6차 라운드로(R25-15)
+
+- [ ] 5차 cae00 update-all 결과(Q29) → 87 이 동결 해제 → 이 세션에 알림
+- [ ] 아홉 세션에 push · Drive 알리기(SIF 올리기가 막히면 사람 몫)
+- [ ] 게이트웨이 `wt1124/ste-upload-sha` — 87 의 fig-race → interactions → offload-finish 뒤 rebase 사본 시험 → `--no-ff` 병합 · push
+- [ ] request-1125 착지 판 모음(push 뒤 해시 · Drive 이름 · SIF 파일 sha256 / 캐시 열쇠 이름 붙여) + 사람 몫 → 87(6차 편지함)
+- [ ] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림
