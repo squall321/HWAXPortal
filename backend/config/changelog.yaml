@@ -28,6 +28,14 @@ entries:
       - "게이트웨이가 같은 Report Archive 보고서의 본문을 통째로 다시 쓰는 호출(update_report_draft · append_rows · patch_cells · remove_rows · restore_version — 호출 별칭 · invoke_tool 길도)과 보고서에 그림 넣기(figure_to_report)를 보고서 번호마다 한 줄로 부릅니다. 개인 Claude 가 그림 넣기와 보고서 고치기를 한꺼번에 부르면 RA 안에서 둘이 같은 판을 읽어, 나중 쓰기가 포털이 이미 '붙였다' 고 답한 그림 칸을 지웠습니다. 다른 보고서와 읽기 · 태그 같은 다른 RA 도구는 전처럼 바로 갑니다."
       - "게이트웨이를 지나지 않는 쓰기(RA 화면 · 다른 길로 붙은 RA MCP)와의 경합은 RA 의 행 잠금으로만 닫힙니다 — RA 담당 요청서(docs/leftovers-1121/ra-request-1122.md)의 3 이고, ai-draft/rows · 버전 되돌리기도 같은 꼴입니다. 반영은 게이트웨이 재기동입니다."
   - date: 2026-11-24
+    title: 기술 — 박스 간 DB 동기화 적용 명령(db-sync push · pull · mirror · rollback) — 짓기만, 돌리지 않음
+    tag: 기술
+    items:
+      - "infra/scripts/db-sync.sh 에 push · pull · mirror · rollback 과 ssh-check 를 더했습니다(docs/data-migration D5). 흐름은 계획 그대로 — rsync(ssh) → 받는 박스의 사전 백업(backup-local) → 기존 병합 · 복원 스크립트 → 원장(<HWAX_DATA_ROOT>/hwax/state/db-sync)입니다. 사용자 결정(11-24)으로 짓기만 했고(10-31 의 보류를 뒤집음) dev · cae00 어디서도 돌리지 않았습니다 — 실제로 돌릴지는 사람이 정합니다."
+      - "기본은 미리보기입니다 — 무엇이 어디로 가는지만 찍고 ssh 도 타지 않으며 아무것도 쓰지 않습니다. --apply 를 줘야 바꾸고, DB 를 지우고 덮는 mirror · rollback 은 '<이 박스>/<서비스>' 이름을 한 번 더 쳐야 합니다(입력이 비면 거부 — 크론은 늘 거부). 방향은 역할로 막습니다(역할 없는 박스는 거부 · publish 는 dev → staging → prod 쪽으로 · mirror 는 prod → staging 만, 원격의 실제 역할도 대조)."
+      - "부르는 스크립트는 레지스트리(infra/services.yaml)가 선언한 것만입니다 — 새 칸 merge_input(병합 스크립트의 로컬 덤프 입구) · restore_tool(통째 복원)을 AIDataHub · SignalForge 의 postgres 에 적었고, 선언이 없는 서비스(MX 백서 · HEAX · KooRemapper)는 거부합니다. 병합 스크립트가 입구 변수를 모르면 부르지 않습니다(모르는 채로 부르면 Drive 최신을 받아 다른 덤프를 병합한다). update-all 이 도는 중 · 다른 적용이 도는 중 · sha256 이 어긋날 때도 멈추고, 실패해도 자동으로 되돌리지 않고 되돌리는 명령을 알려 줍니다."
+      - "박스 목록은 infra/boxes.yaml(gitignore — 주소 · 계정은 그 박스에만, 꼴은 infra/boxes.yaml.example)이고 ssh-check 가 박스마다 ssh 키(BatchMode) · 원격 db-sync 판 · 실제 역할 · rsync 를 봅니다."
+  - date: 2026-11-24
     title: 기술 — 서버 LLM 에 맡기기(토큰 절감 2판)의 비교 테스트셋
     tag: 기술
     items:
