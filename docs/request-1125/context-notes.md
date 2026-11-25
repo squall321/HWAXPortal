@@ -259,3 +259,14 @@
   document.md 의 [그림 N] 과 같음 · capabilities version 0.4.0 · max_jobs 가 knobs.env 값. DFO-1 은 지우지 않고 stale 만 — 옛 행이 키트 수신 규칙(타입별 since
   커서)과 얽혀 지우면 되돌리기 어렵다. 운영 손 — update-all 로 받기 · 고를 일 둘(잡 여럿이면 knobs.env 의 `DOCFORGE_MAX_JOBS`, 판독을 심의 모델로 옮길 때만
   `DOCFORGE_VLM_THINKING_OFF=0`).
+- **KooRemapper** — 코드 `6a90a416`(`76067368..6a90a416` — R-04 → HP-71 → R-09 → 낙하 ⑥ 이미지 출처 받기(87 이 해제한 몫도 같은 판)), 그 뒤 문서만 `99eba022` ·
+  `6299c510`(main 끝). Drive `dist-20261125-161932Z`(되돌릴 판 `dist-20261123-094507Z`). 7판과 다른 파일 둘 — `BUILD_INFO.txt` `5ecdd57b…` ·
+  `koorm-frontend-dist.tar.gz` `97ec1a72…`, 그대로(C++ 안 바뀜) — 바이너리 `139036f2…` · `koorm-bin.tar.gz` `75229e42…` · cli.sif `38d7bb4d…` · api.sif `1a304194…` ·
+  mcp.sif `cd325209…` · nginx.sif `22ac1af7…` · postgres.sif `465519bc…`. 캐시 열쇠 — health 의 revision 캐시는 `bin/BUILD_INFO.txt` 파일이 열쇠라 반입하면 재기동
+  없이 revision 이 `6a90a416`(dev 실측), health `binary_sha256` = 바이너리 파일 sha256. DB 이관 없음(0026) · MCP 도구 120 · 연산 65(설명만 바뀜).
+  운영 손 — ① 운영 노드 반입(git 받기 + Drive 반입 — update-all 또는 `dist-from-drive.sh --restart`, 새 원자적 설치 스크립트는 git 으로 온다) ② **편지함 한 줄** —
+  「DynaForge 운영 노드 — API 를 띄우는 사용자가 `<데이터 뿌리>/svc/kooremapper` 에 새 폴더를 만들 수 있어야 한다(등록 레시피 내보내기 · storage 와 같은 소유자면
+  됨). 확인은 그 사용자로 `test -w <데이터 뿌리>/svc/kooremapper && echo ok`. 못 쓰면 등록은 되고 파일 내보내기만 경고」 ③ 확인 — KooRemapper cae00 점검 문서 §1-15
+  (health revision `6a90a41` · matches true · binary `139036f2…` · tools-map `heax-kooremapper_mcp` 120 · reachable) ④ 알고 받을 것 — stop · 재기동 스크립트가 인스턴스가
+  60초 안에 안 사라지면 rc≠0 으로 멈춘다(`KOORM_STOP_WAIT_S`). **포털 `_stop` 이 rc 를 삼키면 그 멈춤이 안 보인다 — 포털(87) 몫으로 넘긴다.** dev — R-04 기다리기
+  실물 통과 · 스모크 넷 · supervisor_log 4/4 · 백엔드 1166 · MCP 계약 13/13. KR-10 · KR-19 · KR-12 · ST-25-KR 은 기다린다.
