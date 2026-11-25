@@ -291,3 +291,11 @@
   D-709 적층 해석기 통로 · SP 서브모듈 0.4.105(키트 · coreapi 그대로). 알아 둘 것 — 출하 대응표(ST-24)가 역할 → 코어 부품 선 14줄을 긋는다(운영 허브 거울에 그
   key 가 있으면 선, 없으면 매달린 끝으로만 센다). 미룸 — ST-25 · ST-27 표본(R25-Q12 ~ Q16 답 뒤). 회귀 8015 통과 · 배포 확인 셋 통과.
   → BG-1: StepForge REST 가 이 판으로 운영에 들면 레지스트리 part 의미 바꾸기(ste 가지 `b4503ec`)에 남는 조건은 새 브리지 SIF(`e52a03a` — ste 교체 보고까지 묶임) 하나.
+- **SmartTwin MCP — SM-04 먼저 착지(c8)** — KooSlurm origin main `89172f14`(반영 기록 `d93017a5`). backend_5010 의 `jwt_required` · `optional_jwt` 가 `kst_` 를 SSO 꺼짐보다
+  먼저 본다(틀린 `kst_` 는 401 · optional 은 익명, 머리 없는 웹 요청은 그대로 admin) · `/api/me` 에 auth 칸(pat|jwt|sso_off). MCP `caller_identity` 는 `kst_` + auth=pat
+  일 때만 받고 root · anonymous 류는 거절, REST 관문(PatVerifier)도 auth=pat 만. dev — live 확인 셋 · backend 56 · MCP 352 통과. 못 봄 — 진짜 위임 PAT 로 그 사람 이름이
+  나오는지(이 세션의 게이트웨이 PAT 도 만료라 71 도 실호출 못 함 — 새 토큰은 사용자 몫이라 만들지 않았다).
+  운영 손 — **backend_5010 먼저, 그다음 smarttwin-mcp**(MCP 가 auth 칸을 요구해 backend 가 옛 판이면 MCP 호출이 전부 fail-closed). 위임 PAT 는 이제 admin 이 아니라 그
+  사람 권한(role user · dashboard)으로 풀린다(MCP 가 부르는 submit · preview · rerun 은 dashboard 만 요구 — 안 막힘). 운영이 11-24 에 건 `grant_only plat:smarttwin-run`
+  (요청서 MEMORY-2 — 되돌리기는 운영 배포 리포 README §8)은 이 판이 운영에 든 뒤 **위임 PAT 로 게이트웨이 `list_recent_jobs` 의 caller 가 사람 이름인지 본 다음** 푼다 —
+  푸는 결정은 운영 쪽 사용자. SM-01 ~ 03 · 카탈로그는 진행 중, 전달 길(git · Drive 이름)은 c8 이 끝에 준다.
