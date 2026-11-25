@@ -24,7 +24,7 @@
 
 ## 답 받기
 
-- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP(R25-10) / 기다림: DocForge · HEAXHub · 브리지 · SmartTwin MCP
+- [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: StepForge · SignalForge · KooRemapper · ste · MXWP · HEAXHub(R25-10) / 기다림: DocForge · 브리지 · SmartTwin MCP · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71)
 - [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기
 - [ ] 5차 동결 해제(87 알림) → 각 세션에 전하기
 - [x] 사용자 결정 넷(11-25 모두 권장안 — R25-9) → StepForge · DocForge 에 전하기
