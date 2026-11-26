@@ -6,6 +6,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { config } from '../../../config';
 import { copyText } from '../clipboard';
+import { raPathHref } from '../raLink';
 import { IconCheck, IconCopy, IconExternal } from '../icons';
 import { Figure, FigureShell } from './Figure';
 import { parseBlocks, parseInline, type Block } from './md';
@@ -256,8 +257,9 @@ function renderInline(s: string, keyBase: string): ReactNode[] {
         if (isAppVideoHref(tok.href)) {
           return <VideoBlock key={key} href={tok.href} label={tok.s} />;
         }
-        // 같은 오리진 절대경로는 apiBase 를 앞에 붙인다(이미지와 같은 규약).
-        const href = tok.href.startsWith('/') ? `${config.apiBase}${tok.href}` : tok.href;
+        // 같은 오리진 절대경로는 apiBase 를 앞에 붙인다(이미지와 같은 규약). RA 도구가 준 RA 루트 기준 경로(/w/…)는 포털의 RA 자리로(docs/ra-chat RC-1).
+        const local = tok.href.startsWith('/') ? (raPathHref(tok.href) ?? tok.href) : null;
+        const href = local ? `${config.apiBase}${local}` : tok.href;
         return (
           <a key={key} className="md-link" href={href} target="_blank" rel="noopener noreferrer">
             {tok.s}

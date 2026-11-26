@@ -12,6 +12,14 @@ export function raReportHref(url: unknown, reportId: number): string | null {
   return m && Number(m[1]) === reportId ? `/report-archive${url}` : null;
 }
 
+// RA 화면 경로(/w/<공간> 와 그 아래) — RA 도구는 보고서 주소를 RA 루트 기준(/w/<공간>/reports/<번호>)으로 준다. 포털 화면에는 /w/ 경로가 없다(App.tsx).
+const RA_PATH = /^\/w\/(?!\.{1,2}(?:[/?#]|$))[A-Za-z0-9._-]{1,120}(?:[/?#]|$)/;
+
+/** 챗 본문 링크 — LLM 이 RA 도구 결과의 경로를 그대로 옮긴 링크(/w/…)면 포털의 RA 경로(/report-archive/w/…). 아니면 null(docs/ra-chat RC-1). */
+export function raPathHref(href: string): string | null {
+  return RA_PATH.test(href) && !href.includes('..') ? `/report-archive${href}` : null;
+}
+
 /** 주소가 없는 옛 카드를 누른 순간 — 빈 탭을 열 수 있으면 오프너를 끊고 포털에 그 보고서의 공간을 물어(세션이 지났으면 apiFetch 가 되살려 다시
  *  묻는다) 그 탭을 옮기고 true(화면은 링크의 기본 이동을 막는다). 못 물으면(권한 없음 · 세션을 되살리지 못함 · 끊김) 그 탭은 RA 첫 화면으로 간다.
  *  탭을 못 열면(팝업 막기) false — 묻지 않는다. 화면은 기본 이동을 막지 않아 링크(RA 첫 화면 · 새 탭)가 그대로 간다. 기다린 뒤의 window.open 은
