@@ -602,3 +602,18 @@ L21-24 의 1 · 2 · 4 · 5 를 고쳤다(포털 `wt1123/cae00-fixes` → main, 
   update-all 끝 요약에 실패로 남는다. 사이클(`hwax_restart_cycle`)의 `|| true` 는 다른 서비스와 같이 그대로 둔다 — 함수 안의 exit 가 서브셸을 끝낸다.
 - 지금 cae00 은 `KOORM_LOCAL_PARKED` 라 이 구역 앞(5)에서 멈춰 당장 닿지 않는다. dev · 멈춤을 푼 박스에서 먹는다.
 - 시험 — `test_request_1027_update_all.py` R04 둘(사이클 꼴로 불러도 start 0회 · SUB=6 · ✗ 줄 둘 · 표지 지움 / 6 의 skip 줄), 고침을 되돌리면 붉음.
+
+## L21-31 cae00 6차 답 일부(11-26 — 받은 편지함 2026-11-26, 71 경유)
+
+답 원문은 리포에 두지 않는다. Q40 ~ 44 · 46 · 47 · 51 은 「update-all 뒤 채움」 으로 비었고 Q49 는 11-30 에 센다. request-1125 몫(Q45 → c8 · Q48 → ste ·
+브리지 · Q50/R25-Q5 → MXWP · R25-Q12 ~ Q16 → StepForge)은 71 이 넘겼다.
+
+- **update-all** — 15:13 에 걸었으나 남의 심의 하나가 14:40 뒤로 멈춘 채 자리를 잡아 「일 없음 기다림」(최대 3시간)이 비지 않음으로 끝났다. 18:34 에 그 심의를
+  접고 18:47 에 다시 걸어 18:48 「일 없음」 뒤 이어 돌았다. 끝 코드 · 시각은 아직 — 멈춘 심의는 `../delib-ops/context-notes.md` DO-D17(N26-1).
+- **Q45 stcx** — 운영 헤드 사본은 다른 계정 소유이고 헤드에서 git ssh 로 못 나가 `git pull` 대신 포털 박스의 git bundle 로 소유 계정이 빨리 감기
+  (b6a3d75 → d93017a5, 22커밋). smarttwin-mcp 유닛은 운영 배포 리포의 판 폴더에서 돌아 `start_production.sh` 는 재기동만 한다 — MCP 코드는 배포 리포
+  판 길(build → push → stage → swap)로 따로 바꿨다. 다음 SM 판 안내는 이 길을 적는다. grant_only 는 `plat:smarttwin-run` 이 smart-twin-mcp 백엔드 전체를
+  묶는 한 항목이라 통째로 둔다(SM-01 판까지). 위임 PAT caller 는 못 봄(위임 PAT 수단 없음). 이미지 판 바로잡음은 `../smarttwin-pipeline/context-notes.md` SP-6.
+- **Q48 ste** — 자동 교체 아직(새 기다리개 기한 11-30 23:59) · 라이선스 서버 줄 안 넣음 → ste · 브리지 계속 묶음. **Q50 MW-08** — 보관(실행 결과는 채울 것).
+- **R25-Q12 ST-27 표본** — 운영 노드 StepForge 인스턴스에서 돌려야 한다(이 박스의 StepForge 는 동결 사본 · 인스턴스 0). 다음 글은
+  「`instance://heax_app_step_forge` 는 운영 노드에서」 로 고친다.
