@@ -391,3 +391,17 @@
   - images{} 는 아직 못 봤다. 템플릿 잡이 없었고(152개 모두 직접 낸 잡), 운영이 부분 충격 템플릿 잡을 내는 중이다.
   - 그 과정에서 대시보드 백엔드가 업로드 공유 폴더를 못 만들면 /tmp 로 조용히 물러나는 결함이 나왔다. 6월 실행 계정이 바뀐 뒤 파일을 같이 올리는 제출이 모두 막혔던 것으로 보인다. 운영이 22:31 에 폴더를 만들어 고쳤고, 기동 때 실패로 알리라는 제안이 왔다.
 - **Q47 → SignalForge.** 모두 통과(sf-mcp 다시 뜸 · 2절 · 3절 여섯 호출).
+
+## R25-23 착지 · 답 묶음 — KooRemapper 셋 · StepForge ST-25 지음 · DocForge · SignalForge(11-26)
+
+- **KooRemapper(git pull 만, Drive 그대로 dist-20261125-161932Z) — 87 에 넘김.**
+  - 804a7acb: 레시피 마지막 자리 storage/.recipes. Q44 운영 제안 그대로다.
+  - 664a2f28 · b931c275(§1-16): 진행 중 올리기를 기다리는 재기동. `uploads_in_flight` · `KOORM_UPLOAD_DRAIN_S` 300 · `KOORM_STOP_WAIT_S` 60 · 넘으면 rc 1 로 멈춘다. 그쪽 사용자 결정 11-26 「수를 보이고 재기동이 기다린다」.
+  - 포털 `_stop` 이 rc 를 삼키면 이 멈춤이 안 보인다. 87 가지 wt1126/koorm-stop-rc(566f72f6)와 함께 싣도록 부탁했다.
+  - ST-25-KR 4f8f73ec · e24ea649(§1-17). 블록 지문 8cc5a705…dc171 은 StepForge origin 블록에서 다시 재서 같았다.
+  - 허브 관리자 몫: 두 블록이 같은 바이트여야 하고, part_role · cae_part · cad_part · part 를 모두 코어 공개로 둔다(SP _open_end).
+- **StepForge ST-25** — feat-1125 6eb72bd6 으로 지었다(push 뒤 d7be049c..b7e937b6). 착지 값은 그쪽이 곧 준다. KooRemapper 와 같은 회차여야 한다.
+  - 「basis role → role+name」 경고는 포털 · 게이트웨이 · 에이전트 서버에 읽는 곳이 없음을 확인했다(grep 0).
+- **DocForge** — release 를 옮기지 않는다(3a578a29 뒤가 문서 커밋뿐). 판독 품질 참고 둘은 그쪽 체크리스트의 열린 줄로 뒀다.
+- **SignalForge 권고(선택)** — 박스 어휘표에 search_voc 다음 호출 줄을 넣는다면 core_type/core_key 나 strict=true 꼴로. 87 에 넘겼다.
+- 같은 묶음으로 87 에 넘긴 것: 심의 보고서 RA 제출 표준(docs/ra-delib-standard — 포털 05fa692e · 게이트웨이 c27a2f9, 사람 몫 server-setup) · 포털 RA 링크 접두(ac2cb88d) · 첫 화면 RA 부서 카드(7125a146) · MX 백서 191행 고침(다시).
