@@ -55,7 +55,7 @@
 - [x] 6차 편지함 나가면 사용자에게 「서버 업데이트 가능」 알림 — `2026-11-26.md`(`4c84e2f5`) · 11-25 알림(R25-18)
 - [x] DocForge 0.4.0 판 → 87(6차 글 덧붙임 절) — release `3a578a29` · Drive `dist-20261125-211307Z` · HEAXHub 판 `b4309c0` 으로 고침 부탁(R25-20)
 - [x] 87 이 DocForge 덧붙임 · HEAXHub 판 줄을 올렸는지 확인 — `0e91cace`(9절 · Q51 · 한눈에 표 HEAXHub `b4309c0` · DocForge release 만)
-- [ ] cae00 update-all 끝 → DocForge 에 알리기(그때까지 release 고정)
+- [x] cae00 update-all 끝 → DocForge 에 알리기(R25-22)
 - [ ] SmartTwin MCP SM-01 ~ 03 · 카탈로그 — KooSlurm main 에 넣기 전 알림 받기(6차 판 `d93017a5` 와 어긋남 막기)
 - [x] 6차 글 덧붙임 — grant_only 셋(`train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`)은 SM-01 판까지 남김 · 운영 이미지 v128 · v50 한 줄 → 87(R25-19) — `4b82e8da`(5절 · Q45 고침 확인)
 - [ ] SM-01 판이 운영에 든 뒤 — 셋의 grant_only 를 풀어도 된다고 운영에 알리기(R25-19)
@@ -63,8 +63,11 @@
 ## 6차 운영 답(R25-21)
 
 - [x] 일부 답(11-26) 몫별 전달 — Q45 → c8 · Q48 → ste-06 · 브리지 · Q50/R25-Q5 → MXWP · R25-Q12 ~ Q16 → StepForge · N26-1 · 공통 → 87
-- [ ] 채울 칸(Q40 ~ 44 · 46 · 47 · 51 · Q50 실행 결과 · Q45 `images{}`) 오면 다시 나누기
+- [x] 채울 칸(Q40 ~ 44 · 46 · 47 · 51 · Q50 실행 결과) — 둘째 답 몫별 전달(R25-22) · 남은 것 Q45 `images{}`(템플릿 잡 진행 중)
 - [ ] c8 답 — v54 Post · Post GUI SIF 의 Drive 위치 · 누구 몫 → 다음 편지함
 - [ ] c8 — `image_version_check` 가 얇은 배포 사본에서 스크립트를 찾도록 고침(다음 SM 판)
 - [ ] StepForge ST-25 착지 판 → 87 · 블록 바이트 · sha 는 KooRemapper 에 직접
-- [ ] cae00 update-all 끝 → DocForge 에 release 풀어도 된다고 알리기(Q51 채워 오면)
+- [x] cae00 update-all 끝 → DocForge 에 release 풀어도 된다고 알리기 — 19:52:57 끝 · 시험 덱 일곱 줄 맞음(R25-22)
+- [ ] 87 — 6차 글 191행(MX 백서 seed 문장) · 19행 판 `7dfb637` 고침이 다음 편지함에 들었는지 확인(운영이 옛 문장을 되풀이함 — R25-22)
+- [ ] c8 — 대시보드 업로드 폴더를 못 만들면 기동 실패로(운영 제안 — R25-22)
+- [ ] Q45 `images{}` — 운영 템플릿 잡 끝나면 c8 · 87 에
