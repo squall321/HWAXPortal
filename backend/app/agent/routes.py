@@ -673,6 +673,68 @@ async def open_ra_report(
     return {"url": fallback}
 
 
+_RA_HOME_DEPTH = 8          # 홈 부서에서 위로 올라갈 상한(그룹 · 실 · 사업부 …) — 순환 · 깊은 나무에서 멈춘다
+
+
+@router.get("/ra/home")
+async def ra_home(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """챗 첫 화면의 '내 부서' — 그 사람의 RA 홈 부서와 그 위 사슬(docs/ra-chat RC-2 · RC-3). 그 사람 명의로 RA `GET /api/me` 의
+    home_workspace_slug(RA 가 '권위 있는 소속 신호' 라 적은 칸)를 읽고, `GET /api/workspaces` 의 parent_slug 로 위로 올라간다.
+    답은 {"home": {slug, name, kind}, "chain": [위 → 아래, 끝이 홈]}. RA 연결이 없거나 · 홈 부서가 없거나 · RA 가 실패하면
+    {"home": null, "reason": …} 를 200 으로 — 첫 화면은 카드 없이 그대로 뜬다(RC-5)."""
+    ensure(principal, "plat:reportarchive")
+    try:
+        token, via_sso, _conn = await _ra_user_token(request, settings, principal)
+    except AuthError:
+        return {"home": None, "reason": "no_connection"}
+    remint = None
+    if via_sso:
+        email = principal.email or principal.subject
+
+        async def remint() -> str | None:
+            ra_sso.forget(email)
+            return await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+    ra = _dfd.RaSession(settings.ra_base_url, token, "", remint)      # 두 창구 모두 부서 머리가 필요 없다(RA get_current_user_no_workspace)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as cli:
+            me = await ra.call(cli, "GET", "/api/me")
+            if me.status_code != 200:
+                logger.info("ra_home: /api/me HTTP %s", me.status_code)
+                return {"home": None, "reason": "ra_error"}
+            home = ((me.json() or {}).get("data") or {}).get("home_workspace_slug")
+            if not (isinstance(home, str) and _RA_SLUG_OK.fullmatch(home)):
+                return {"home": None, "reason": "no_home"}
+            ws = await ra.call(cli, "GET", "/api/workspaces")
+            if ws.status_code != 200:
+                logger.info("ra_home: /api/workspaces HTTP %s", ws.status_code)
+                return {"home": None, "reason": "ra_error"}
+            rows = (ws.json() or {}).get("data")
+    except (httpx.HTTPError, ValueError, AttributeError) as exc:
+        logger.info("ra_home: RA 를 읽지 못했다(%s)", type(exc).__name__)
+        return {"home": None, "reason": "ra_error"}
+    if isinstance(rows, dict):
+        rows = rows.get("items")
+    by_slug = {r["slug"]: r for r in rows or [] if isinstance(r, dict) and isinstance(r.get("slug"), str)}
+    chain: list[dict] = []
+    seen: set[str] = set()
+    cur = home
+    while isinstance(cur, str) and cur not in seen and len(chain) < _RA_HOME_DEPTH:
+        row = by_slug.get(cur)
+        if row is None or not _RA_SLUG_OK.fullmatch(cur) or row.get("kind") == "personal":
+            break                       # 보이지 않는 노드 · 꼴이 틀린 이름 · 개인 공간에서 멈춘다
+        seen.add(cur)
+        chain.append({"slug": cur, "name": str(row.get("name") or cur)[:128], "kind": str(row.get("kind") or "")})
+        cur = row.get("parent_slug")
+    if not chain:
+        return {"home": None, "reason": "no_home"}
+    chain.reverse()
+    return {"home": chain[-1], "chain": chain}
+
+
 @router.get("/conversations")
 def list_conversations(
     request: Request,

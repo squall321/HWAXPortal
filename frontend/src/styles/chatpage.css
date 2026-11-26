@@ -300,6 +300,25 @@
   color: var(--muted);
   font-size: 0.95rem;
 }
+/* 나의 Report Archive 조직(그룹 › 파트) — 인사 아래 작은 줄, 전체 사슬은 title 로(docs/ra-chat) */
+.cx-hero-org {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin: var(--sp-2) 0 0;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.cx-hero-org span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cx-hero-title {
   margin: 0.35rem 0 0;
   font-size: clamp(1.7rem, 3.4vw, 2.3rem);

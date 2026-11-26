@@ -11,11 +11,11 @@
 
 ## 2. 내 부서 시작 카드
 
-- [ ] 서버 `GET /agent/ra/home` — 그 사람 명의로 `/api/me` · `/api/workspaces` → `{home, chain}`, 실패는 `{home: null, reason}`
-- [ ] 서버 시험 — 사슬 · 개인 공간 제외 · 연결 없음 · 홈 없음 · RA 실패 · 순환 · slug 꼴 · 권한
-- [ ] 화면 — 한 탭에 한 번 묻기 · 인사 아래 소속 표기 · 시작 카드 맨 앞
-- [ ] 타입 검사 · 빌드 · 포털 시험
-- [ ] 업데이트 이력(changelog.yaml)
-- [ ] CLAUDE.md 문서 표에 한 줄
-- [ ] 커밋 · push
+- [x] 서버 `GET /agent/ra/home` — 그 사람 명의로 `/api/me` · `/api/workspaces` → `{home, chain}`, 실패는 `{home: null, reason}`
+- [x] 서버 시험(`test_ra_home.py` 36건 · RA 열기 시험 포함) — 사슬 · 개인 공간 제외 · 연결 없음 · 홈 없음 · RA 실패 · 순환 · slug 꼴 · 권한
+- [x] 화면 — 한 탭에 한 번 묻기 · 인사 아래 소속 표기 · 시작 카드 맨 앞
+- [x] 타입 검사 · 빌드 · 포털 전체 회귀(5,921 통과)
+- [x] 업데이트 이력(changelog.yaml)
+- [x] CLAUDE.md 문서 표에 한 줄
+- [x] 커밋 · push
 - [ ] dev 반영(포털 재기동 · 빌드) — 무엇이 함께 켜지는지 먼저 본다

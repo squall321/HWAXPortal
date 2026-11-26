@@ -15,6 +15,7 @@ import {
   IconCalc,
   IconGrid,
   IconLink,
+  IconOrg,
   IconPanel,
   IconPlus,
   IconSliders,
@@ -23,6 +24,7 @@ import {
 } from '../components/chat/icons';
 import { loadSidebarOpen, saveSidebarOpen } from '../state/chatStore';
 import { useInteractionStatus } from '../lib/useInteractionStatus';
+import { fetchRaHome, type RaHome } from '../api/raHome.api';
 import '../styles/chat.css';
 import '../styles/chatpage.css';
 
@@ -76,6 +78,17 @@ function greeting(): string {
   return '좋은 저녁이에요';
 }
 
+// 내 부서 시작 카드 — RA 홈 부서 게시판의 최근 2주 보고서에서 이슈를 정리하게 한다(docs/ra-chat RC-4). 게시판 slug 를 함께 적어
+// LLM 이 list_reports 의 board 칸을 짐작하지 않게 한다. 조직 단위는 게시된 게시판으로 정해진다(RA list_boards 설명).
+function raStart(home: { slug: string; name: string }): (typeof STARTS)[number] {
+  return {
+    icon: IconOrg,
+    title: `${home.name} 최근 이슈`,
+    sub: 'Report Archive 게시판의 최근 2주 보고서에서',
+    prompt: `Report Archive 의 ${home.name} 게시판(${home.slug})에 최근 2주 동안 올라온 보고서를 찾아 주요 이슈를 정리해줘`,
+  };
+}
+
 const isNarrow = () => window.matchMedia('(max-width: 900px)').matches;
 
 export default function ChatPage() {
@@ -83,6 +96,19 @@ export default function ChatPage() {
   const ix = useInteractionStatus(Boolean(user));
   const can = useCan();
   const { messages, activeId, setInput, newConversation, openServerConversation } = useChat();
+  // 나의 Report Archive 조직(그룹 › 파트) — RA 권한이 있는 사람에게만 한 탭에 한 번 묻는다. 못 받으면 카드 · 표기 없이 그대로(RC-5).
+  const canRa = can('plat:reportarchive');
+  const [ra, setRa] = useState<RaHome | null>(null);
+  useEffect(() => {
+    if (!user || !canRa) return;
+    let live = true;
+    void fetchRaHome().then((h) => live && setRa(h));
+    return () => {
+      live = false;
+    };
+  }, [user, canRa]);
+  const raChain = ra?.home ? (ra.chain?.length ? ra.chain : [ra.home]) : [];
+  const starts = [...(ra?.home ? [raStart(ra.home)] : []), ...STARTS.filter((c) => !c.need || can(c.need))].slice(0, 4);
   const location = useLocation();
   const navigate = useNavigate();
   // 다른 화면이 만든 서버 대화를 연다(절차 실행을 챗으로 가져가기 — docs/procedures W-115). 주소 상태로 받고 곧 비운다 — 새로고침 ·
@@ -167,6 +193,12 @@ export default function ChatPage() {
                 {greeting()}
                 {user?.display_name ? `, ${user.display_name}님` : ''}
               </p>
+              {raChain.length > 0 && (
+                <p className="cx-hero-org" title={raChain.map((n) => n.name).join(' › ')}>
+                  <IconOrg width={14} height={14} />
+                  <span>Report Archive · {raChain.slice(-2).map((n) => n.name).join(' › ')}</span>
+                </p>
+              )}
               <h1 className="cx-hero-title">무엇을 도와드릴까요?</h1>
               <Composer
                 ref={composerRef}
@@ -187,24 +219,22 @@ export default function ChatPage() {
               ) : (
                 <>
                   <div className="cx-starts">
-                    {STARTS.filter((c) => !c.need || can(c.need))
-                      .slice(0, 4)
-                      .map((c) => (
-                        <button
-                          type="button"
-                          key={c.title}
-                          className="cx-start"
-                          onClick={() => fillPrompt(c.prompt)}
-                        >
-                          <span className="cx-start-ic" aria-hidden="true">
-                            <c.icon width={17} height={17} />
-                          </span>
-                          <span className="cx-start-text">
-                            <b>{c.title}</b>
-                            <span>{c.sub}</span>
-                          </span>
-                        </button>
-                      ))}
+                    {starts.map((c) => (
+                      <button
+                        type="button"
+                        key={c.title}
+                        className="cx-start"
+                        onClick={() => fillPrompt(c.prompt)}
+                      >
+                        <span className="cx-start-ic" aria-hidden="true">
+                          <c.icon width={17} height={17} />
+                        </span>
+                        <span className="cx-start-text">
+                          <b>{c.title}</b>
+                          <span>{c.sub}</span>
+                        </span>
+                      </button>
+                    ))}
                   </div>
                   <button type="button" className="cx-pick" onClick={() => setPicker(true)}>
                     <IconSliders width={15} height={15} />
