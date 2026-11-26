@@ -26,7 +26,7 @@
 
 - [ ] 각 세션의 받음 · 차례 · 착지 판(동결 해제 뒤 push) — 받음 · 차례 답: 아홉 곳 모두(R25-10 · SmartTwin MCP c8 은 R25-17) · 가지 커밋: SignalForge `sfo-1125`(SFO-1 · 2 · 3 · 5 · HP-71) · ste 로컬 main(PA-02 `2397f32` · BG-6 `21a1718`) · HEAXHub 로컬 main(HH-18 `c9f39fd` · HP-71 `0375156` · SE-8 `38baee7`) · DocForge 가지 `req1125`(17건 · 커밋 14 · 0.4.0 배치 대기) · KooRemapper 가지 `corelink-int`(R-04 · HP-71 · R-09 — 해제 뒤 R-04 먼저) · StepForge 갈래 `feat-1125`(ST-20 ~ 24 · 26 · BG-1 · ST-27 틀 — 남은 것 ST-25 · ST-27 표본)
 - [x] ST-25 짓기 전 물음 넷 → 편지함 R25-Q13 ~ Q16(R25-13)
-- [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기(StepForge 가 바이트 · sha 를 직접 함께 보낸다 — R25-13)
+- [x] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기(StepForge 가 바이트 · sha 를 직접 함께 보낸다 — R25-13) — KooRemapper 가 블록 지문 8cc5a705…c171 을 StepForge origin 블록에서 다시 재서 같았다(R25-23)
 - [x] 5차 동결 해제(사용자 결정 11-25 — R25-16) → 일곱 세션에 전함 · ste-06 · 브리지는 계속 묶음 전함
 - [x] 사용자 결정 넷(11-25 모두 권장안 — R25-9) → StepForge · DocForge 에 전하기
 - [ ] 운영 쪽 답(편지함 2026-11-25) → 해당 세션에 전하기 — R25-Q5 · Q12 ~ Q16 전함(R25-21) · 남은 것 Q1 ~ Q4 · Q6 ~ Q11 중 아직 안 온 것
@@ -66,10 +66,10 @@
 - [x] 채울 칸(Q40 ~ 44 · 46 · 47 · 51 · Q50 실행 결과) — 둘째 답 몫별 전달(R25-22) · 남은 것 Q45 `images{}`(템플릿 잡 진행 중)
 - [ ] c8 답 — v54 Post · Post GUI SIF 의 Drive 위치 · 누구 몫 → 다음 편지함
 - [ ] c8 — `image_version_check` 가 얇은 배포 사본에서 스크립트를 찾도록 고침(다음 SM 판)
-- [ ] StepForge ST-25 착지 판 → 87 · 블록 바이트 · sha 는 KooRemapper 에 직접
+- [x] StepForge ST-25 착지 판 → 87 · 블록 바이트 · sha 는 KooRemapper 에 직접 — Drive dist-20261126-215721Z(71982cb4) → 87(R25-24)
 - [x] cae00 update-all 끝 → DocForge 에 release 풀어도 된다고 알리기 — 19:52:57 끝 · 시험 덱 일곱 줄 맞음(R25-22)
 - [ ] 87 — 6차 글 191행(MX 백서 seed 문장) · 19행 판 `7dfb637` 고침이 다음 편지함에 들었는지 확인(운영이 옛 문장을 되풀이함 — R25-22)
 - [ ] c8 — 대시보드 업로드 폴더를 못 만들면 기동 실패로(운영 제안 — R25-22)
 - [ ] Q45 `images{}` — 운영 템플릿 잡 끝나면 c8 · 87 에
 - [x] KooRemapper 착지 셋(804a7acb · 664a2f28 · ST-25-KR 4f8f73ec) → 87(R25-23)
-- [ ] StepForge ST-25 착지 값(push · Drive · SIF 수 둘 · 손 할 일 · DB 이행) → 87 — KooRemapper 와 같은 회차
+- [x] StepForge ST-25 착지 값(push · Drive · SIF 수 둘 · 손 할 일 · DB 이행) → 87 — KooRemapper 와 같은 회차 — 다섯 다 받아 87 에 넘김(R25-24)
