@@ -341,3 +341,23 @@
   release 로 · main 해시를 적었으면 바꾸거나 빼기」 를 전했다.
 - 87 이 올렸다(`0e91cace` — 6차 글 9절 · Q51). 확인 — 한눈에 표 HEAXHub `b4309c0` · DocForge 는 release `3a578a29` 만(main 해시 뺌) · 파일 sha256 과 캐시 열쇠를 이름 붙여 ·
   머리말에 「HEAXHub 판도 바뀌었다」 한 줄. 이로써 6차 글에 request-1125 몫이 다 실렸다 — 남은 것은 ste · 브리지(Q35 교체 보고 뒤) · SmartTwin SM-01 ~ 03(다음 판).
+
+## R25-21 6차 운영 답(일부) — 몫별로 나눔(11-26)
+
+- 사용자가 붙여 넣은 운영 답(11-26 KST). Q40 ~ 44 · 46 · 47 · 51 은 「update-all 뒤 채움」, Q49 는 11-30. update-all 은 15:13 에 걸었으나 남의 심의 하나가 14:40 뒤로
+  멈춰 일 없음 기다림(3시간)이 안 비었고, 그쪽 사용자 결정으로 18:34 에 접은 뒤 18:47 에 다시 걸었다(N26-1 — 에이전트 서버 몫이라 87 에 넘김).
+- **Q45 → c8.** KooSlurm `d93017a5` 반영(15:35 ~ 15:38). 헤드 사본은 다른 계정 소유 · 헤드에서 git ssh 막힘 → 포털 박스의 git bundle 로 fast-forward(`b6a3d75` → `d93017a5`,
+  22커밋). smarttwin-mcp 유닛은 운영 배포 리포 판 폴더에서 돌아 `start_production.sh` 는 재기동만 한다 — MCP 코드는 배포 리포 판 길(build → push → stage → swap)로 따로.
+  차례는 backend 15:36:02 → MCP 15:38:01, `/api/me` auth 칸 확인. 결함 하나 — `catalog_run image_version_check` 가 얇은 배포 사본에서 스크립트를 못 찾는다(c8 몫).
+  헤드 사본에서 직접 돌려 DIFF 9 · ERR 0. **바로잡음 — 깔린 판은 Pre v128 · Post v53**(SP-5 · 6차 글의 「Post v50」 은 틀림, NFS `.version` 11-23 20:55 바뀜).
+  대기 꾸러미는 Pre v141 맞음 · Post · Post GUI 는 v54 아님(Post 대기본 = 깔린 v53) → 두 SIF 를 다시 받아야 함 — Drive 위치 · 누구 몫인지 c8 에 물었다.
+  grant_only 는 `plat:smarttwin-run` 이 백엔드 전체를 묶는 한 항목이라 통째로 유지(SM-01 판까지). `images{}` · 위임 PAT caller 는 못 봄.
+- **Q48 → ste-06 · 브리지.** 자동 교체 아직 — 11-23 기다리개가 11-26 00:08 기한에 멈춤(ste 잡 22 ~ 27), 새 기다리개 기한 11-30 23:59. 라이선스 서버 줄 안 넣음 →
+  `0313ceb` 계속 보류 · ste 로컬 34커밋 · 브리지 SIF `e52a03a` 계속 묶음.
+- **Q50 · R25-Q5 → MXWP.** restricted 두 장 모두 시드(owner = 시드 관리자 · change_log `seed` · slug 골든 06 · 08) → 운영 사용자 결정 「보관」, 실행 결과는 채울 것.
+- **R25-Q12 ~ Q16 → StepForge.** ST-27 표본은 운영 노드 StepForge 인스턴스에서(포털 박스 사본은 동결 · 인스턴스 0), 표본 JSON 은 사람 몫 · /data 밖으로 안 옮김.
+  ST-25 재료 — `kind_parent`(부모 part key · 100개 · 깊이 3) · 집합의 갈래는 아래 부품의 kind_parent 가 집합 key 를 가리키는 꼴 · 같은 꼴 위 칸 `whole`(구성 상위 · 51개) ·
+  별칭은 `properties.aliases`(189/224 · 1,111) · 잡음 낱말은 스크립트 안 `strip_noise`(요청서의 `part_id_rule.yaml` 인용은 틀림) · 재현 규칙(name_match · head_match ·
+  붙인 글자 수 대 낱말 수). **바로잡음 — conflict 는 셌다**: 이름+역할 함께 10,655 중 다름 · 위아래 아님 5,240(6.9%) → ST-25 꼴 51,518(68.3%). 역할 대응이 그 뒤 바뀌어
+  StepForge 가 지은 뒤 같은 꼴로 다시 세는 것이 맞다. 이로써 ST-25 짓기 전 물음 넷이 다 풀렸다 — 지으면 블록 바이트 · sha 를 KooRemapper 에 직접(R25-13).
+- 다음 편지함에 고쳐 실을 것(87 에 전함) — SM 판 안내에 배포 리포 판 길 · git bundle · Post v53 바로잡음 · ST-27 명령은 운영 노드에서.

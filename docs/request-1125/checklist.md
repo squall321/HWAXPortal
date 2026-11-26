@@ -29,7 +29,7 @@
 - [ ] StepForge ST-25 블록(basis enum 바뀜 여부) → KooRemapper 에 전하기(StepForge 가 바이트 · sha 를 직접 함께 보낸다 — R25-13)
 - [x] 5차 동결 해제(사용자 결정 11-25 — R25-16) → 일곱 세션에 전함 · ste-06 · 브리지는 계속 묶음 전함
 - [x] 사용자 결정 넷(11-25 모두 권장안 — R25-9) → StepForge · DocForge 에 전하기
-- [ ] 운영 쪽 답(편지함 2026-11-25) → 해당 세션에 전하기
+- [ ] 운영 쪽 답(편지함 2026-11-25) → 해당 세션에 전하기 — R25-Q5 · Q12 ~ Q16 전함(R25-21) · 남은 것 Q1 ~ Q4 · Q6 ~ Q11 중 아직 안 온 것
 - [x] IR-24 등록 사본은 DocForge 배치가 고친다 — 두 세션에 전함(R25-11)
 - [x] ste PA-02 — 그쪽 사용자 결정 11-25: 도는 잡의 64 MB 넘는 파일은 잡 끝난 뒤 한 번 받기(R25-10)
 - [x] StepForge ST-22 · ST-23 — 그쪽 사용자 결정 11-25(새 칸만 · 14,126)
@@ -59,3 +59,12 @@
 - [ ] SmartTwin MCP SM-01 ~ 03 · 카탈로그 — KooSlurm main 에 넣기 전 알림 받기(6차 판 `d93017a5` 와 어긋남 막기)
 - [x] 6차 글 덧붙임 — grant_only 셋(`train_pytorch_gpu` · `submit_distributed_train` · `submit_lsdyna_remote`)은 SM-01 판까지 남김 · 운영 이미지 v128 · v50 한 줄 → 87(R25-19) — `4b82e8da`(5절 · Q45 고침 확인)
 - [ ] SM-01 판이 운영에 든 뒤 — 셋의 grant_only 를 풀어도 된다고 운영에 알리기(R25-19)
+
+## 6차 운영 답(R25-21)
+
+- [x] 일부 답(11-26) 몫별 전달 — Q45 → c8 · Q48 → ste-06 · 브리지 · Q50/R25-Q5 → MXWP · R25-Q12 ~ Q16 → StepForge · N26-1 · 공통 → 87
+- [ ] 채울 칸(Q40 ~ 44 · 46 · 47 · 51 · Q50 실행 결과 · Q45 `images{}`) 오면 다시 나누기
+- [ ] c8 답 — v54 Post · Post GUI SIF 의 Drive 위치 · 누구 몫 → 다음 편지함
+- [ ] c8 — `image_version_check` 가 얇은 배포 사본에서 스크립트를 찾도록 고침(다음 SM 판)
+- [ ] StepForge ST-25 착지 판 → 87 · 블록 바이트 · sha 는 KooRemapper 에 직접
+- [ ] cae00 update-all 끝 → DocForge 에 release 풀어도 된다고 알리기(Q51 채워 오면)
