@@ -5,6 +5,7 @@ import { listSetupRequests, SETUP_CHANGED } from '../../api/setup.api';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { useInteractionStatus } from '../../lib/useInteractionStatus';
+import { prefetchPostBoard } from '../../api/raPost.api';
 import { BrandMark } from '../ui/BrandMark';
 import { Menu, MenuSep } from '../ui/Menu';
 import { NoticeBell } from './NoticeBell';
@@ -33,6 +34,11 @@ export function AppHeader() {
   const isAdmin = Boolean(user?.groups.includes('portal-admin'));
   // 상호작용 기록(docs/interaction-data) — 이 박스가 켰을 때만 '내 기록'(모두) · '상호작용 기록'(분석가만 — 관리자 전권에 딸려 오지 않는다) 메뉴
   const ix = useInteractionStatus(Boolean(user));
+  // 심의 보고서를 RA 시스템 공간에 올리는 단추를 그릴지 — 한 탭에 한 번 미리 묻는다(결과 카드는 그리면서 묻지 않는다, docs/ra-delib-standard)
+  const canRa = can('plat:reportarchive');
+  useEffect(() => {
+    if (user && canRa) prefetchPostBoard();
+  }, [user, canRa]);
   // 안 된 배선 건수 — 상자는 사용자 관리 맨 위에 있고, 여기 '관리' 옆 숫자가 그 상자로 부른다(안 본 곳에 둔 할 일은 없는 셈이다).
   // 세션에 한 번 + 상자에서 '확인함' 을 누를 때(SETUP_CHANGED). 확인이 2초 걸릴 수 있어 화면 이동마다 다시 묻지 않는다.
   const [setupN, setSetupN] = useState(0);

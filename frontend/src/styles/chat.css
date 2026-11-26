@@ -1360,6 +1360,11 @@ body.dock-open .page-wide {
 .dv-outcome { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .dv-card { display: flex; flex-direction: column; gap: 0.18rem; padding: 0.65rem 0.85rem; border: 1px solid var(--border); border-radius: 10px; background: var(--card); min-width: 200px; text-decoration: none; }
 .dv-card.report:hover { border-color: var(--accent); }
+.dv-card.post { max-width: 340px; }
+.dv-post-actions { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
+.dv-post-btn { align-self: flex-start; margin-top: 0.3rem; padding: 0.3rem 0.7rem; font-size: 0.74rem; }
+.dv-post-actions .dv-post-btn { margin-top: 0; }
+.dv-post-err { color: var(--danger); }
 .dv-card-k { font-size: 0.66rem; letter-spacing: 0.05em; color: var(--muted); }
 .dv-card-t { font-size: 0.8rem; font-weight: 700; color: var(--fg); }
 .dv-card-s { font-size: 0.68rem; color: var(--muted); }

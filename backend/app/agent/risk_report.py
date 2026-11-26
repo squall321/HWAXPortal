@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.agent import docforge_delivery as _dfd
+from app.agent import ra_post as _ra_post
 from app.agent import report_figures as _figs
 from app.agent import upload as _upload
 from app.auth.errors import AuthError
@@ -191,7 +192,13 @@ def _material(mat: dict) -> dict | None:
     rid, sent = ledger.get("report_id"), ledger.get("pages_sent") or 0
     if not ((rid is None or _count(rid, 1)) and _count(sent, 0) and sent <= len(pages) and (rid is not None or sent == 0)):
         return None
-    return {"template_id": tpl["id"], "template_version": tpl["version"], "title": title, "tags": tags, "pages": pages,
+    tid, ver = tpl["id"], tpl["version"]
+    box = _ra_post.box_template()
+    if box and tid == _ra_post.DEFAULT[0]:
+        # 심의 형식 하나(docs/ra-delib-standard RS-5) — 앱이 기본 틀(deliberation)을 실어 오고 박스 파일이 심의 형식을 정했으면 그것으로. 박스 파일이
+        # 없으면 앱 값 그대로, 앱 손잡이로 일부러 다른 틀을 고른 박스도 덮지 않는다. 블록 id 넷은 등록 형식 정의(infra/ra/formats/deliberation.json)와 같다.
+        tid, ver = box
+    return {"template_id": tid, "template_version": ver, "title": title, "tags": tags, "pages": pages,
             "report_id": rid, "sent": sent, "url": _url(ledger.get("url"), rid)}
 
 

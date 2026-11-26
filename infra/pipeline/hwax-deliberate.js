@@ -1143,6 +1143,7 @@ const decisionFull = plain
 let report = null
 let reportPagesFailed = []   // RA 페이지 저장 실패 목록 — 빈 배열이면 전부 성공
 let reportError = null       // RA 저장 실패 사유(도구가 준 문구) — 등록 안내 등이 여기로 온다
+let raPost = null            // 이 박스가 심의 게시판(시스템 공간)을 정했으면 {board, report, how} — 게시는 사람이 확인한 뒤(docs/ra-delib-standard)
 // ⚠ 기본이 **꺼짐**이다(saveReport:true 를 줄 때만 저장). 2026-09-02 솔더볼 심의 실측 —
 //   심의 본체 3시간에 RA 저장이 1시간 반이었다. 페이지마다 에이전트를 띄워 blocks JSON 을
 //   통째로 인자로 넘기는 구조라 그렇다(24000자 예산 × 25쪽 이상). 탐색적으로 돌리는 심의까지
@@ -1193,6 +1194,23 @@ if (A.saveReport === true) {
   // RA 부재/실패는 비치명적 — cae00 는 RA 가 안 떠 있을 수 있다(hands-off). 저장 실패해도
   // 심의 결과(decision·라운드)는 이미 아래 return 에 있으므로 절대 잃지 않는다.
   try {
+    // 심의 보고서 형식은 박스가 정한다(docs/ra-delib-standard RS-6) — 이 워크플로는 사용자 PC 에서 돌아 박스 파일을 못 읽으므로 게이트웨이
+    // ra_report_format 에 묻는다. 도구가 없는(옛) 게이트웨이면 종전 deliberation v1 그대로다. 새 보고서를 만들 때만 묻는다(이어붙이기는 그 보고서의 형식).
+    let FMT = { template_id: 'deliberation', template_version: 1, board: null }
+    if (!APPEND_TO) {
+      const got = await agent(
+        `ra_report_format(kind="deliberation") 를 호출해 그 결과의 template_id · template_version · board 를 그대로 반환하라. ${BY_NAME}\n` +
+        `- 도구가 없거나 실패하면 template_id="deliberation", template_version=1, board=null 로 반환하라(재시도하지 마라).`,
+        { label: 'ra-format', phase: 'Report', schema: {
+          type: 'object', required: ['template_id', 'template_version'],
+          properties: { template_id: { type: 'string' }, template_version: { type: 'integer' }, board: { type: ['string', 'null'] } } } })
+      const idOk = got && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(String(got.template_id || ''))
+      const verOk = got && Number.isInteger(got.template_version) && got.template_version >= 1
+      if (idOk && verOk) FMT = { template_id: got.template_id, template_version: got.template_version, board: null }
+      // 게시판 꼴은 포털 app/agent/ra_post.py · 게이트웨이 _RA_BOARD_RE 와 같다 — 틀리면 안내하지 않는다
+      if (idOk && verOk && typeof got.board === 'string' && /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}$/.test(got.board)) FMT.board = got.board
+      if (FMT.template_id !== 'deliberation' || FMT.template_version !== 1) log(`RA 형식 — 박스가 정한 ${FMT.template_id} v${FMT.template_version}`)
+    }
     const raInstruction = APPEND_TO
       ? `기존 Report Archive 보고서에 이번 심의 결과를 새 페이지로 이어붙여라.\n` +
         `순서: (1) get_report(report_id=${APPEND_TO}) 로 현재 pages 배열 길이를 확인, (2) update_report_draft(report_id=${APPEND_TO}, page=<pages 길이+1>, blocks=${JSON.stringify(blocks)}) 호출.\n` +
@@ -1200,7 +1218,7 @@ if (A.saveReport === true) {
         `- report_id 가 없거나(Report Archive 미가용) 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 "${APPEND_TO}" 한 줄만 반환(붙인 보고서 번호).`
       : `create_report_draft 를 호출해 아래 심의 결과를 Report Archive 에 저장하라. ${BY_NAME}\n` +
-        `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
+        `인자: template_id="${FMT.template_id}", template_version=${FMT.template_version}, title="심의 — ${Q.slice(0, 50)}",\n` +
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(blocks)}\n` +
         `- 도구가 없거나(Report Archive 미가용) 저장이 실패하면 절대 재시도하지 말고 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 반환된 report.id(보고서 번호)만 한 줄로.`
@@ -1266,7 +1284,7 @@ if (A.saveReport === true) {
       log(`RA 저장 — 분량이 커서 ${pages.length}쪽으로 나눠 넣는다(한 쪽 ${RA_PAGE_BUDGET}자 예산)`)
       report = await agent(
         `create_report_draft 도구로 아래 심의 결과를 Report Archive 에 저장하라. ${BY_NAME}\n` +
-        `인자: template_id="deliberation", template_version=1, title="심의 — ${Q.slice(0, 50)}",\n` +
+        `인자: template_id="${FMT.template_id}", template_version=${FMT.template_version}, title="심의 — ${Q.slice(0, 50)}",\n` +
         `tags=["심의","mcp-deliberation"], blocks=${JSON.stringify(pages[0])}\n` +
         `- 도구가 없거나 실패하면 재시도 없이 "RA_UNAVAILABLE: <도구가 준 오류 문구 그대로>" 한 줄만 반환.\n` +
         `- 성공하면 반환된 report.id 만 한 줄로.`,
@@ -1288,6 +1306,15 @@ if (A.saveReport === true) {
       reportError = report.replace(/^\s*RA_UNAVAILABLE:?\s*/i, '').trim().slice(0, 500) || 'Report Archive 미가용(사유 없음)'
       log(`Report Archive 저장 실패 — ${reportError} (심의 결과는 반환됨)`)
       report = null
+    }
+    // 이 박스가 심의 게시판을 정했으면 — 게시하지 않고 안내만 돌려준다. 게시는 사람이 확인한 뒤다(사용자 결정 11-26 · 11-21 게시 관문).
+    const savedRid = report != null ? pickRid(report) : ''
+    if (FMT.board && savedRid) {
+      raPost = { board: FMT.board, report: Number(savedRid),
+        how: `Report Archive 시스템 공간(${FMT.board})에 올리려면 preview_publish(report_id=${savedRid}, boards=["${FMT.board}"]) 의 게시판 이름 · ` +
+             `audience(볼 사람 수)를 사용자에게 보여 주고 확인받은 다음 publish_report(report_id=${savedRid}, boards=["${FMT.board}"], confirm_token) — ` +
+             `확인 없이 게시하지 않는다. 게시한 뒤에는 작성자가 직접 내릴 수 없다(게시판 매니저 승인).` }
+      log(`RA 보고서 ${savedRid} — 시스템 공간 ${FMT.board} 에 올리는 것은 사람 확인 뒤(raPost 안내)`)
     }
   } catch (e) {
     log(`Report Archive 저장 실패(비치명적): ${String(e).slice(0, 120)}`)
@@ -1395,6 +1422,7 @@ return {
   conversationSkipped,   // 대화 저장을 건너뛴 사유(용량) — save-delib-conversation.py 로 저장 가능.
   reportPagesFailed,   // RA 저장 실패 쪽 번호 — 비어 있지 않으면 그 쪽이 보고서에서 빠져 있다.
   reportError,         // RA 저장 실패 사유(report 가 null 일 때). 'RA 토큰을 등록하라' 면 사람이 할 일이다.
+  raPost,              // {board, report, how} — 이 박스의 심의 게시판(시스템 공간). 게시는 사용자에게 확인받은 뒤 how 대로(null 이면 초안까지만)
   plainPartial,        // true 면 쉬운 설명이 결정문 일부(머리+꼬리)만 보고 쓰였다.
   citationAudit,       // 결정문 수치 ↔ 근거·발언 원문 결정적 대조 결과(원장 (3) — unmatched 는 사람이 훑을 목록)
   conversation,

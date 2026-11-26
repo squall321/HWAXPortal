@@ -18,6 +18,9 @@ id 는 RA 가 `sys.<system>.<kind>` 로 만들고, 같은 내용으로 다시 �
   export HWAX_GATEWAY_PAT=<포털 /auth/pat 로 발급한 PAT>
   $PY infra/scripts/ra-register-format.py --owner-board <부서 slug>                  # 미리보기
   $PY infra/scripts/ra-register-format.py --owner-board <부서 slug> --apply --use    # 등록하고 쓰기 시작
+  $PY infra/scripts/ra-register-format.py --owner-board <최상위 조직 slug> --apply --use --board sys-hwax
+      # 심의 보고서 표준(docs/ra-delib-standard) — 소유는 최상위 조직(RA 는 소유 부서 트리 밖 사람에게 형식을 보이지 않는다),
+      # 게시판은 RA 시스템 공간. 심의 결과 카드에 「시스템 공간에 올리기」 단추가 생기고 사람이 확인한 뒤 게시한다.
 
 끝 코드 — 0 끝 · 2 준비 실패(형식 파일 · PAT · mcp 모듈 · RA 도구가 없다 — RA 가 v0.176 전이면 도구가 없다) · 3 RA 가 거절했다(까닭을 찍는다) ·
 4 `--use` 인데 쓸 판을 알 수 없다(등록 전이다 — `--apply` 를 함께 준다).
@@ -40,6 +43,7 @@ BOX_FILE = ROOT / "infra" / "ra-formats.local.json"
 RA_APP = "reportarchive"
 TOOL = "register_report_format"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_BOARD_RE = re.compile(r"(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}")         # RA 공간 slug — 포털 app/agent/ra_post.py 와 같은 꼴(fullmatch)
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,23}$")
 
 
@@ -93,13 +97,20 @@ def read_box(path: Path = BOX_FILE) -> dict:
         return {}
 
 
-def write_box(kind: str, template_id: str, version: int, path: Path = BOX_FILE) -> dict:
-    """그 종류의 줄만 바꿔 쓴다(다른 종류 · 메모 칸은 그대로). 임시 파일에 쓰고 바꿔 끼운다 — 읽는 쪽이 반쯤 쓴 파일을 보지 않게."""
+def write_box(kind: str, template_id: str, version: int, path: Path = BOX_FILE, board: str | None = None) -> dict:
+    """그 종류의 줄만 바꿔 쓴다(다른 종류 · 메모 칸은 그대로, 그 줄의 다른 칸 — 손으로 둔 board 등 — 도 그대로). board 를 주면 그 줄에 게시판
+    (심의 보고서가 올라갈 RA 시스템 공간 — docs/ra-delib-standard)까지 적는다. 임시 파일에 쓰고 바꿔 끼운다 — 읽는 쪽이 반쯤 쓴 파일을 보지 않게."""
     if not _ID_RE.fullmatch(template_id or "") or not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise ValueError(f"쓸 수 없는 id · 판 — {template_id!r} v{version!r}")
+    if board is not None and not _BOARD_RE.fullmatch(board):
+        raise ValueError(f"쓸 수 없는 게시판 — {board!r}")
     doc = read_box(path)
     doc.setdefault("_doc", "RA 에 스스로 등록한 형식의 id · 판 — infra/scripts/ra-register-format.py --use 가 쓴다. 지우면 종전 템플릿으로 돌아간다.")
-    doc[kind] = {"template_id": template_id, "template_version": version}
+    row = dict(doc[kind]) if isinstance(doc.get(kind), dict) else {}
+    row.update(template_id=template_id, template_version=version)
+    if board is not None:
+        row["board"] = board
+    doc[kind] = row
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     os.replace(tmp, path)
@@ -107,7 +118,7 @@ def write_box(kind: str, template_id: str, version: int, path: Path = BOX_FILE) 
 
 
 async def run(call: Callable[[dict], Awaitable[Any]], fmt: dict, *, owner_board: str, apply: bool, use: bool,
-              box_file: Path = BOX_FILE, log: Callable[[str], None] = print) -> tuple[int, dict]:
+              box_file: Path = BOX_FILE, log: Callable[[str], None] = print, board: str | None = None) -> tuple[int, dict]:
     """미리보기 → (--apply) 등록 → (--use) 박스 파일. call 은 register_report_format 을 부르고 답을 dict 로 돌려준다."""
     out: dict = {"format": fmt["kind"], "owner_board": owner_board}
     pre = await call(call_args(fmt, owner_board, False))
@@ -133,9 +144,13 @@ async def run(call: Callable[[dict], Awaitable[Any]], fmt: dict, *, owner_board:
         if not isinstance(version, int) or isinstance(version, bool):
             log("✗ 쓸 판을 알 수 없다 — 아직 등록되지 않았거나 내용이 달라졌다. --apply 를 함께 준다")
             return 4, out
-        write_box(fmt["kind"], pre["template_id"], version, box_file)
+        write_box(fmt["kind"], pre["template_id"], version, box_file, board=board)
         out["box_file"] = box_file.name
-        log(f"✓ {box_file.name} 에 적었다 — {fmt['kind']} → {pre['template_id']} v{version}. 에이전트 서버 · 게이트웨이의 /health ra_formats 로 확인한다")
+        if board:
+            out["board"] = board
+        log(f"✓ {box_file.name} 에 적었다 — {fmt['kind']} → {pre['template_id']} v{version}"
+            + (f" · 게시판 {board}(심의 결과 카드에 「시스템 공간에 올리기」 단추)" if board else "")
+            + ". 에이전트 서버 · 게이트웨이의 /health ra_formats 로 확인한다")
     elif not apply:
         log("○ 미리보기만 했다 — 등록은 --apply, 그 형식으로 올리기 시작하려면 --use")
     else:
@@ -149,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--owner-board", required=True, help="이 형식을 소유할 RA 부서 slug(비울 수 없다 — RA 의 규칙)")
     ap.add_argument("--apply", action="store_true", help="등록한다(없으면 미리보기)")
     ap.add_argument("--use", action="store_true", help="그 id · 판을 박스 파일에 적어 그 형식으로 올리기 시작한다")
+    ap.add_argument("--board", default=None, help="--use 와 함께 — 심의 보고서를 올릴 RA 시스템 공간 slug(예 sys-hwax). 사람이 확인한 뒤 게시한다")
     ap.add_argument("--gateway", default=os.environ.get("HWAX_GATEWAY_URL", "http://127.0.0.1:9110/mcp"))
     ap.add_argument("--token-env", default="HWAX_GATEWAY_PAT", help="PAT 를 담은 환경변수 이름")
     a = ap.parse_args(argv)
@@ -159,6 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", a.owner_board or ""):
         print(f"✗ --owner-board 가 부서 slug 꼴이 아니다 — {a.owner_board!r}", file=sys.stderr)
+        return 2
+    if a.board is not None and (not a.use or not _BOARD_RE.fullmatch(a.board)):
+        print(f"✗ --board 는 --use 와 함께, 공간 slug 꼴로 준다 — {a.board!r}", file=sys.stderr)
         return 2
     token = os.environ.get(a.token_env, "").strip()
     if not token:
@@ -190,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
                 async def call(args: dict) -> Any:
                     return probe.as_json(await s.call_tool(exposed, args))
                 return await run(call, fmt, owner_board=a.owner_board, apply=a.apply, use=a.use,
-                                 log=lambda m: print(m, file=sys.stderr))
+                                 log=lambda m: print(m, file=sys.stderr), board=a.board)
 
     code, out = asyncio.run(go())
     print(json.dumps(out, ensure_ascii=False, indent=1))

@@ -224,3 +224,37 @@ def test_형식의_이름과_칸_라벨은_손으로_둔_템플릿과_같다():
         ("recommendation", "rich_text", {"label": "의사결정문"}),
         ("minutes", "rich_text", {"label": "회의록(참여·라운드)"})]
     assert all("layout" not in b for b in FMT["blocks"]), "배치는 RA 가 차례대로 놓는다(손으로 둔 템플릿도 layout 이 없다)"
+
+
+def test_board_를_주면_그_줄에_게시판까지_적고_다시_use_해도_남는다(tmp_path):
+    """심의 보고서 표준(docs/ra-delib-standard) — --use --board 가 줄에 게시판을 적는다. 그 뒤 --use 만 다시 돌려도(판이 바뀌어도) 게시판이 남는다."""
+    box = tmp_path / "ra-formats.local.json"
+    doc = reg.write_box("deliberation", "sys.hwax.deliberation", 1, box, board="sys-hwax")
+    assert doc["deliberation"] == {"template_id": "sys.hwax.deliberation", "template_version": 1, "board": "sys-hwax"}
+    assert reg.write_box("deliberation", "sys.hwax.deliberation", 2, box)["deliberation"] == {
+        "template_id": "sys.hwax.deliberation", "template_version": 2, "board": "sys-hwax"}
+    for bad in ("../x", "", "a/b", ".."):
+        with pytest.raises(ValueError):
+            reg.write_box("deliberation", "sys.hwax.deliberation", 3, box, board=bad)
+    assert json.loads(box.read_text(encoding="utf-8"))["deliberation"]["template_version"] == 2
+
+
+def test_run_의_board_는_박스_파일에_실린다(tmp_path):
+    box = tmp_path / "ra-formats.local.json"
+    log: list[str] = []
+    code, out = asyncio.run(reg.run(FakeRA(), FMT, owner_board="mx", box_file=box, log=log.append, apply=True, use=True, board="sys-hwax"))
+    assert code == 0 and out["board"] == "sys-hwax"
+    assert json.loads(box.read_text(encoding="utf-8"))["deliberation"]["board"] == "sys-hwax"
+    assert any("게시판 sys-hwax" in m for m in log)
+
+
+def test_board_는_use_없이_받지_않는다(monkeypatch, capsys):
+    monkeypatch.setenv("HWAX_GATEWAY_PAT", "x")
+    assert reg.main(["--owner-board", "mx", "--board", "sys-hwax"]) == 2
+    assert reg.main(["--owner-board", "mx", "--use", "--board", "../x"]) == 2
+    assert "--board" in capsys.readouterr().err
+
+
+def test_포털_리더와_등록_스크립트의_게시판_꼴이_같다():
+    from app.agent import ra_post
+    assert reg._BOARD_RE.pattern == ra_post._BOARD_RE.pattern

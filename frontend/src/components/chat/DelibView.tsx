@@ -10,6 +10,7 @@ import { DelibGraph } from './DelibGraph';
 import { DeckSpot } from './DeckSpot';
 import { deckReportOf } from './deck';
 import { RA_HOME, openRaReport, raReportHref } from './raLink';
+import { RaPostCard } from './RaPostCard';
 import { RosterEditor, type Seat } from './RosterEditor';
 import { subjectLine } from './subject';
 import { colorOf, initialOf } from './personaColor';
@@ -309,6 +310,7 @@ function OutcomeCards({ d }: { d: DelibData }) {
           <span className="dv-card-s">보고서 #{o.report_id} — 열어보기 ↗</span>
         </a>
       )}
+      {rid != null && <RaPostCard reportId={rid} />}
       {o.tally && (
         <div className={`dv-card verdict${o.unanimous ? ' unanimous' : ''}`}>
           <span className="dv-card-k">{o.unanimous ? '만장일치' : '다수결'}</span>

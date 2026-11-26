@@ -52,6 +52,7 @@ from app.agent import docforge_delivery as _dfd
 from app.agent import onto_preview as _onto_preview
 from app.agent import embeds as _embeds
 from app.agent import pc_upload as _pc
+from app.agent import ra_post as _ra_post
 from app.agent import subject as _subject
 from app.agent import upload as _upload
 from app.agent import wiki_send as _wiki
@@ -676,6 +677,80 @@ async def open_ra_report(
 _RA_HOME_DEPTH = 8          # 홈 부서에서 위로 올라갈 상한(그룹 · 실 · 사업부 …) — 순환 · 깊은 나무에서 멈춘다
 
 
+async def _ra_person_session(request: Request, settings: Settings, principal: Principal, *, with_workspace: bool) -> _dfd.RaSession:
+    """그 사람 명의 RA 세션 — 위임 먼저 · 등록 토큰 다음(서비스 계정 없음), 위임 토큰을 RA 가 거절하면 한 번만 새로 받는다. with_workspace 면
+    등록 토큰 길에서 연결에 묶인 부서를 머리로 싣는다(위임 길은 싣지 않는다 — L21-6). 연결이 없으면 AuthError."""
+    token, via_sso, conn = await _ra_user_token(request, settings, principal)
+    remint = None
+    if via_sso:
+        email = principal.email or principal.subject
+
+        async def remint() -> str | None:
+            ra_sso.forget(email)
+            return await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
+    return _dfd.RaSession(settings.ra_base_url, token, _ra_workspace(conn, via_sso) if with_workspace else "", remint)
+
+
+@router.get("/ra/post-target")
+def ra_post_target(principal: Principal = Depends(principal_pat_or_session)) -> dict:
+    """이 박스의 심의 보고서가 올라갈 RA 시스템 공간(docs/ra-delib-standard RS-3) — board 가 null 이면 게시 단추를 그리지 않는다(초안까지만)."""
+    ensure(principal, "plat:reportarchive")
+    st = _ra_post.status()
+    return {"board": st["board"]}
+
+
+@router.get("/ra/reports/{report_id}/post-preview")
+async def ra_post_preview(
+    report_id: Annotated[int, Field(gt=0)],
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """심의 보고서를 시스템 공간에 올리면 어디에 몇 명에게 보이는지 — 그 사람 명의로 RA 게시 미리보기(실제로 게시하지 않는다). 확인 토큰은 화면에
+    내지 않는다(게시는 포털이 미리보기를 다시 받아 한다)."""
+    ensure(principal, "plat:reportarchive")
+    board = _ra_post.deliberation_board()
+    if not board:
+        return JSONResponse({"detail": "이 박스는 심의 보고서를 올릴 게시판을 정하지 않았습니다.", "code": "no_board"}, status_code=409)
+    try:
+        ra = await _ra_person_session(request, settings, principal, with_workspace=True)
+    except AuthError as exc:
+        return JSONResponse({"detail": exc.message, "code": "no_ra_connection"}, status_code=exc.status_code)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=5.0)) as cli:
+            targets, token = await _ra_post.preview(ra, cli, report_id, board)
+    except _ra_post.PostError as exc:
+        return JSONResponse({"detail": exc.message, "code": exc.code}, status_code=exc.status)
+    return {"board": board, "targets": targets, "ok": bool(token)}
+
+
+@router.post("/ra/reports/{report_id}/post")
+async def ra_post_report(
+    report_id: Annotated[int, Field(gt=0)],
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+    _csrf: None = Depends(require_csrf),
+) -> dict:
+    """사람이 미리보기를 보고 확인을 누른 뒤 — 심의 보고서를 이 박스의 시스템 공간에 게시한다(그 사람 명의, docs/ra-delib-standard RS-3).
+    게시판은 박스 파일에서만 온다(화면이 고르지 않는다). 이미 게시됐으면 already 로 답한다."""
+    ensure(principal, "plat:reportarchive")
+    board = _ra_post.deliberation_board()
+    if not board:
+        return JSONResponse({"detail": "이 박스는 심의 보고서를 올릴 게시판을 정하지 않았습니다.", "code": "no_board"}, status_code=409)
+    try:
+        ra = await _ra_person_session(request, settings, principal, with_workspace=True)
+    except AuthError as exc:
+        return JSONResponse({"detail": exc.message, "code": "no_ra_connection"}, status_code=exc.status_code)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as cli:
+            out = await _ra_post.post(ra, cli, report_id, board)
+    except _ra_post.PostError as exc:
+        return JSONResponse({"detail": exc.message, "code": exc.code}, status_code=exc.status)
+    logger.info("ra_post: report %s → %s (%s)", report_id, board, "이미 게시" if out["already"] else "게시")
+    return out
+
+
 @router.get("/ra/home")
 async def ra_home(
     request: Request,
@@ -688,17 +763,9 @@ async def ra_home(
     {"home": null, "reason": …} 를 200 으로 — 첫 화면은 카드 없이 그대로 뜬다(RC-5)."""
     ensure(principal, "plat:reportarchive")
     try:
-        token, via_sso, _conn = await _ra_user_token(request, settings, principal)
+        ra = await _ra_person_session(request, settings, principal, with_workspace=False)    # 두 창구 모두 부서 머리가 필요 없다
     except AuthError:
         return {"home": None, "reason": "no_connection"}
-    remint = None
-    if via_sso:
-        email = principal.email or principal.subject
-
-        async def remint() -> str | None:
-            ra_sso.forget(email)
-            return await ra_sso.ra_user_token(settings, email=email, name=principal.display_name or "")
-    ra = _dfd.RaSession(settings.ra_base_url, token, "", remint)      # 두 창구 모두 부서 머리가 필요 없다(RA get_current_user_no_workspace)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=5.0)) as cli:
             me = await ra.call(cli, "GET", "/api/me")

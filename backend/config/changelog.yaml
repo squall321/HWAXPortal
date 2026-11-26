@@ -22,6 +22,19 @@
 
 entries:
   - date: 2026-11-26
+    title: 심의 보고서를 Report Archive 시스템 공간에 확인하고 올릴 수 있습니다
+    tag: 심의
+    items:
+      - "심의 결과 카드에 '시스템 공간에 올리기' 가 생겼습니다(운영 박스가 게시판을 정한 경우). 누르면 어느 게시판에 몇 명이 보게 되는지 먼저 보여 주고, 확인을 눌러야 게시합니다. 게시한 뒤에는 작성자가 직접 내릴 수 없고 게시판 매니저 승인이 필요합니다."
+      - "웹 · MCP 심의, Claude 워크플로 심의, 리스크 종합 보고서가 모두 박스가 정한 심의 보고서 형식 하나로 저장됩니다. 지금까지는 길마다 형식을 고르는 곳이 달랐습니다."
+  - date: 2026-11-26
+    title: 기술 — 심의 보고서 RA 제출 표준(형식 하나 · 시스템 공간 게시판 · 게이트웨이 ra_report_format)
+    tag: 기술
+    items:
+      - "박스 파일 infra/ra-formats.local.json 의 deliberation 줄에 board(RA 시스템 공간 slug)를 둡니다. 포털 GET /agent/ra/post-target · GET /agent/ra/reports/{id}/post-preview · POST /agent/ra/reports/{id}/post(CSRF) 가 그 사람 명의로 RA 게시 미리보기 · 게시를 합니다. 게시판은 박스 파일에서만 옵니다."
+      - "게이트웨이에 읽기 도구 ra_report_format 이 생겼습니다(이 박스의 심의 보고서 형식 · 게시판). Claude 워크플로는 형식을 코드에 박지 않고 이 도구로 받고, 게시판이 있으면 저장 뒤 RA 표준 흐름(preview_publish → 사용자 확인 → publish_report)을 안내만 합니다."
+      - "리스크 종합 보고서는 앱이 기본 틀(deliberation)을 실어 오고 박스 파일이 형식을 정했을 때만 그 형식으로 바꿉니다. ra-register-format.py 에 --board 가 생겼고, 다시 --use 해도 손으로 둔 칸이 남습니다."
+  - date: 2026-11-26
     title: 첫 화면에 나의 Report Archive 부서가 보이고, 부서 최근 이슈를 바로 물어볼 수 있습니다
     tag: 챗
     items:
