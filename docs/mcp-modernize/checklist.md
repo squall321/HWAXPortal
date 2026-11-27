@@ -39,24 +39,26 @@
   - 받음 — RA(SDK 2.x 까지 · 로컬 21커밋 · 배포는 RA 승인) · DocForge(0.5.0 · 2.x · main) · DynaForge(가지 a03c02c0 · 2.x) · MaterialTwin(로컬 4커밋 · compare_materials 크래시 진짜 원인) · WDA(로컬) · MXWP(로컬 · 보안 b588a71) · ste(가지 · R1 job_events 이벤트 `list_job_events`) · Laminate(가지 · C5 는 가벼운 꼴)
   - 남음 — StepForge · SignalForge · SmartTwin MCP 답
 - [x] 쓰기 분류가 확인된 읽기 목록 먼저(`8094f68`)
-- [ ] 게이트웨이 일괄 — 설명 들여쓰기 걷기 · docstring 대신 채우기 · 한 판정 노출(MM-5) · 구조 결과 두 벌 정리 · 점수판 중첩(서브에이전트 가지 `wt1127/m2` 짓는 중)
+- [x] 게이트웨이 M2 — master `30acbf8`(dev 실확인 11-27: 표지 272 → 550 · snake 0 · would_close 139 · 들여쓰기 570 도구 · 인자 채움 93 · 감사 사유) — 판정 합치기는 그림자 기본(MM-8)
+- [x] 판정기(포털 procedures.judge)가 isError 의 앱 계약 JSON 을 사람 글로(`ac13ae0a` — DocForge 청)
 - [ ] 읽기/쓰기 한 판정 — 부류를 `/tools-map` 에, 쓰는 쪽 일곱 벌을 그 부류 위로(모순 0 · 모름 0)
 - [ ] SmartTwin `_register_direct` 가 카탈로그 스키마를 살리기(c8)
 - [x] 포털 몫 계약 — AI 데이터 허브 `7ed5dd0`(인자 설명 · 표지 0 → 100%) · 리스크 앱 `9f2086f` + 바깥 도구 인자 꼴 고침 `f534ab1` · 심의 MCP `234d016`(표지 · 설명 7,757 → 1,496자) · ThermalShock `99905fb` · 웹 리서치 `dafd506` · PaperIngest `210dc1d`(+ 보안 `4f25168`) · HE팀 운영자 목록 밖 쓰기 셋 `93d59a3b`
 
 ## M3 목적 단위
 
-- [ ] `tool_purposes.json` 꼴 · 덧씌우기 · `/health` 의 missing 셈 · 씨앗(HE팀 운영자 workflow)
-- [ ] 검색 작은 고침 — 쓰기 의도 낱말(작성 · 쓰기) · 띄어쓰기 접기 · 표지로 감점 · 평가에서 나빠진 쌍 0
-- [ ] 검색 목적 층 · `list_tool_apps(by='purpose')` · 앱 입구 `entry`
-- [ ] 보기 `purpose:<key>` · prompts `purpose-<key>`(사람 PAT 분기)
-- [ ] 웹 챗 목적 예산(그림자 → 켜기) · 좌석 후보 그림자 · PC 킷 목적 고르기
+- [x] 게이트웨이 M3 — 목적 72(다앱 13 · 앱 59) · 덧씌우기 · list_tool_apps(by='purpose') · 앱 입구 · 검색 목적 층(기존 183쌍 나빠짐 0 · purpose@1 0.94 · HE app@1 0.66 → 0.89) · 보기 purpose: · prompts · skill:// 자원 · 채택 원장. 로컬 master `959a74b`(WDA 입구를 읽기 format_list 로) · dev 반영 · **원격 push 는 cae00 7차 update-all 이 끝난 뒤**
+- [x] 검색 작은 고침(M2 `c1ffe6e` — 나빠짐 0)
+- [x] 검색 목적 층 · `list_tool_apps(by='purpose')` · 앱 입구 `entry`(M3)
+- [x] 보기 `purpose:<key>` · prompts `purpose-<key>`(M3) — [ ] 포털 hub_view MODES · PC 킷 목적 고르기(화면)
+- [ ] 웹 챗 목적 예산 · 좌석 후보 그림자 · 위임 · 루틴(에이전트 서버 가지 `wt1127/purpose` 짓는 중)
 - [ ] 평가셋 — HE samples(app@1) · 목적 쌍(purpose@1) · 186쌍 사람 검토 · cae00 스냅숏 평가
 
 ## M4 Skills · Events
 
-- [ ] 게이트웨이 Skills 확장(목적 표 → SKILL.md · 워크플로 skill) · 받지 못하는 클라이언트용 prompts · 자원
-- [ ] 게이트웨이 Events 확장(poll · stream) · 첫 이벤트 — 잡 끝 · 새 CAD 차수 · RA 게시
+- [x] SKILL.md 를 resource `skill://hwax/<키>/SKILL.md` 로(M3)
+- [ ] 게이트웨이 SDK 2.x 이행 · 전용 venv · 바퀴 꾸러미(가지 `wt1127/sdk2` 짓는 중) → Skills 확장(skills/list)
+- [ ] 게이트웨이 Events 확장(poll · stream) — 원천 준비됨: ste `list_job_events`(가지) · SmartTwin `job_changes`(main 058c601c) · StepForge `auto_changes` kind `stepforge.revision.changed`(가지 55f4c384)
 - [ ] 자동 파이프라인 감지를 이벤트로(지금의 묻기는 대비 길로 남김)
 - [ ] Tasks — SDK 구현을 지켜본다
 
