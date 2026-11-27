@@ -266,3 +266,5 @@
   요구한다 → 몇 시간 돈 전각도 낙하의 결과가 끝에서 `failed envelope_invalid` 로 버려진다. 계약 문서는 예시만 있고 「꼭」 을 적지 않았다(포털 잘못).
 - 고침 — 포털은 엄격함을 그대로 두고(봉투의 출처 칸이다) 계약에 「비지 않는 글 · 모르면 앱 빌드 커밋 · 그것도 모르면 \"unknown\"」 을 적었다. §4 시험
   4번에 더했다. DynaForge 에는 늘 채우게 청했다. 프로파일 답의 app_version 은 지금처럼 비어도 받는다(표시용).
+- DynaForge 가 고쳤다(가지 `auto-pipeline` `e5e7157f` — 읽어서 확인) — `auto_result` · `auto_profiles` 의 app_version 은 BUILD_INFO 커밋 앞 8자리, 모르거나 못 읽으면
+  `"unknown"`. 런타임에 git 이 없어 그 밖의 앱 빌드 커밋은 없다. §4 시험(판을 모르는 박스 넷)과 변이 확인을 더했다.
