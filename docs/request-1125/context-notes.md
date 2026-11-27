@@ -432,3 +432,9 @@
 - 코드 줄(job_submit_api.py 125 · 127 · 150–159 · 644)을 KooSlurm main d93017a5 와 맞대 같았다.
 - SH-04 를 이미 받은 SmartTwin MCP 세션(c8)에 원문 그대로 넘겼다. 착지 값(커밋 · icn401 반영 · 운영 손 할 일 — 새 환경값 둘 · /data 아래 폴더 소유)을 청했다. KooSlurm main push 전에 알리라는 SM-01 규칙 그대로.
 - 자동 파이프라인의 전각도 낙하 실주행도 SH-01 · 02 뒤다(docs/auto-pipeline AP-7).
+
+## R25-27 ste GitHub main 올림 — Drive 는 그대로(11-27)
+
+- ste 세션(smarttwinexplorer-06)이 그쪽 사용자 지시로 GitHub main 을 859a02d → 47101d9 로 올렸다(35 커밋 · 빨리감기). 원격 가지 둘(registry-part-fetch b4503ec · lsdyna-license-default-removal 0313ceb)은 main 에 합치지 않았다.
+- Drive staging 은 859a02db7d93 그대로라 cae00 기다리개의 꾸러미 · 11-23 글 6절 · 6-1 → 6-2 절차는 영향이 없다. cae00 의 .deployed-commit 이 859a02d 면 GitHub main 의 조상이라 추적도 맞다.
+- 라이선스 가지는 cae00 의 `STE_LSTC_LICENSE_SERVER` 줄이 들어오기 전까지 합치지 않는 것 그대로. 다음 Drive(ste · CalculiX)는 교체 보고(기한 11-30) 뒤 그쪽 사용자에게 묻고 한다. 87 에 알렸다.
