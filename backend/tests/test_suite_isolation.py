@@ -61,6 +61,20 @@ def test_알림_원장은_격리된_대화_저장소_파일_안의_표다():
             assert root not in got.parents, f"알림 원장이 실 저장소를 열었다 — {got}"
 
 
+def test_자동_파이프라인_원장은_격리된_절차_저장소_파일_안이고_시험_기동은_박자를_띄우지_않는다():
+    """자동 파이프라인(docs/auto-pipeline)은 새 경로 설정 없이 절차 저장소 파일에 표를 더한다(app/autopipe/store.py 머리) — 그 원장이 쓰는 연결이 연 파일이
+    절차 저장소와 같고 이 박스의 실 저장소가 아님을 본다. 박자 작업은 conftest 가 끈다(AUTO_PIPELINE_TICK_S=0) — 켜진 채 띄우면 시험마다 이 박스에
+    떠 있는 게이트웨이를 서비스 토큰으로 부른다."""
+    with TestClient(app):
+        st = app.state
+        assert st.autopipe_store is not None, "자동 파이프라인 원장이 뜨지 않았다"
+        assert st.autopipe_engine is not None and st.autopipe_engine.task is None, "시험 기동이 자동 파이프라인 박자를 띄웠다 — conftest 의 AUTO_PIPELINE_TICK_S=0 이 빠졌다"
+        got = _db_file(st.autopipe_store._conn())
+        assert got == _db_file(st.procedures_store._conn()), got
+        for root in REAL_ROOTS:
+            assert root not in got.parents, f"자동 파이프라인 원장이 실 저장소를 열었다 — {got}"
+
+
 def test_이용_통계의_접는_표는_격리된_감사_원장_파일_안이고_시험_기동은_접기를_띄우지_않는다():
     """날마다 접는 표(docs/ops-dashboard M2)는 새 경로 설정 없이 감사 원장 파일에 표를 더한다(app/usage_fold.py 머리) — 접는 쪽의 제 연결이 연 파일이
     감사 원장과 같고 이 박스의 실 저장소가 아님을 본다. 접기 작업은 conftest 가 끈다(USAGE_FOLD_S=0) — 켜진 채 포털을 띄우면 시험마다 이 박스에 떠 있는

@@ -232,6 +232,19 @@ class Settings(BaseSettings):
     procedures_store_path: str = "data/procedures.sqlite"
     procedures_concurrency: int = 2
     procedures_max_steps: int = 30
+    # 자동 파이프라인(docs/auto-pipeline portal-api §1 · §4) — 박스 스위치. 기본 꺼짐 — 끄면 엔진이 돌지 않고 /autopipe-api 는 읽기 · 규칙 편집 · 검증만
+    # 된다. 원장은 절차 저장소 파일의 표(새 경로 설정 없음). 켜는 곳은 포털 infra/.env(start.sh 가 넘긴다).
+    auto_pipeline_enabled: bool = False
+    # 박자 간격(초) — 0 이면 박자 작업을 띄우지 않는다(켜져 있어도 POST /autopipe-api/tick 으로만 돈다 — 시험 격리가 0 으로 돌린다).
+    auto_pipeline_tick_s: int = 60
+    # 박스 전체에서 동시에 앱 쪽에 떠 있을 수 있는 해석 제출 수(규칙 limits 와 따로 — 둘 다 건다).
+    auto_pipeline_max_concurrent: int = 2
+    # 야간 창(KST 시각 '시작-끝', 끝은 포함하지 않는다) — 규칙 limits.night_only 의 단계만 이 창에서 낸다. 꼴이 틀리면 그 단계는 내지 않는다.
+    auto_pipeline_night: str = "20-07"
+    # 앱 쪽에서 도는 단계의 auto_status 를 묻는 간격(초).
+    auto_pipeline_poll_s: int = 120
+    # 늘 물을 원천 앱(게이트웨이 백엔드 키, 쉼표) — 켜진 규칙의 trigger.ready_when 머리는 따로 적지 않아도 묻는다.
+    auto_pipeline_sources: str = ""
     # Auto-generate the JWT keypair if absent. dev always does; set true to allow it in a
     # single-instance prod/mock-demo deploy too. Real multi-instance prod provisions keys.
     jwt_autogen_keys: bool = False

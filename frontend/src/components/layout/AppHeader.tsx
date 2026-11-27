@@ -92,7 +92,7 @@ export function AppHeader() {
     ...(can('feat:deliberation') ? [{ to: '/deliberate', label: '심의' }] : []),
     ...(can('feat:insights') ? [{ to: '/insights', label: '과제 인사이트' }] : []),
     { to: '/apps', label: '앱' },
-    ...(can('feat:procedures') || can('feat:routines') ? [{ to: '/procedures', label: '절차' }] : []),
+    ...(can('feat:procedures') || can('feat:routines') || can('feat:auto-pipeline') ? [{ to: '/procedures', label: '절차' }] : []),
   ];
   const admin: Item[] = [
     ...(isAdmin

@@ -156,6 +156,11 @@ else
   for k in INTERACTIONS_ENABLED INTERACTIONS_INGEST_S; do
     [ -n "${!k:-}" ] && IX_ENVS+=(--env "$k=${!k}")
   done
+  # 자동 파이프라인(docs/auto-pipeline) — 박스 스위치와 손잡이도 같은 까닭으로 **값이 있을 때만** 명시해서 넘긴다. 없으면 꺼짐(지금과 같다).
+  AP_ENVS=()
+  for k in AUTO_PIPELINE_ENABLED AUTO_PIPELINE_TICK_S AUTO_PIPELINE_MAX_CONCURRENT AUTO_PIPELINE_NIGHT AUTO_PIPELINE_POLL_S AUTO_PIPELINE_SOURCES; do
+    [ -n "${!k:-}" ] && AP_ENVS+=(--env "$k=${!k}")
+  done
   # 사내 프록시(HWAX_FALLBACK_PROXY) — 토큰 화면이 만드는 설치 배치의 npm 레지스트리 폴백 주소를 포털이 PAT 발급 응답으로 준다.
   #   공개 리포에 실제 주소를 두지 않는다(사용자 결정 11-24). 위와 같은 이유로 **값이 있을 때만** 명시해서 넘긴다. 값은 찍지 않는다.
   PROXY_ENVS=()
@@ -199,7 +204,7 @@ else
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
     ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} ${LLMST_ENVS[@]+"${LLMST_ENVS[@]}"} \
-    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} ${IX_ENVS[@]+"${IX_ENVS[@]}"} \
+    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} ${IX_ENVS[@]+"${IX_ENVS[@]}"} ${AP_ENVS[@]+"${AP_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \

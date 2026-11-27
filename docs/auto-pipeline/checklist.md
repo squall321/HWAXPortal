@@ -23,24 +23,30 @@
 
 ## M1 포털 뼈대(dev)
 
-- [ ] 표 여섯(`auto_rules` · `auto_rule_versions` · `auto_cursors` · `auto_subjects` · `auto_runs` · `auto_run_steps`) — 절차 저장소
-- [ ] 규칙 스펙 검증(범위 · 트리거 · DAG 순환 · 한도 · stage)
-- [ ] 감지기(묻기 · 커서 · quiet_s · 입력 지문)
-- [ ] 그림자 실행 — 판정 · auto_check 까지, 제출 없음
-- [ ] 현황판 · 규칙 화면 · 끄기 스위치 `AUTO_PIPELINE_ENABLED`(기본 꺼짐) · 권한 `feat:auto-pipeline`
-- [ ] 계약 꼴 가짜 앱(진짜 꼴 그대로) · 시험
+- [x] 표 — `auto_rules` · `auto_rule_versions` · `auto_cursors` · `auto_subjects` · `auto_runs` · `auto_run_steps` + `auto_events` · `auto_lock`(절차 저장소, `backend/app/autopipe/store.py` — 11-27 가지 `wt1127/autopipe-core`)
+- [x] 규칙 스펙 검증(범위 · 트리거 · 단계 연결도 순환 · 참조 · 한도 · stage, analysis → analysis 허용 — `autopipe/spec.py`)
+- [x] 감지기(묻기 · 커서는 끝까지 받았을 때만 · quiet_s · 입력 지문 · project/revision null → 막힘 — `autopipe/engine.py`)
+- [x] 그림자 실행 — 판정 · auto_check 까지, 제출 없음 · 「냈을 것」 사건(cost · sync)
+- [x] 끄기 스위치 `AUTO_PIPELINE_ENABLED`(기본 꺼짐 — start.sh 가 값이 있을 때만 넘김) · 권한 `feat:auto-pipeline`(grant_only) · 창구 `/autopipe-api`
+- [x] 현황판 · 규칙 화면(11-27, 가지 `wt1127/autopipe-ui`) — 절차 › 「자동」 탭 `/procedures/auto`: 상태 머리 · 규칙 목록 · 편집(JSON · 검증 · 새 판) · 켜기(자동 제출은 확인) ·
+  현황판 · 실행 상세(결과 봉투 · 입력 확인 · 보고서 · 승인 · 취소) · 감지 목록, 시험 `backend/tests/test_autopipe_page_in_browser.py`(가짜 창구 — 실제 창구로 보기는 백엔드 뒤)
+- [x] 계약 꼴 가짜 앱(진짜 꼴 그대로 — `tests/autopipe_fakes.py`) · 시험 113(엔진 · 스펙 · 보고서 · RA · 토큰 · 창구 · 격리)
 - [ ] update-all 기다림(도는 실행)
 
 ## M2 첫 해석 끝까지(cae00)
 
-- [ ] approve 단계 — 사람 한 번 누름 → `auto_submit`
-- [ ] `auto_status` 재기동 넘기 · 결과 봉투 판정
-- [ ] 해석별 보고서 렌더 · RA 시스템 양식 등록 · 시스템 계정 게시(박스 비밀 파일)
-- [ ] 서비스 PAT 만료 표시
+- [x] approve 단계 — 사람 한 번 누름(`POST /autopipe-api/runs/{id}/approve`) → `auto_submit`(코드 · 가짜 시험)
+- [x] `auto_status` 재기동 넘기 · 결과 봉투 판정(꼴 틀림 → failed envelope_invalid · isError=false 의 error 칸도 실패) · sync 앱은 제출 답 done → 곧바로 결과
+- [x] 해석별 보고서 렌더 · 시스템 계정 게시 코드(박스 파일 `auto_pipeline` 줄 · 0600 토큰 파일 · dry_run → ai-draft → mounts) · 형식 정의 `infra/ra/formats/auto-pipeline.json`
+- [ ] RA 시스템 양식 등록 · 시스템 계정 · 시스템 공간(운영 — AQ 물음)
+- [x] ~~서비스 PAT 만료 표시~~ — 필요 없어짐(AP-8 · AP-13 — 호출마다 15분 토큰)
+- [ ] cae00 실주행 — 계약을 먼저 갖춘 앱 하나로 그림자 → approve → 결과 봉투 → 보고서 → RA 시스템 공간
 
 ## M3 ~ M5
 
-- [ ] 두 번째 해석 · DAG · 종합 · 이전 차수 대비
-- [ ] AP-D5 대체 사슬(도는 것 끝까지 · 안 낸 단계 취소 · 「대체됨」 표지)
-- [ ] auto 단계 · 알림 감지(StepForge 웹훅 또는 SP 변경 목록)
+- [x] 두 번째 해석 · DAG(upstream 넘기기 · 앞 단계 실패면 upstream_failed) · 종합 · 이전 차수 대비(코드 · 가짜 시험)
+- [x] AP-D5 대체 사슬(도는 것 끝까지 · 안 낸 해석 취소 · 보고서는 「대체됨」 표지로 남김 — AP-14)
+- [x] auto 단계 · 한도(박스 · 규칙 동시 · 과제당 24시간) · 야간 창
+- [ ] 알림 감지(StepForge 웹훅 또는 SP 변경 목록)
+- [ ] 막힌 단계 다시 확인(사람 단추 — 입력이 그대로인 채 앱 · 박스 문제가 풀린 뒤, AP-15)
 - [ ] 심의 · 리스크 심사 단계 · 과제 인사이트 보기
