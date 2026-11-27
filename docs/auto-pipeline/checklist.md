@@ -23,7 +23,9 @@
 - [ ] 규칙 스펙 검증(범위 · 트리거 · DAG 순환 · 한도 · stage)
 - [ ] 감지기(묻기 · 커서 · quiet_s · 입력 지문)
 - [ ] 그림자 실행 — 판정 · auto_check 까지, 제출 없음
-- [ ] 현황판 · 규칙 화면 · 끄기 스위치 `AUTO_PIPELINE_ENABLED`(기본 꺼짐) · 권한 `feat:auto-pipeline`
+- [x] 현황판 · 규칙 화면(11-27, 가지 `wt1127/autopipe-ui`) — 절차 › 「자동」 탭 `/procedures/auto`: 상태 머리 · 규칙 목록 · 편집(JSON · 검증 · 새 판) · 켜기(자동 제출은 확인) ·
+  현황판 · 실행 상세(결과 봉투 · 입력 확인 · 보고서 · 승인 · 취소) · 감지 목록, 시험 `backend/tests/test_autopipe_page_in_browser.py`(가짜 창구 — 실제 창구로 보기는 백엔드 뒤)
+- [ ] 끄기 스위치 `AUTO_PIPELINE_ENABLED`(기본 꺼짐) · 권한 `feat:auto-pipeline`(access.yaml grant_only — 백엔드 몫, 화면 쪽 탭 · 라우트 · 머리 메뉴는 이 키로 이미 걸었다)
 - [ ] 계약 꼴 가짜 앱(진짜 꼴 그대로) · 시험
 - [ ] update-all 기다림(도는 실행)
 
