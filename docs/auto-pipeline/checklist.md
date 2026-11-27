@@ -28,7 +28,8 @@
 - [x] 감지기(묻기 · 커서는 끝까지 받았을 때만 · quiet_s · 입력 지문 · project/revision null → 막힘 — `autopipe/engine.py`)
 - [x] 그림자 실행 — 판정 · auto_check 까지, 제출 없음 · 「냈을 것」 사건(cost · sync)
 - [x] 끄기 스위치 `AUTO_PIPELINE_ENABLED`(기본 꺼짐 — start.sh 가 값이 있을 때만 넘김) · 권한 `feat:auto-pipeline`(grant_only) · 창구 `/autopipe-api`
-- [ ] 현황판 · 규칙 화면(`/procedures/auto` — 화면 세션 몫, 창구는 portal-api §6 그대로)
+- [x] 현황판 · 규칙 화면(11-27, 가지 `wt1127/autopipe-ui`) — 절차 › 「자동」 탭 `/procedures/auto`: 상태 머리 · 규칙 목록 · 편집(JSON · 검증 · 새 판) · 켜기(자동 제출은 확인) ·
+  현황판 · 실행 상세(결과 봉투 · 입력 확인 · 보고서 · 승인 · 취소) · 감지 목록, 시험 `backend/tests/test_autopipe_page_in_browser.py`(가짜 창구 — 실제 창구로 보기는 백엔드 뒤)
 - [x] 계약 꼴 가짜 앱(진짜 꼴 그대로 — `tests/autopipe_fakes.py`) · 시험 113(엔진 · 스펙 · 보고서 · RA · 토큰 · 창구 · 격리)
 - [ ] update-all 기다림(도는 실행)
 

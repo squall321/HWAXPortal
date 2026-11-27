@@ -139,3 +139,41 @@
   대신 `has_report` 가 있다(본문은 `/runs/{id}/report`). `/subjects` 는 내부 열쇠(`skey`)를 빼고 낸다. 규칙 검증 실패는 422 `{ok:false, errors}` 다.
 - 새 경로 설정은 없다(원장은 절차 저장소 파일). 시험 격리는 `AUTO_PIPELINE_TICK_S=0`(conftest) 하나를 더했다 — 켠 박스의 backend/.env 를 읽어도 시험
   기동이 박자를 띄우지 않는다(`test_suite_isolation`).
+
+## 2026-11-27 — 화면(가지 `wt1127/autopipe-ui` — 백엔드와 같은 창구 문서로 동시에 지음)
+
+**화면 — 자리와 권한.**
+- 절차 페이지의 탭 「자동」(`/procedures/auto`, 자식 `rules/new` · `rules/:id` · `runs/:id`). 탭 · 라우트는 `feat:auto-pipeline` 이 있을 때만 선다.
+- grant_only 키라 절차 · 루틴 권한 없이 이 키만 가진 사람이 있다 — App 의 `/procedures/*` 권한 목록 · 머리 메뉴 「절차」에 이 키를 더했고, 절차 첫 화면(만들기)이
+  없으면 루틴 → 자동 순으로 보낸다.
+- `useCan` 은 entitlements 를 안 주는 옛 백엔드에서 막지 않는 기존 규칙 그대로다. 그 경우 탭이 보여도 창구(백엔드)가 막는다.
+
+**화면 — 창구 봉투는 두 꼴을 다 받는다.**
+- portal-api §6 은 칸 이름은 정하지만 목록의 봉투 · 상세의 묶음은 정하지 않았다. 동시에 지었으므로 `api/autopipe.api.ts` 가 받아 화면 꼴 하나로 편다.
+- 목록 — 배열 또는 `{rules | subjects | rows | items: [...]}`. 규칙 상세 — `{rule, version: {version_no, spec}, versions}` 또는 규칙 행에 `spec`(`spec_json` 글이면 편다).
+  실행 상세 — `{run, steps, events}` 또는 실행 행에 `steps` · `events`. 단계 칸 `check` / `check_json` · `result` / `result_json` · 이벤트 `detail` / `detail_json` 은 글이면 편다.
+- 현황판 열 — `columns`(글 또는 `{id}`) 또는 `steps`. 없으면 규칙 최신 판 스펙의 단계 순서, 그것도 없으면 행들의 단계 키.
+- 보고서 — JSON(`markdown` · `report_md` · `md` · `text`) 또는 `text/markdown`. 검증 거절 — `detail.errors` 또는 `errors` 를 줄마다 보인다.
+- 시각은 epoch 초 · 밀리초 · ISO 8601 을 다 받는다. 백엔드가 꼴을 고르면 화면 쪽 정규화를 줄인다(창구 문서에 적는 것이 먼저).
+
+**화면 — 사람이 누르는 셋은 확인 뒤에만 나간다.**
+- 켜기 — **저장된 최신 판**의 stage 가 auto 일 때만 묻는다(글상자가 아니라 엔진이 도는 판으로 판정). 끄기 · 그림자 · 승인 규칙 켜기는 묻지 않는다.
+- 켜진 규칙에 stage auto 판을 저장할 때도 같은 확인을 거친다. 창구 문서에는 없지만 켜기와 결과가 같다(이 판부터 클러스터 제출이 저절로 시작된다).
+- 제출 승인 — 단추는 `awaiting_approval` 에만 선다. 확인 글은 끝나지 않은 해석 단계를 「id — 앱 · 프로파일」로 센다. 단계 행에 앱 · 프로파일이 없으면 실행 응답의
+  `spec` 에서 채우고, 둘 다 없으면 id 만 보인다(백엔드가 실행 상세에 단계의 app · profile 또는 그 판 spec 을 실어 주기를 권한다).
+- 취소 — 끝나지 않은 실행에만 선다. 끝난 것은 done · partial · failed · superseded · cancelled · **planned**(그림자 실행은 내지 않으므로 취소할 것이 없다고 보았다).
+  취소 응답의 `message` · `notice` · `detail` 글을 그대로 보인다(도는 단계를 끝까지 둔다는 알림).
+
+**화면 — 낱말은 사람 말로, 순서는 가정하지 않는다.**
+- 실행 · 단계 · 감지 상태와 stage · 단계 종류 · 보고서 종류를 사람 말로 바꾼다(예 `auto_check` → 「입력 확인」, `queued` → 「제출됨」). 모르는 낱말은 그대로 보인다.
+- 막힌 까닭(`block_reason` · check 의 `missing[].kind`) 여섯 — `project_key` 과제 key 를 못 풂 · `revision` 개발 단계(차수)를 모름 · `input` 입력 없음 ·
+  `infra` 박스 문제 · `permission` 권한 없음 · `human_input` 사람이 줄 값이 필요함. `infra: …` 처럼 뒤에 글이 붙으면 머리만 바꾸고 뒤는 그대로 붙인다.
+- 단계 상태의 순서(대기 → 제출됨 → 도는 중 → 끝)를 가정하지 않는다 — 동기 앱은 제출 응답에서 곧바로 끝난다(시작 시각이 없어도 끝으로 보인다).
+- 판정은 색만으로 가르지 않는다 — 기호 + 글자(✓ 합 · ✗ 부 · △ 경계 · ? 모름). 대체된 줄은 흐리게 하고 실행 칸에 「대체됨」 칩, 실행 상세에 뒤 실행 링크.
+
+**화면 — 그 밖.**
+- 자동으로 다시 읽지 않는다 — 머리 · 실행 상세에 「새로 고침」 단추. 엔진 박자(60초) · 상태 묻기(120초)보다 잦은 폴링은 얻는 것이 없다.
+- 보고서 마크다운은 챗의 안전 렌더러(`TextBlock` — HTML 을 넣지 않는다)로 그린다.
+- 색은 기존 토큰만(새 hex 0 — `procedures.css` 의 `ap-*` 절). 시험은 프론트에 단위 러너가 없어 `test_admin_pages_in_browser` 길(esbuild 로 묶어 가짜 fetch 위에서 누른다)이다.
+  스크래치 사본에 변이 여섯(승인 확인 없앰 · 자동 켜기 확인 없앰 · 판정 글자 지움 · 승인 단추를 모든 실행에 · 대체됨 흐림 없앰 · 탭을 권한 없이)을 넣어 모두 붉어지는 것을 보았다.
+- 임시 포털 화면 점검(`frontend/e2e` 의 ROUTES)에는 `/procedures/auto` 를 넣지 않았다 — mock 관리자도 grant_only 키가 없어 튕기고 창구가 아직 없다.
