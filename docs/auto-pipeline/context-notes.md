@@ -248,8 +248,10 @@
   refs 는 늘 `{"step_forge": 과제 id}` 하나(supersedes 는 뒤에 붙을 수 있어 v1 에서 뺐다 — 막힘 줄 걷기가 맞아떨어지게), inputs 는 step 파일마다
   `{kind: "cad_file", ref, sha256, at}`(sha 는 파싱 값 또는 그 자리에서 셈 — null 은 파일이 없을 때뿐, 다시 올리면 sha · at 이 바뀌어 다시 나온다), ready
   `parsed`(마지막 parse 잡이 done). 줄의 updated_at 은 과제 만든 때 · parse 끝 · 개정 정보(단계 포함)를 정한 때 · 이은 허브 과제 갱신 가운데 가장 늦은 것.
-- DynaForge(kooremapper-4a) — 받음. 세션에 허브 과제(판 확정과 같은 풀이 — 못 풀면 거절) · 개발 단계 칸, 비면 null. refs 에 세션 id 와 linked_cad 의
-  StepForge 과제 id. ready `deck_ready`. 전각도 낙하 profile 둘(162 · 26 방향) · verdict 는 늘 unknown(출처 있는 기준이 없다 — 수치만) · 서비스 신원은
+- DynaForge(kooremapper-4a) — 받음. 세션에 허브 과제(판 확정과 같은 풀이 — 못 풀면 거절) · 개발 단계 칸, 비면 null. refs 는 늘
+  `{"dynaforge": 세션 id}` 하나(사용자 결정 11-27 — 칸을 채우든 CAD 를 잇든 같은 꼴), StepForge 과제 id 는 refs 밖 `links.step_forge`(포털은 지금
+  읽지 않고 버린다 — 검증기는 모르는 칸을 거절하지 않는다). ready `deck_ready` — 세션 입력 가운데 덱 꼴이 하나일 때만 참(둘 이상이면 거짓 ·
+  auto_check 가 missing input 에 목록). sha256 은 늘 채움(빈 옛 행은 처음 볼 때 한 번 잰다). 마이그레이션 0027(세션 칸 둘) · 0028(실행 원장 표). 전각도 낙하 profile 둘(162 · 26 방향) · verdict 는 늘 unknown(출처 있는 기준이 없다 — 수치만) · 서비스 신원은
   `auto_*` 에서만 모든 세션 읽기, 제출 계정은 운영 답 전까지 `service_identity: false` · `auto_submit` permission. SH-01 · 02 전에는 `auto_check` 가 infra.
 - 둘 다 가지에서 짓고 main · Drive 는 87 의 다음 운영 회차에 착지 값으로 준다. 포털 검증기(`contract.py`)는 두 꼴을 그대로 받는다(sha256 null · refs 둘째 키).
 - 포털 고침 — 단계를 넣으면 같은 과제가 다시 오는데, 비었을 때 세운 막힘 줄(`?<백엔드>:<refs 해시>`)이 남아 감지 목록에 같은 과제가 막힘 · 준비로 두 번
