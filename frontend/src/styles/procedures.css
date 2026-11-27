@@ -531,3 +531,111 @@ textarea.pr-input {
 .rt-tools {
   margin-top: var(--sp-2);
 }
+
+/* ── 자동 파이프라인(docs/auto-pipeline) — 상태 칩 · 판정 글자 · 현황판 · 단계 선 ── */
+/* 칩 · 판정은 색과 함께 늘 글자(판정은 기호 + 글자)를 단다 — 색만으로 가르지 않는다 */
+.ap-chip {
+  display: inline-block;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.ap-chip.is-ok {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.ap-chip.is-warn {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.ap-chip.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.ap-chip.is-info {
+  border-color: var(--info);
+  color: var(--info);
+}
+.ap-ml {
+  margin-left: var(--sp-2);
+}
+.ap-verdict {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ap-verdict.is-pass {
+  color: var(--ok);
+}
+.ap-verdict.is-fail {
+  color: var(--danger);
+}
+.ap-verdict.is-marginal {
+  color: var(--warn);
+}
+.ap-verdict.is-unknown {
+  color: var(--fg-muted);
+}
+.ap-rule-pick {
+  width: auto;
+  max-width: 100%;
+}
+/* 표 — 현황판 · 감지 목록 · 수치 */
+.ap-table th,
+.ap-table td {
+  padding: var(--sp-1) var(--sp-2);
+  border-top: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.ap-board td,
+.ap-subjects td {
+  white-space: nowrap;
+}
+.ap-table td.ap-wrap {
+  min-width: 12rem;
+  white-space: normal;
+}
+.ap-col-sub {
+  display: block;
+  font-weight: 400;
+}
+.ap-click {
+  cursor: pointer;
+}
+.ap-click:hover {
+  background: var(--surface-2);
+}
+/* 대체된 실행(AP-D5) — 흐리게. 「대체됨」 글자는 칩이 단다 */
+.ap-superseded {
+  opacity: 0.55;
+}
+/* 단계 카드의 왼쪽 굵은 선 — 단계 상태 */
+.ap-step.is-ok {
+  border-left-color: var(--ok);
+}
+.ap-step.is-warn {
+  border-left-color: var(--warn);
+}
+.ap-step.is-danger {
+  border-left-color: var(--danger);
+}
+.ap-step.is-info {
+  border-left-color: var(--info);
+}
+.ap-issues-bad {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+.ap-report {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+}

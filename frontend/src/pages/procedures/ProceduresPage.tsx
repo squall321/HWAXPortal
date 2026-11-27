@@ -1,4 +1,4 @@
-// 절차 셸 — 탭 넷(만들기·절차·실행 이력·루틴)과 자식 라우트 — 절차 탭은 feat:procedures, 루틴 탭은 feat:routines
+// 절차 셸 — 탭 다섯(만들기·절차·실행 이력·루틴·자동)과 자식 라우트 — 절차 탭은 feat:procedures, 루틴 탭은 feat:routines, 자동 탭은 feat:auto-pipeline
 //
 // 루트는 `.container` 다 — AppShell 의 ChatDock 이 열릴 때 자리를 비켜 주는 클래스다.
 // 우하단은 비워 둔다(닫힌 독의 💬 FAB 가 거기 고정이라 겹친다).
@@ -39,6 +39,7 @@ import {
 } from '../../api/procedures.api';
 import BuildView from './BuildView';
 import { RoutineDetailView, RoutineList, RoutineNew } from './RoutinesView';
+import AutoPipelineView from './AutoPipelineView';
 import { useCan } from '../../auth/useCan';
 import { RunSteps } from './RunSteps';
 import { listTeams, resolveTeam, type Team } from '../../api/teams.api';
@@ -48,6 +49,8 @@ export default function ProceduresPage() {
   const can = useCan();
   const proc = can('feat:procedures');
   const routines = can('feat:routines');
+  // 자동 파이프라인(docs/auto-pipeline) — grant_only 키라 절차 · 루틴 권한 없이 이 키만 가진 사람도 있다
+  const auto = can('feat:auto-pipeline');
   return (
     <Page width="wide">
       <PageHeader
@@ -66,10 +69,14 @@ export default function ProceduresPage() {
           </>
         )}
         {routines && <Tab to="/procedures/routines">루틴</Tab>}
+        {auto && <Tab to="/procedures/auto">자동</Tab>}
       </nav>
 
       <Routes>
-        <Route index element={proc ? <BuildView /> : <Navigate to="/procedures/routines" replace />} />
+        <Route
+          index
+          element={proc ? <BuildView /> : <Navigate to={routines ? '/procedures/routines' : '/procedures/auto'} replace />}
+        />
         {proc && (
           <>
             <Route path="saved" element={<ProcedureList />} />
@@ -86,6 +93,7 @@ export default function ProceduresPage() {
             <Route path="routines/:id" element={<RoutineDetailView />} />
           </>
         )}
+        {auto && <Route path="auto/*" element={<AutoPipelineView />} />}
       </Routes>
     </Page>
   );
