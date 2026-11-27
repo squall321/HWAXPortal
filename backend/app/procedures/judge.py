@@ -188,6 +188,26 @@ def _first_line(text: str) -> str:
     return ""
 
 
+_FASTMCP_HEAD = re.compile(r"Error executing tool [A-Za-z0-9_.\-]+\s*:\s*")
+
+
+def _app_error_body(text: str | None) -> dict | None:
+    """isError 글이 앱의 계약 오류 JSON 하나인가 — FastMCP 머리(「Error executing tool <이름>: 」)는 떼고 본다. 아니면 None."""
+    t = (text or "").strip()
+    m = _FASTMCP_HEAD.match(t)
+    if m:
+        t = t[m.end():]
+    if not t.startswith("{"):
+        return None
+    try:
+        body = json.loads(t)
+    except ValueError:
+        return None
+    if isinstance(body, dict) and isinstance(body.get("error"), str) and body["error"].strip():
+        return body
+    return None
+
+
 def judge(*, is_error: bool, text: str, raw: bool = False,
           unwrap: str | None = None, ok_text: str | None = None) -> Verdict:
     """한 단계의 성공 여부. 네 조건이 **모두** 성립해야 성공이다.
@@ -202,6 +222,14 @@ def judge(*, is_error: bool, text: str, raw: bool = False,
         if g:
             kind, retriable = g
             return Verdict(False, "mcp", kind, error=text, retriable=retriable)
+        # 앱이 오류를 계약 꼴 JSON({"error": 낱말, "detail": 사람 글})으로 isError 에 실어 보낸다(DocForge 0.5.0 — SDK 2.x 의
+        # CallToolResult(is_error=True) 꼴, 공통 계약 P3 · HWAXPortal docs/mcp-modernize). 예외로 올리면 앞에 FastMCP 머리가 붙는다.
+        # 날것 그대로면 실패 카드가 {"error": …} 를 보인다 — detail 을 사람 글로 쓰고, 낱말은 parsed 에 남겨 부르는 쪽이 읽게 한다.
+        body = _app_error_body(text)
+        if body is not None:
+            detail = str(body.get("detail") or "").strip()
+            msg = f"{detail} ({body['error']})" if detail else str(body["error"])
+            return Verdict(False, "mcp", "tool_error", error=msg, retriable=False, parsed=body)
         return Verdict(False, "mcp", "tool_error", error=text, retriable=False)
 
     # ⑤ 빈 본문 — 0건과 실패가 같은 모양이다

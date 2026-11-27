@@ -439,3 +439,26 @@ def test_ok_text_는_저장_시점에_검사한다():
     base["steps"][0].update(raw=False, ok_text="x")
     errs = validate_spec(ProcedureSpec.model_validate(base))
     assert any("raw 단계에만" in e for e in errs), errs
+
+
+# ── 앱 계약 오류 JSON 이 isError 로 올 때(DocForge 0.5.0 · 공통 계약 P3, HWAXPortal docs/mcp-modernize) ──────────────────
+import pytest as _pytest_mm
+
+
+@_pytest_mm.mark.parametrize("text", [
+    '{"error": "job_not_found", "detail": "잡을 찾지 못했다 — job_id 를 확인한다", "status": 404}',
+    'Error executing tool docforge_status: {"error": "job_not_found", "detail": "잡을 찾지 못했다 — job_id 를 확인한다"}',
+])
+def test_isError_의_앱_계약_JSON_은_detail_을_사람_글로_쓰고_낱말은_parsed_에(text):
+    from app.procedures import judge as J
+    v = J.judge(is_error=True, text=text)
+    assert not v.ok and v.kind == "tool_error"
+    assert v.parsed["error"] == "job_not_found"
+    assert J.short_error(v).startswith("잡을 찾지 못했다"), J.short_error(v)
+    assert '{"error"' not in J.short_error(v), "실패 카드에 JSON 이 날것으로 보인다"
+
+
+def test_isError_의_평문_pydantic_글은_지금처럼():
+    from app.procedures import judge as J
+    v = J.judge(is_error=True, text="Error executing tool x: 1 validation error for xArguments\nq\n  Field required")
+    assert not v.ok and v.kind == "tool_error" and v.parsed is None
