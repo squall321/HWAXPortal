@@ -12,7 +12,7 @@
 ## M0 측정 바닥
 
 - [x] 앱별 품질 카드 스크립트 `mcp_quality_card.py`(게이트웨이 `ea058fd` — 카탈로그 + 감사 원장, 설명 원문 · 사람 · 주소 없음, 받아 둔 파일로도 · 시험 6 · dev 실측 797 · 인자 설명 0.379 · 표지 0.343)
-- [ ] 감사 원장에 `isError` 결과의 사유(앞 200자 · 사람 정보 가림)
+- [x] 감사 원장에 `isError` 결과의 사유(게이트웨이 `3d776c9` — 가린 다음 앞 200자)
 - [ ] 점수판이 중첩 인자(객체 · `$defs`)를 센다 · 「게이트웨이가 채움」 을 따로
 - [ ] 도구 수 셋(health · tools-map · tools/list) 맞추기
 - [ ] 보기 · prompts · skills 채택 셈을 날마다 원장에(`/usage-rollup`)
@@ -21,9 +21,10 @@
 ## M1 stateless
 
 - [ ] 우리 앱이 서버 → 클라이언트 채널(알림 · sampling · elicitation)을 쓰는지 확인 — 1단계에서 버려진다
-- [ ] 게이트웨이 세션 기댐 떼기 — 근거 원장 열쇠 · 재기동 막기 · 질의 기록 잇기
-- [ ] 게이트웨이 stateless(1단계) · 옛 클라이언트 시험(개인 Claude 꼴) · 재기동 뒤 끊김 0
-- [ ] 심의 MCP(에이전트 서버) — 이미 stateless 확인 · 시험
+- [x] 게이트웨이 세션 기댐 떼기 — 근거 원장은 신원으로만 · 재기동 막기는 비우는 동안 initialize 만 503(`7636080`)
+- [x] 게이트웨이 stateless(1단계) — master `9bbc338` · dev 반영(11-27) · 실호출 확인(세션 번호 없음 · 세션 없이 / 옛 세션 머리로 tools/list 797 · tools/call 200). PC 킷(mcp-remote) 확인은 cae00 물음으로
+  - [x] 에이전트 서버 루틴 실행기가 세션 번호 없이도 한 번만 연다(`df32ed2` · dev 반영)
+- [x] 심의 MCP(에이전트 서버) — 이미 stateless
 - [x] 앱 세션에 1단계 청(11-27) — DynaForge · RA · SignalForge · MaterialTwin · Laminate · WDA · SmartTwin MCP
   - RA(f6) — `b929a66` 로컬 커밋 · 채널 0 확인 · 배포는 RA 사용자 승인 뒤 · 아홉 항목 답 받음
   - WDA(7e) — 로컬 적용 · 채널 0 · 원장은 meeting_id 로 디스크 · push 는 87 의 5차 동결 해제 뒤 · 아홉 항목 답 받음(R3 은 서버 지침으로 갈음 — 안 함)
@@ -34,11 +35,14 @@
 
 ## M2 정밀한 계약
 
-- [ ] contract.md 를 앱 세션 열둘에 보냄(+ 그 앱의 카드 줄 · 고칠 것 상위 10 — audit/contract.md)
-- [ ] 게이트웨이 일괄 — 설명 들여쓰기 걷기 · 쓰기 분류가 확인된 읽기 목록 먼저 · docstring 대신 채우기(확인된 앱만, 따로 셈)
+- [x] contract.md 를 앱 세션에 보냄(11-27, 「최대한 많이」 지시로 2단계도 지금) — 정정 셋(C6 1.x camelCase · P3 2.3 머리 · C7 두 벌, `dede79ba` · `38f2884b` · C1 길잡이 `01ab9cc3`)
+  - 받음 — RA(SDK 2.x 까지 · 로컬 21커밋 · 배포는 RA 승인) · DocForge(0.5.0 · 2.x · main) · DynaForge(가지 a03c02c0 · 2.x) · MaterialTwin(로컬 4커밋 · compare_materials 크래시 진짜 원인) · WDA(로컬) · MXWP(로컬 · 보안 b588a71) · ste(가지 · R1 job_events 이벤트 `list_job_events`) · Laminate(가지 · C5 는 가벼운 꼴)
+  - 남음 — StepForge · SignalForge · SmartTwin MCP 답
+- [x] 쓰기 분류가 확인된 읽기 목록 먼저(`8094f68`)
+- [ ] 게이트웨이 일괄 — 설명 들여쓰기 걷기 · docstring 대신 채우기 · 한 판정 노출(MM-5) · 구조 결과 두 벌 정리 · 점수판 중첩(서브에이전트 가지 `wt1127/m2` 짓는 중)
 - [ ] 읽기/쓰기 한 판정 — 부류를 `/tools-map` 에, 쓰는 쪽 일곱 벌을 그 부류 위로(모순 0 · 모름 0)
 - [ ] SmartTwin `_register_direct` 가 카탈로그 스키마를 살리기(c8)
-- [ ] AI 데이터 허브 · 리스크 앱 — 인자 설명 · 표지 · enum(포털 몫)
+- [x] 포털 몫 계약 — AI 데이터 허브 `7ed5dd0`(인자 설명 · 표지 0 → 100%) · 리스크 앱 `9f2086f` + 바깥 도구 인자 꼴 고침 `f534ab1` · 심의 MCP `234d016`(표지 · 설명 7,757 → 1,496자) · ThermalShock `99905fb` · 웹 리서치 `dafd506` · PaperIngest `210dc1d`(+ 보안 `4f25168`) · HE팀 운영자 목록 밖 쓰기 셋 `93d59a3b`
 
 ## M3 목적 단위
 
@@ -58,6 +62,6 @@
 
 ## M5 cae00 팔로업
 
-- [ ] cae00 받은 편지함 — 비전 · 받는 차례 · 점검 MQ-1 ~ MQ-6 · 덧씌우기 안내 · Python 3.11+ · 바퀴 꾸러미(87 과 차례 맞춤)
-- [ ] 사내 앱 주인 요청서(공통 계약 + 그 앱의 카드 줄) — 사용자가 건넨다
+- [ ] cae00 받은 편지함 — 절 초안 `cae00-7th-section.md`(점검 MQ-1 ~ MQ-10 · 되돌리기 · 판 표 — 앱 판 채움 칸이 남음) → 87 에 넘김
+- [x] 사내 앱 주인 요청서 13장 `requests/`(README 목록) — [ ] 사용자가 건넨다
 - [ ] cae00 카드 · 평가 결과를 받아 덧씌우기 튜닝
