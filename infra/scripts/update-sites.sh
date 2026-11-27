@@ -21,6 +21,7 @@ SVC="$ROOT/infra/scripts/services.sh"
 . "$ROOT/infra/scripts/lib/skip-ledger.sh"    # ○ 장부 — update-all 이 물려준 HWAX_SKIP_LEDGER 가 있으면 같은 파일에 적는다(단독 실행이면 화면에만)
 . "$ROOT/infra/scripts/lib/delib-busy.sh"     # 도는·줄 선 심의가 있으면 에이전트 서버를 내리지 않는다
 . "$ROOT/infra/scripts/lib/llm-pool.sh"       # LLM 요청이 라우터를 지나고 있으면 llm-router 를 내리지 않는다
+. "$ROOT/infra/scripts/lib/gateway-venv.sh"   # 게이트웨이 전용 venv(SDK 2.x)를 내리기 전에 맞춘다 — 못 맞추면 게이트웨이를 내리지 않는다(docs/mcp-modernize M4)
 # deploy-all(§2) 과 다른 형식의 지문이라 **하위 디렉터리**를 따로 쓴다 — 같은 파일을 두 형식이 번갈아 덮으면 핑퐁 재기동이 난다(2라운드: 인자 없는 update-sites 는 portal 도 대상)
 HWAX_RESTART_STATE_DIR="${HWAX_RESTART_STATE_DIR:-$ROOT/infra/.state/restart-fp/sites}"; export HWAX_RESTART_STATE_DIR
 SVCPY="$ROOT/infra/scripts/services.py"
@@ -47,6 +48,8 @@ case "${1:-}" in
     echo "              그래도 재기동하려면 AGENT_RESTART_FORCE=1 을 준다(심의가 전부 끊긴다)."
     echo "  라우터 보호: llm-router 는 LLM 요청이 라우터를 지나고 있으면(/health 의 inflight) 재기동하지 않고 ○ 로 남긴다(종료코드 3)."
     echo "              그래도 재기동하려면 LLM_ROUTER_RESTART_FORCE=1 을 준다(그 스트림이 끊긴다)."
+    echo "  게이트웨이 venv: mcp-gateway 는 받은 판이 MCP SDK 2.x 를 고정하면 내리기 전에 전용 venv 를 맞춘다(없거나 판이 다르면 Drive 바퀴 꾸러미로 짓는다)."
+    echo "              못 맞추면 내리지 않고 ✗ 와 사람 몫을 찍는다(옛 프로세스가 돈다) — 손으로는 ./infra/scripts/gateway-venv.sh check · ensure · push-cmd."
     exit 0 ;;
   # 인식 못 한 플래그를 그대로 두면 `TARGETS="$*"` 에 들어가고, services.py 가 `-` 로 시작하는 인자를 이름 목록에서 걸러
   # **'이름 없음 = 전부'** 로 읽어 14개 서비스를 통째로 update·down·up 한다(제외 약속된 report-archive 포함. 5라운드 실측).
@@ -221,6 +224,17 @@ restart_svc() {
     if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 옛 코드 그대로 살아 있어 재기동은 생략, 종료코드만 올린다" >&2; return 2; fi
     return 0
   fi
+  # 게이트웨이 전용 venv(docs/mcp-modernize M4) — 받은 게이트웨이 판이 MCP SDK 2.x 를 고정하면 그 start.sh 는 ./.venv 의 mcp 가 2.x 가 아닐 때
+  # 띄우지 않는다. 아래는 down → up 이라 venv 없이 내리면 다시 못 띄운다(챗 · 심의 · 개인 Claude 의 도구가 통째로 끊긴다). 그래서 내리기 전에 본다 —
+  # 여기서는 받기 · 대조만(lib 의 prepare — 판 일치 · SDK 2.x 를 고정하지 않는 판이면 할 일 없음, 지어야 하면 Drive 꾸러미를 받아 sha256 · 판을 맞댄다).
+  # 짓기(install)는 심의 기다림을 지나 내리기 바로 앞이다 — install.sh 는 있던 venv 를 비켜 두므로, 재기동을 미룬 채 지으면 옛 프로세스가 비켜 난
+  # venv 위에서 돈다. 못 하면 ✗ · 사람 몫을 찍고(lib) 지문을 적지 않은 채 1 — 옛 프로세스가 그대로 돌고 다음 실행이 다시 본다. update-all 아래면
+  # 사유가 장부 옆 파일로 넘어가 update-all 이 끝 요약에 싣는다. command -v 로 감싼다 — restart_svc 를 떼어 도는 시험 사본은 이 lib 를 읽지 않는다
+  # (실제 실행이 이 lib 를 읽는지는 시험이 건다 — test_update_gateway_venv).
+  if [ "$name" = mcp-gateway ] && command -v hwax_gw_venv_prepare >/dev/null 2>&1 && ! hwax_gw_venv_prepare; then
+    echo "  ✗ $name: 재기동하지 않는다 — 게이트웨이 전용 venv 가 서지 않았다(위 ✗ 줄). 지문을 적지 않는다(다음 실행이 다시 본다)  [$(date '+%H:%M:%S')]" >&2
+    rm -f "$tmp" "$tmpu"; return 1
+  fi
   # 재기동이 실제로 됐는지는 health 포트를 듣는 프로세스(pid·시작시각)로 본다 — down 이 실패해도 up 은 'already-up' 으로 rc 0 을 내고,
   # 그 rc 만 믿고 새 지문을 적으면 옛 프로세스가 영구 생략된다(2라운드 검토 실측).
   # 이 서비스가 **듣는 url 전부**(health + 매니페스트 urls). 포트 루트가 아니라 매니페스트 경로를 쓴다 — 루트(/)가 404 인
@@ -272,6 +286,8 @@ restart_svc() {
       esac
       hwax_skip "$name 재기동 건너뜀" "심의 ${_busy% *}건 진행 중, ${_busy#* }건 대기 — $_why. 새 코드·설정은 아직 반영되지 않았다(옛 프로세스가 돈다)" "$_how · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
       DEFERRED_RESTART="$DEFERRED_RESTART $name"; rm -f "$tmp" "$tmpu"
+      # 받아 둔 게이트웨이 venv 꾸러미는 버린다 — 미룬 재기동 앞에 짓지 않는다(옛 프로세스가 비켜 난 venv 위에서 돌지 않게). 다음 실행이 다시 받는다.
+      if command -v hwax_gw_venv_discard >/dev/null 2>&1; then hwax_gw_venv_discard; fi
       if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
       return 0
     fi
@@ -297,6 +313,12 @@ restart_svc() {
       if [ "$_upd_fail" = 1 ]; then echo "  · ✗ $name: 갱신(git pull) 은 실패했다 — 종료코드만 올린다" >&2; return 2; fi
       return 0
     fi
+  fi
+  # 게이트웨이 전용 venv 짓기 — 위 prepare 가 꾸러미를 받아 두었을 때만 한다(판 일치 · 할 일 없음이면 그대로 지나간다). 실패하면 install.sh 가 있던
+  # venv 를 되돌렸고, 게이트웨이는 아직 내리지 않았다 — 옛 프로세스가 그대로 돈다.
+  if [ "$name" = mcp-gateway ] && command -v hwax_gw_venv_install >/dev/null 2>&1 && ! hwax_gw_venv_install; then
+    echo "  ✗ $name: 재기동하지 않는다 — 게이트웨이 전용 venv 를 짓지 못했다(위 ✗ 줄). 지문을 적지 않는다(다음 실행이 다시 본다)  [$(date '+%H:%M:%S')]" >&2
+    rm -f "$tmp" "$tmpu"; return 1
   fi
   echo "  · down (기존 인스턴스 정리) …"
   "$SVC" down "$name" >/dev/null 2>&1 || true
