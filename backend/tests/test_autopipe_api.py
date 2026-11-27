@@ -168,6 +168,8 @@ def test_규칙에서_현황판_승인_보고서까지(env):
     assert d["run"]["state"] == "done" and {s["step_id"]: s["state"] for s in d["steps"]} == {"thermal": "done", "summary": "done"}
     assert all("report_md" not in s for s in d["steps"]) and [s["has_report"] for s in d["steps"]] == [False, True]
     assert "approved" in [e["kind"] for e in d["events"]]
+    # 화면의 승인 확인이 앱 · 프로파일을 말하도록 그 실행이 돈 규칙 판의 스펙을 함께 싣는다
+    assert {s["id"]: s.get("app") for s in d["spec"]["steps"]}["thermal"]
     md = c.get(f"{PREFIX}/runs/{run_id}/report", params={"step": "summary"})
     assert md.status_code == 200 and md.text.startswith("# [자동]") and md.headers["content-type"].startswith("text/markdown")
     assert c.get(f"{PREFIX}/runs/{run_id}/report", params={"step": "thermal"}).status_code == 404

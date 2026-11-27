@@ -195,7 +195,9 @@ def run_detail(run_id: str, request: Request, principal: Principal = Depends(_me
     run = st.get_run(run_id)
     if run is None:
         raise AuthError("실행을 찾을 수 없습니다", status_code=404)
-    return {"run": run, "steps": [_public_step(s) for s in st.steps(run_id)], "events": st.events(run_id)}
+    # 그 실행이 돈 규칙 판의 스펙 — 화면의 승인 확인이 「어느 앱의 어느 해석을 내는지」 말하게(단계 행에는 앱 · 프로파일이 없다)
+    return {"run": run, "spec": st.version_spec(run["rule_id"], run["version_no"]),
+            "steps": [_public_step(s) for s in st.steps(run_id)], "events": st.events(run_id)}
 
 
 @router.get("/runs/{run_id}/report", response_class=PlainTextResponse)
