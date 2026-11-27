@@ -425,3 +425,10 @@
   - 업로드 입력을 계산 노드가 잡 시작 때 복사하지 못하는 문제는 남았다(운영이 코드로 판단, 실측 아님). 잡 로그도 노드 디스크에만 남는다.
 - 운영이 요청서 `cluster-shared-folder-request-20261127.md`(SH-01 ~ 06)를 따로 준다. 앞의 「기동 때 실패로 알리기」 제안은 SH-04 에 합쳐졌다. 원문은 아직 안 왔다.
 - SmartTwin MCP(c8)와 87 에 넘겼다. 자동 파이프라인의 전각도 낙하도 이 문제에 걸린다(docs/auto-pipeline AP-7).
+
+## R25-26 공유 폴더 요청서 SH-01 ~ 06 원문 — KooSlurm 에(11-27)
+
+- 사용자가 운영 요청서 원문을 붙여 주었다. 사본은 `cluster-shared-folder-request-20261127.md`.
+- 코드 줄(job_submit_api.py 125 · 127 · 150–159 · 644)을 KooSlurm main d93017a5 와 맞대 같았다.
+- SH-04 를 이미 받은 SmartTwin MCP 세션(c8)에 원문 그대로 넘겼다. 착지 값(커밋 · icn401 반영 · 운영 손 할 일 — 새 환경값 둘 · /data 아래 폴더 소유)을 청했다. KooSlurm main push 전에 알리라는 SM-01 규칙 그대로.
+- 자동 파이프라인의 전각도 낙하 실주행도 SH-01 · 02 뒤다(docs/auto-pipeline AP-7).
