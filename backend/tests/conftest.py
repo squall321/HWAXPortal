@@ -52,6 +52,9 @@ os.environ.setdefault("DELIB_BATCH_NOTICE_S", "0")
 # backend/.env 의 공유 비밀로 부르거나 이 박스의 정문 로그(infra/data/nginx-access.log)를 읽지 않게 끈다. 접기를 보는 시험은 run_once 에 Settings · HTTP
 # 대역을 직접 준다(tests/test_usage_fold.py). 접는 표는 감사 원장 파일 안이라 위 AGENT_AUDIT_LOG_PATH 격리가 그대로 덮는다(새 경로 설정이 없다).
 os.environ.setdefault("USAGE_FOLD_S", "0")
+# 자동 파이프라인(docs/auto-pipeline) — 시험이 포털을 띄울 때 켠 박스의 backend/.env 를 읽어도 박자 작업이 이 박스에 떠 있는 게이트웨이를 서비스 토큰으로
+# 부르지 않게 끈다(원장은 위 PROCEDURES_STORE_PATH 격리가 덮는다 — 새 경로 설정이 없다). 박자를 보는 시험은 Engine.tick 에 가짜 게이트웨이를 직접 준다.
+os.environ.setdefault("AUTO_PIPELINE_TICK_S", "0")
 # HE팀 운영자 박스 덧씌우기(docs/he-team-overlay) — 시험이 이 박스의 infra/personas/he-team.local.json 을 읽어 정본 시험 · 접근 검사 판정이
 # 박스마다 달라지지 않게, 없는 자리로 돌린다. 덧씌우기를 보는 시험은 경로를 직접 준다(tests/test_he_team_overlay.py).
 os.environ.setdefault("HE_TEAM_LOCAL_PATH", os.path.join(tempfile.mkdtemp(prefix="hwax-test-he-team-"), "he-team.local.json"))
