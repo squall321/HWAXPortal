@@ -92,12 +92,14 @@
   - 길 — RA `POST /api/reports/ai-draft`(그 형식의 블록 꼴 — 포털 `_ra_blocks` 와 같은 나눔) → `POST /api/mounts`(게시판 = 박스 파일의 board).
     시스템 계정은 관리자가 그 게시판을 미리 연결해 둔 것이 사전 승인이라 확인 토큰 없이 게시된다(RA 문서 §6.4). 게이트웨이를 거치지 않는다.
   - 줄이 없으면 보고서는 포털 원장에만 있고 현황판에서 읽는다(꺼진 것이 아니라 「RA 미설정」으로 보인다).
+  - 형식 등록과 이 줄 쓰기는 `ra-register-format.py --auto-pipeline --owner-board <최상위 조직> --apply --use --board <공간> --token-file <파일>` 한 번이다
+    (AP-27 — formats 셋(해석별 · 종합 · 이전 차수 대비)에 같은 형식을 적고, 게시판 · 토큰 파일이 비었거나 0600 이 아니면 「아직 올리지 않는다」를 말한다).
 
 ## 6. 창구(`/autopipe-api`, 모두 `feat:auto-pipeline`)
 
 | 창구 | 하는 일 |
 |---|---|
-| `GET /health` | `{enabled, how_to_enable, engine: {running, last_tick, last_error}, sources: [{app, cursor_at, last_error}], ra: {configured, board}, counts}` |
+| `GET /health` | `{enabled, how_to_enable, engine: {running, last_tick, last_error, paused_until, paused_by}, sources: [{app, cursor_at, last_error}], ra: {configured, board}, counts}` — `paused_until` 은 update-all 이 세운 박자 멈춤의 끝(없으면 null) |
 | `GET /rules` · `POST /rules`(CSRF) · `GET /rules/{id}` · `POST /rules/{id}/versions`(CSRF) | 규칙 목록 · 만들기 · 읽기 · 새 판 |
 | `POST /rules/{id}/enabled`(CSRF) `{enabled}` | 켜기 · 끄기 |
 | `POST /validate` `{spec}` | `{ok, errors[], warnings[]}` — 저장하지 않는다 |
@@ -106,8 +108,14 @@
 | `GET /runs?rule=&project=&state=&limit=` · `GET /runs/{id}` | 실행 목록 · 상세(단계 · check · 결과 봉투 · 이벤트) |
 | `POST /runs/{id}/approve`(CSRF) | `awaiting_approval` → 나아감(승인한 사람을 이벤트에) |
 | `POST /runs/{id}/cancel`(CSRF) | 안 낸 단계 취소(도는 단계는 앱에 `auto_cancel` 이 있으면 부르고, 없으면 끝까지 둔다고 알린다) |
+| `POST /runs/{id}/recheck`(CSRF) `{step?}` | 막힌 해석 단계를 같은 입력으로 다시 확인(AP-24) — `step` 을 비우면 막힌 단계 전부. 그것을 기다린 뒤 단계(건너뜀 · 대기 · 그것 없이 쓴 보고서)도 대기로 되돌리고 실행을 다시 연다. 답 `{run_id, rechecked[], reset[], stage, approved}`. 대체 · 취소 · 막힘 없이 끝난 실행 · 뒤 실행이 있는 옛 실행 · 입력이 바뀐 실행은 409(까닭 글) |
+| `POST /rules/{id}/run`(CSRF) `{project, revision}` | 감지한 과제 · 차수 하나에 지금 돌린다(AP-25) — 켠 시각 · 조용함 · 「어느 판이든 같은 지문이면 다시 안 돈다」를 넘고, 제외 목록 · ready_when · 단계(stage) · 한도는 그대로. 꺼진 규칙도 된다. 답 `{run}`. 같은 과제에 도는(승인 대기 포함) 실행이 있거나 같은 판 · 같은 입력이 이미 돌았으면 409 |
 | `GET /runs/{id}/report?step=` | 그 report 단계의 마크다운 |
-| `POST /tick`(CSRF) | 한 박자 바로(관리 · 시험용 — 꺼져 있으면 409) |
+| `POST /tick`(CSRF) | 한 박자 바로(관리 · 시험용 — 꺼져 있으면 409 · 멈춤 중이면 `{skipped: "paused"}`) |
+
+사람 창구가 아닌 것 하나 — `POST /internal/autopipe/quiesce` `{ttl_s=900, wait_s=300, by}`(공유 시크릿 `GATEWAY_SHARED_TOKEN` — 게이트웨이 내부 조회와
+같은 문). update-all(deploy-all 의 포털 `_stop`)이 포털을 내리기 직전에 부른다(AP-26). 새 박자를 `ttl_s` 동안 멈추고, 도는 박자가 실행 하나를 끝낸
+자리에서 접기를 `wait_s` 까지 기다린다. 답 `{enabled, paused_until, was_busy, idle, waited_s}`. 멈춤은 메모리라 포털이 다시 뜨면 풀린다.
 
 ## 7. 신원
 

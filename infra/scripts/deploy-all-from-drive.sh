@@ -231,6 +231,49 @@ _delib_hold() {
   return 0
 }
 
+# 자동 파이프라인 박자 기다림(HWAXPortal docs/auto-pipeline AP-26) — 포털을 **내리기 직전**(_stop 안 — 재기동이 정해진 뒤에만)에 엔진의 새 박자를
+# 멈추고 도는 박자(제출 기록 · RA 게시)가 실행 하나를 끝낸 자리에서 접히기를 기다린다. 해석 잡은 앱 쪽에서 계속 돌고 다시 뜬 포털이 같은 원장으로
+# 이어서 묻는다 — 실행이 끝나기를 기다리지 않는다(몇 시간짜리다). 기다림은 관문이 아니다 — 무엇이 와도 포털은 내린다. 멈춤은 포털 메모리라
+# 다시 뜨면 풀리고, 못 띄워도 ttl 뒤에 풀린다. 시크릿은 argv 에 싣지 않는다(curl -K -).
+#   HWAX_AUTOPIPE_WAIT_S=300   도는 박자를 기다리는 상한(초, 최대 1800). 0 이면 멈춤만 세우고 기다리지 않는다.
+#   _autopipe_quiesce <포털 health 주소> — 창구 주소는 그 주소의 /health 를 바꿔 짓는다(시험이 health 주소 하나만 바꿔 끼운다).
+_autopipe_quiesce() {
+  local _tok _w _ttl _out _code _sum _rc=0 _base="${1%/health}"
+  hwax_alive "$1" || return 0                                     # 떠 있지 않으면 접을 박자도 없다
+  _w="${HWAX_AUTOPIPE_WAIT_S:-300}"; case "$_w" in ''|*[!0-9]*) _w=300 ;; esac; [ "$_w" -le 1800 ] || _w=1800
+  _ttl=$((_w + 900)); [ "$_ttl" -le 3600 ] || _ttl=3600
+  _tok="$(_envv backend/.env GATEWAY_SHARED_TOKEN)"
+  if [ -z "$_tok" ]; then        # 설정 빠짐이지 안 켠 기능이 아니다 — ○ 가 아니라 ⚠(게이트웨이 내부 조회도 같은 값으로 막혀 있다)
+    printf '  \033[1;33m⚠\033[0m 자동 파이프라인 — 포털 backend/.env 에 GATEWAY_SHARED_TOKEN 이 없어 박자 기다림을 묻지 못했다. 그대로 내린다\n'
+    return 0
+  fi
+  _out="$(printf 'header = "Authorization: Bearer %s"\n' "$_tok" \
+          | curl -s -m $((_w + 30)) -K - -H 'Content-Type: application/json' -w '\n%{http_code}' \
+                 -d "{\"ttl_s\": $_ttl, \"wait_s\": $_w, \"by\": \"update-all\"}" "$_base/internal/autopipe/quiesce" 2>/dev/null)" || _rc=$?
+  _code="${_out##*$'\n'}"; _out="${_out%$'\n'*}"
+  case "$_code" in
+    200)
+      _sum="$(B="$_out" python3 -c '
+import json, os
+d = json.loads(os.environ["B"])
+if not d.get("enabled"): print("off")
+elif d.get("idle"): print("idle\t%s\t%s" % ("busy" if d.get("was_busy") else "free", d.get("waited_s")))
+else: print("timeout\t%s" % d.get("waited_s"))' 2>/dev/null)" || _sum="?"
+      case "$_sum" in
+        off) hwax_skip "자동 파이프라인 박자 기다림" "이 박스에서 꺼져 있다(AUTO_PIPELINE_ENABLED) — 기다릴 박자가 없다" \
+               "포털 infra/.env 에 AUTO_PIPELINE_ENABLED=1 을 적는다(먼저 docs/auto-pipeline 의 게이트웨이 허용 목록 · 규칙)" ;;
+        idle*free*) echo "  · 자동 파이프라인 — 새 박자를 멈췄다(도는 박자 없음). 다시 뜬 포털이 같은 원장으로 이어 간다" ;;
+        idle*) echo "  · 자동 파이프라인 — 도는 박자가 접히기를 $(printf '%s' "$_sum" | cut -f3)초 기다렸다. 다시 뜬 포털이 이어 간다" ;;
+        timeout*) printf '  \033[1;33m⚠\033[0m 자동 파이프라인 — 도는 박자가 %s초 안에 접히지 않았다. 그대로 내린다(낸 제출은 같은 idem_key 로 다시 묻고, 답을 잃은 RA 게시는 실행 상세에 ra_outcome_unknown 으로 남는다 — 늘리려면 HWAX_AUTOPIPE_WAIT_S)\n' "$_w" ;;
+        *) printf '  \033[1;33m⚠\033[0m 자동 파이프라인 — 기다림 답을 읽지 못했다. 그대로 내린다\n' ;;
+      esac ;;
+    404) hwax_skip "자동 파이프라인 박자 기다림" "떠 있는 포털이 이 창구를 모르는 옛 판이다 — 기다림 없이 내린다" \
+           "이번 실행이 포털을 새 판으로 올린다 — 다음 update-all 부터 저절로 기다린다" ;;
+    *) printf '  \033[1;33m⚠\033[0m 자동 파이프라인 — 박자 기다림을 묻지 못했다(HTTP %s — 403 이면 GATEWAY_SHARED_TOKEN 이 포털이 띄울 때 읽은 값과 다르다). 그대로 내린다\n' "${_code:-000}" ;;
+  esac
+  return 0
+}
+
 # We RESTART each service (stop → start) so freshly pulled images / nginx conf / code actually take
 # effect. `start.sh` alone skips already-running instances, leaving stale config live (that's what
 # caused the 502 / JSON / CSS-MIME issues). Set NO_RESTART=1 to only start what's down.
@@ -253,7 +296,7 @@ if want portal; then
     # systems.local.yaml — 외부 타일 주소(gitignore). 빠뜨리면 만들어 넣어도 재기동이 생략돼 타일이 '곧 공개' 로 남는다(검토 1차).
     _cur="$(_fp_git; hwax_fp infra/apptainer/*.sif frontend/dist infra/.env backend/.env backend/config/routes.local.env backend/config/systems.local.yaml)"
     _hp="$(_envv infra/.env HTTP_PORT)"
-    _stop()  { ./infra/scripts/stop.sh 2>/dev/null || true; }          # stop → start = pick up new conf/images
+    _stop()  { _autopipe_quiesce http://127.0.0.1:8723/health; ./infra/scripts/stop.sh 2>/dev/null || true; }   # stop → start = pick up new conf/images(내리기 전에 자동 파이프라인 박자를 접는다)
     _start() { HWAX_NO_BUILD=1 ./infra/scripts/start.sh; }
     hwax_restart_cycle portal "$_cur" _stop _start http://127.0.0.1:8723/health "http://127.0.0.1:${_hp:-8088}/health" || exit 1
     [ "${HWAX_RESTARTED:-0}" = 1 ] && hwax_mark_started nginx "$(_ngfp)"   # start.sh 가 nginx 도 새 conf 로 띄웠다

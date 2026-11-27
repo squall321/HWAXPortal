@@ -17,7 +17,14 @@ export type Verdict = 'pass' | 'fail' | 'marginal' | 'unknown';
 export interface Health {
   enabled: boolean;
   how_to_enable?: string | null;
-  engine?: { running?: boolean; last_tick?: Time | null; last_error?: string | null } | null;
+  engine?: {
+    running?: boolean;
+    last_tick?: Time | null;
+    last_error?: string | null;
+    /** update-all 이 포털을 내리기 전에 세운 박자 멈춤의 끝(멈춤이 없으면 null — AP-26) */
+    paused_until?: Time | null;
+    paused_by?: string | null;
+  } | null;
   sources?: { app: string; cursor_at?: Time | null; last_error?: string | null }[];
   ra?: { configured?: boolean; board?: string | null } | null;
   counts?: Record<string, unknown> | null;
@@ -166,6 +173,7 @@ export interface Run {
   stage?: string | null;
   state: string;
   superseded_by?: string | null;
+  approved_by?: string | null;
   reason?: string | null;
   created_at?: Time | null;
   updated_at?: Time | null;
@@ -344,6 +352,26 @@ export async function approveRun(id: string): Promise<Obj> {
 
 export async function cancelRun(id: string): Promise<Obj> {
   return json(await apiFetch(`${runPath(id)}/cancel`, { method: 'POST' }), '취소');
+}
+
+/** 막힌 해석 단계를 같은 입력으로 다시 확인한다(AP-24) — step 을 비우면 막힌 단계 전부. */
+export async function recheckRun(id: string, step?: string): Promise<Obj> {
+  return json(
+    await apiFetch(`${runPath(id)}/recheck`, { method: 'POST', headers: JSON_HEAD, body: JSON.stringify(step ? { step } : {}) }),
+    '다시 확인',
+  );
+}
+
+/** 감지한 과제 · 차수 하나에 규칙을 지금 돌린다(AP-25) — 답의 run.id 로 실행 화면을 연다. */
+export async function runRuleNow(ruleId: string, project: string, revision: string): Promise<{ run?: { id?: string } }> {
+  return json(
+    await apiFetch(`${BASE}/rules/${encodeURIComponent(ruleId)}/run`, {
+      method: 'POST',
+      headers: JSON_HEAD,
+      body: JSON.stringify({ project, revision }),
+    }),
+    '지금 돌리기',
+  );
 }
 
 /** report 단계의 마크다운 — JSON({markdown}) 이든 글(text/markdown)이든 받는다. */

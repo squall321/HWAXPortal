@@ -99,7 +99,7 @@ def test_권한은_grant_only_라_전권_소속과_관리자에게도_닫혀_있
 def test_창구는_모두_권한을_본다(env):
     c, _ = env
     routes = _routes()
-    assert len(routes) == 15, routes
+    assert len(routes) == 17, routes
     for who in ("boss@example.com", "caeg@example.com"):
         h = _login(c, who)
         for method, path in routes:
@@ -128,6 +128,8 @@ def test_꺼져_있으면_tick_승인_취소는_409_이고_규칙_편집_검증�
     assert c.post(f"{PREFIX}/tick", headers=h).status_code == 409
     assert c.post(f"{PREFIX}/runs/x/approve", headers=h).status_code == 409
     assert c.post(f"{PREFIX}/runs/x/cancel", headers=h).status_code == 409
+    assert c.post(f"{PREFIX}/runs/x/recheck", headers=h).status_code == 409
+    assert c.post(f"{PREFIX}/rules/x/run", json={"project": "TASK-A", "revision": "dv1"}, headers=h).status_code == 409
     r = c.post(f"{PREFIX}/rules", json={"spec": SPEC}, headers=h)
     assert r.status_code == 200 and r.json()["version_no"] == 1
     rid = r.json()["id"]
@@ -179,3 +181,62 @@ def test_규칙에서_현황판_승인_보고서까지(env):
     assert c.get(f"{PREFIX}/rules").json()["rules"][0]["stage"] == "approve"
     assert c.get(f"{PREFIX}/rules/{rid}").json()["versions"][0]["version_no"] == 1
     assert c.get(f"{PREFIX}/rules/없음").status_code == 404 and c.get(f"{PREFIX}/runs/없음").status_code == 404
+
+
+def test_막힌_단계_다시_확인과_지금_돌리기_창구(env):
+    """AP-24 · AP-25 — 거절은 409 와 까닭 글(화면이 그대로 보인다), 없는 실행 · 규칙은 404."""
+    c, box = env
+    box["s"] = box["s"].model_copy(update={"auto_pipeline_enabled": True})
+    app.state.autopipe_engine.settings = box["s"]
+    h = _login(c, "op@example.com")
+    box["thermal"].check_answer = {"ready": False, "missing": [{"kind": "infra", "why": "공유 볼륨 없음"}], "inputs": []}
+    rid = c.post(f"{PREFIX}/rules", json={"spec": SPEC}, headers=h).json()["id"]
+    c.post(f"{PREFIX}/rules/{rid}/enabled", json={"enabled": True}, headers=h)
+    box["src"].add("TASK-A", "dv1", at=box["t"] + 10)
+    for dt in (20, 700):
+        box["t"] += dt
+        c.post(f"{PREFIX}/tick", headers=h)
+    run_id = c.get(f"{PREFIX}/runs").json()["runs"][0]["id"]
+    assert c.get(f"{PREFIX}/runs/{run_id}").json()["run"]["state"] == "failed"
+    assert c.post(f"{PREFIX}/runs/{run_id}/recheck", json={}).status_code == 403, "쓰기는 CSRF 를 본다"
+    assert c.post(f"{PREFIX}/runs/없음/recheck", json={}, headers=h).status_code == 404
+    bad = c.post(f"{PREFIX}/runs/{run_id}/recheck", json={"step": "summary"}, headers=h)
+    assert bad.status_code == 409 and "막힘이 아닙니다" in bad.json()["detail"]
+    box["thermal"].check_answer = None
+    got = c.post(f"{PREFIX}/runs/{run_id}/recheck", headers=h)
+    assert got.status_code == 200 and got.json()["rechecked"] == ["thermal"], got.text
+    again = c.post(f"{PREFIX}/runs/{run_id}/recheck", json={}, headers=h)
+    assert again.status_code == 409 and "막힌 해석 단계가 없습니다" in again.json()["detail"]
+    busy = c.post(f"{PREFIX}/rules/{rid}/run", json={"project": "TASK-A", "revision": "dv1"}, headers=h)
+    assert busy.status_code == 409 and "도는 실행" in busy.json()["detail"]
+    for dt in (1, 120, 120):
+        box["t"] += dt
+        c.post(f"{PREFIX}/tick", headers=h)
+    d = c.get(f"{PREFIX}/runs/{run_id}").json()
+    assert d["run"]["state"] == "done" and "recheck" in [e["kind"] for e in d["events"]]
+    assert c.post(f"{PREFIX}/rules/없음/run", json={"project": "TASK-A", "revision": "dv1"}, headers=h).status_code == 404
+    assert c.post(f"{PREFIX}/rules/{rid}/run", json={"project": "TASK-Z", "revision": "dv1"}, headers=h).status_code == 409
+    assert c.post(f"{PREFIX}/rules/{rid}/run", json={"project": "", "revision": "dv1"}, headers=h).status_code == 422
+
+
+def test_update_all_의_박자_기다림은_공유_시크릿_문이다(env):
+    """AP-26 — 사람 세션이 아니라 GATEWAY_SHARED_TOKEN 으로만 연다(게이트웨이 내부 조회와 같은 문). 꺼진 박스도 같은 꼴로 답한다."""
+    c, box = env
+    url = "/internal/autopipe/quiesce"
+    assert c.post(url, json={"wait_s": 0}).status_code == 503, "비밀이 없으면 문이 닫혀 있다"
+    box["s"] = box["s"].model_copy(update={"gateway_shared_token": "s3cret-for-test"})
+    assert c.post(url, json={"wait_s": 0}).status_code == 403
+    assert c.post(url, json={"wait_s": 0}, headers={"Authorization": "Bearer wrong-secret"}).status_code == 403
+    _login(c, "op@example.com")
+    assert c.post(url, json={"wait_s": 0}).status_code == 403, "권한 있는 사람의 세션으로도 안 열린다"
+    c.cookies.clear()
+    auth = {"Authorization": "Bearer s3cret-for-test"}
+    assert c.post(url, json={"wait_s": 0, "ttl_s": 99999}, headers=auth).status_code == 422
+    r = c.post(url, json={"wait_s": 0, "ttl_s": 600}, headers=auth)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["enabled"] is False and d["idle"] is True and d["was_busy"] is False and d["paused_until"] == box["t"] + 600
+    _login(c, "op@example.com")
+    eng = c.get(f"{PREFIX}/health").json()["engine"]
+    assert eng["paused_until"] == box["t"] + 600 and eng["paused_by"] == "update-all"
+    assert box["gw"].calls == [], "기다림은 게이트웨이를 부르지 않는다"

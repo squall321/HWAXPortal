@@ -2,7 +2,8 @@
 """모든 창구는 세션 + 권한 feat:auto-pipeline(grant_only — 「전부」 · 관리자 전권에 딸려 오지 않는다, AP-9)이다. 쓰기(POST)는 CSRF 를 본다(검증은
 저장하지 않아 빼다 — 문서 그대로).
 
-스위치 AUTO_PIPELINE_ENABLED 가 꺼져 있으면 엔진이 돌지 않고 창구는 읽기 · 규칙 편집 · 검증만 된다 — 승인 · 취소 · 한 박자는 409 다.
+스위치 AUTO_PIPELINE_ENABLED 가 꺼져 있으면 엔진이 돌지 않고 창구는 읽기 · 규칙 편집 · 검증만 된다 — 승인 · 취소 · 다시 확인 · 지금 돌리기 ·
+한 박자는 409 다. update-all 이 포털을 내리기 전에 부르는 /internal/autopipe/quiesce 는 사람 창구가 아니라 공유 시크릿 문이다(AP-26).
 창구 꼴은 portal-api.md §6 이 정본이다(화면이 같은 문서로 짓는다 — 꼴을 바꾸면 문서와 화면을 같이).
 """
 from __future__ import annotations
@@ -11,7 +12,9 @@ import logging
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.access.routes import _internal
 
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
@@ -24,6 +27,7 @@ from app.deps import ensure, get_current_principal, require_csrf
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/autopipe-api", tags=["auto-pipeline"])
+internal_router = APIRouter(tags=["auto-pipeline"])
 
 HOW_TO_ENABLE = ("포털 infra/.env 에 AUTO_PIPELINE_ENABLED=1 을 적고 포털을 다시 띄운다(start.sh 가 넘긴다). 그 전에 게이트웨이 박스 파일 "
                  "service_tools.local.json 의 jobs.auto-pipeline.tools 에 계약 도구('<백엔드 키>:auto_check' 등)를 적는다(docs/auto-pipeline).")
@@ -65,6 +69,21 @@ class EnabledIn(BaseModel):
     enabled: bool
 
 
+class RecheckIn(BaseModel):
+    step: str | None = Field(default=None, max_length=40)
+
+
+class RunNowIn(BaseModel):
+    project: str = Field(min_length=1, max_length=200)
+    revision: str = Field(min_length=1, max_length=40)
+
+
+class QuiesceIn(BaseModel):
+    ttl_s: int = Field(default=900, ge=1, le=3600)
+    wait_s: float = Field(default=300, ge=0, le=1800)
+    by: str = Field(default="update-all", max_length=80)
+
+
 def _bad_spec(errors: list[str]) -> JSONResponse:
     return JSONResponse({"ok": False, "errors": errors}, status_code=422)
 
@@ -77,7 +96,8 @@ def health(request: Request, principal: Principal = Depends(_me), settings: Sett
     e = eng.health() if eng is not None else {"running": False, "last_tick": None, "last_error": None}
     ra = RA.health()
     return {"enabled": bool(settings.auto_pipeline_enabled), "how_to_enable": None if settings.auto_pipeline_enabled else HOW_TO_ENABLE,
-            "engine": {"running": e["running"], "last_tick": e["last_tick"], "last_error": e["last_error"]},
+            "engine": {"running": e["running"], "last_tick": e["last_tick"], "last_error": e["last_error"],
+                       "paused_until": e.get("paused_until"), "paused_by": e.get("paused_by")},
             "sources": [{"app": c["source"], "cursor_at": c["last_ok_at"], "last_error": c["last_error"]} for c in st.cursors()],
             "ra": {"configured": ra["configured"], "board": ra["board"], "formats": ra["formats"], "error": ra["error"]},
             "counts": st.counts()}
@@ -237,8 +257,44 @@ async def cancel(run_id: str, request: Request, principal: Principal = Depends(_
     return got
 
 
+@router.post("/runs/{run_id}/recheck")
+def recheck(run_id: str, request: Request, body: RecheckIn | None = None, principal: Principal = Depends(_me),
+            _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)) -> dict:
+    """막힌 해석 단계를 같은 입력으로 다시 확인한다(AP-24) — step 을 주면 그 단계만, 비우면 막힌 단계 전부."""
+    _on(request, settings)
+    got, why = _engine(request).recheck(run_id, _who(principal), (body.step if body else None) or None)
+    if why == "not_found":
+        raise AuthError("실행을 찾을 수 없습니다", status_code=404)
+    if got is None:
+        raise AuthError(why or "다시 확인할 수 없습니다", status_code=409)
+    return got
+
+
+@router.post("/rules/{rule_id}/run")
+async def run_now(rule_id: str, request: Request, body: RunNowIn, principal: Principal = Depends(_me),
+                  _csrf: None = Depends(require_csrf), settings: Settings = Depends(get_settings)) -> dict:
+    """감지한 과제 · 차수 하나에 이 규칙을 지금 돌린다(AP-25) — 단계(stage)는 규칙 최신 판 그대로다."""
+    _on(request, settings)
+    got, why = await _engine(request).run_now(rule_id, body.project, body.revision, _who(principal))
+    if why == "not_found":
+        raise AuthError("규칙을 찾을 수 없습니다", status_code=404)
+    if got is None:
+        raise AuthError(why or "돌릴 수 없습니다", status_code=409)
+    return got
+
+
 @router.post("/tick")
 async def tick(request: Request, principal: Principal = Depends(_me), _csrf: None = Depends(require_csrf),
                settings: Settings = Depends(get_settings)) -> dict:
     _on(request, settings)
     return await _engine(request).tick()
+
+
+# ── update-all 의 기다림(공유 시크릿 문 — 게이트웨이 내부 조회와 같은 GATEWAY_SHARED_TOKEN) ──────────────────────────────
+@internal_router.post("/internal/autopipe/quiesce")
+async def quiesce(request: Request, body: QuiesceIn | None = None, settings: Settings = Depends(get_settings)) -> dict:
+    """새 박자를 ttl_s 동안 멈추고 도는 박자가 접히기를 wait_s 까지 기다린다(AP-26). 멈춤은 메모리라 포털이 다시 뜨면 풀린다 — 내린 뒤
+    띄우지 못해도 ttl_s 뒤에 풀린다. 꺼진 박스도 같은 꼴로 답한다(enabled=false · idle=true)."""
+    _internal(request, settings)
+    b = body or QuiesceIn()
+    return await _engine(request).quiesce(ttl_s=b.ttl_s, wait_s=b.wait_s, by=b.by)

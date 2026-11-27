@@ -129,6 +129,11 @@ _STUB = r"""
     if ((m = u.match(/^\/autopipe-api\/rules\/([^/]+)\/versions$/))) {
       const r = window.__rules[m[1]]; r.latest_version += 1; r.spec = body.spec; return json({ id: r.id, version_no: r.latest_version }, 201);
     }
+    if ((m = u.match(/^\/autopipe-api\/runs\/([^/]+)\/recheck$/))) {
+      window.__runs[m[1]].steps.forEach((s) => { if (s.state === 'blocked') s.state = 'pending'; });
+      return json({ run_id: m[1], rechecked: ['drop'], reset: ['drop', 'summary'] });
+    }
+    if ((m = u.match(/^\/autopipe-api\/rules\/([^/]+)\/run$/))) return json({ run: { ...window.__runs['run-await'].run } });
     if (u.startsWith('/autopipe-api/board?')) return json(BOARD);
     if (u.startsWith('/autopipe-api/subjects?')) return json(SUBJECTS);
     if ((m = u.match(/^\/autopipe-api\/runs\/([^/?]+)\/report\?step=(.+)$/)))
@@ -290,6 +295,40 @@ const SCENARIOS = {
                     status: await page.evaluate(() => Array.from(document.querySelectorAll('[role=status]')).map((s) => s.textContent).join(' | ')) };
       out.errors.push(...page.__errors);
     }
+    return out;
+  },
+  async recheck_runnow(browser) {
+    const out = { errors: [] };
+    for (const [name, dialog] of [['recheck_dismiss', 'dismiss'], ['recheck_accept', 'accept']]) {
+      const page = await open(browser, '/procedures/auto/runs/run-run', { dialog });
+      await page.getByRole('button', { name: '막힌 단계 다시 확인' }).click();
+      if (dialog === 'accept') await page.getByText('다시 확인을 걸었습니다').waitFor();
+      else await page.waitForTimeout(200);
+      out[name] = { asked: [...page.__dialogs], sent: await posts(page, '/recheck'), buttons: await buttons(page) };
+      out.errors.push(...page.__errors);
+    }
+    const runNowButtons = (page) => page.evaluate(() =>
+      Array.from(document.querySelectorAll('[aria-label="감지 목록"] button')).filter((b) => b.textContent.trim() === '지금 돌리기').length);
+    for (const [name, dialog] of [['run_dismiss', 'dismiss'], ['run_accept', 'accept']]) {
+      const page = await open(browser, '/procedures/auto', { dialog });
+      await page.locator('[aria-label="감지 목록"] table').waitFor();
+      await page.locator('[aria-label="지금 돌릴 규칙"] option[value="r-auto"]').waitFor({ state: 'attached' });
+      const before = await runNowButtons(page);
+      await page.selectOption('[aria-label="지금 돌릴 규칙"]', 'r-auto');
+      const after = await runNowButtons(page);
+      await page.locator('[aria-label="감지 목록"] tbody tr').first().getByRole('button', { name: '지금 돌리기' }).click();
+      if (dialog === 'accept') await page.waitForFunction(() => document.getElementById('loc').textContent.includes('/runs/'));
+      else await page.waitForTimeout(200);
+      out[name] = { before, after, asked: [...page.__dialogs], sent: await posts(page, '/run'), loc: await loc(page) };
+      out.errors.push(...page.__errors);
+    }
+    const p = await open(browser, '/procedures/auto', { seed: "window.__health.engine.paused_until = 1764203600; window.__health.engine.paused_by = 'update-all';" });
+    await p.locator('[aria-label="자동 파이프라인 상태"]').waitFor();
+    out.paused = await health(p);
+    const q = await open(browser, '/procedures/auto');
+    await q.locator('[aria-label="자동 파이프라인 상태"]').waitFor();
+    out.notPaused = await health(q);
+    out.errors.push(...p.__errors, ...q.__errors);
     return out;
   },
   async detail(browser) {
@@ -464,3 +503,24 @@ def test_실행_상세는_결과_봉투_수치표_입력_확인_보고서를_보
     assert s["missing"] == ["사람이 줄 값이 필요함 — 패키지 종류를 고르세요", "개발 단계(차수)를 모름",
                             "박스 문제(클러스터 · 저장소 등) — stcx 공유 볼륨 없음", "ecad_board — 보드 파일 없음"], s["missing"]
     assert "대체됨" in s["supNote"] and "뒤 실행 보기" in s["supNote"], s["supNote"]
+
+
+def test_막힌_단계_다시_확인과_지금_돌리기는_확인_뒤에만_나간다(seen):
+    """AP-24 · AP-25 — 둘 다 클러스터 제출로 이어질 수 있다. 확인 글이 무엇을 하는지(단계 · 곧바로 제출 · 옛 보고서) 말하고, 물리면 아무것도 안 나간다."""
+    b = seen("approve_cancel")["buttons"]
+    assert "막힌 단계 다시 확인" in b["run-run"], b["run-run"]
+    for rid in ("run-await", "run-done", "run-sup", "run-planned"):
+        assert "막힌 단계 다시 확인" not in b[rid], f"막힌 단계가 없거나 대체된 실행({rid})에는 없다"
+    s = seen("recheck_runnow")
+    d = s["recheck_dismiss"]
+    assert len(d["asked"]) == 1 and d["sent"] == [], d
+    said = d["asked"][0]
+    assert "막힌 해석 1개(drop)" in said and "곧바로 클러스터에 제출" in said and "옛 보고서는 그대로" in said, said
+    a = s["recheck_accept"]
+    assert a["sent"] == [{}] and "막힌 단계 다시 확인" not in a["buttons"], "막힌 단계 전부 — 다시 읽어 단추가 사라진다"
+    r = s["run_accept"]
+    assert r["before"] == 0 and r["after"] == 4, "규칙을 고른 뒤에만, 과제 key · 차수가 있는 줄에만"
+    assert r["sent"] == [{"project": "P-100", "revision": "EVT2"}] and r["loc"] == "/procedures/auto/runs/run-await", r
+    assert "자동 규칙" in r["asked"][0] and "판 2" in r["asked"][0] and "곧바로 클러스터에 제출" in r["asked"][0], r["asked"]
+    assert s["run_dismiss"]["sent"] == [] and len(s["run_dismiss"]["asked"]) == 1
+    assert "박자 멈춤" in s["paused"] and "update-all" in s["paused"] and "박자 멈춤" not in s["notPaused"]

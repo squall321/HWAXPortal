@@ -1,6 +1,6 @@
 // 자동 파이프라인 탭 — 상태 머리 · 규칙(목록 · 편집 · 검증 · 켜기) · 과제 · 차수 현황판 · 실행 상세 · 감지 목록(docs/auto-pipeline portal-api §6)
 //
-// 화면은 원장을 읽고 사람이 할 셋(규칙 저장 · 켜기 · 제출 승인 · 취소)만 보낸다. 해석 조건은 앱의 프로파일이 정하고, 규칙은 어느 앱의 어느
+// 화면은 원장을 읽고 사람이 할 것(규칙 저장 · 켜기 · 제출 승인 · 취소 · 막힌 단계 다시 확인 · 지금 돌리기)만 보낸다. 해석 조건은 앱의 프로파일이 정하고, 규칙은 어느 앱의 어느
 // 프로파일을 어떤 순서로 부를지만 적는다(AP-1). 상태 낱말은 사람 말로 바꿔 보이고, 모르는 낱말은 그대로 보인다.
 // 단계 상태의 순서(대기 → 제출됨 → 도는 중 → 끝)를 가정하지 않는다 — 동기 앱은 제출 응답에서 곧바로 끝난다.
 import { useCallback, useEffect, useState } from 'react';
@@ -20,6 +20,8 @@ import {
   getRunReport,
   listRules,
   listSubjects,
+  recheckRun,
+  runRuleNow,
   setRuleEnabled,
   validateSpec,
   type AutopipeError,
@@ -209,6 +211,12 @@ function HealthHeader() {
           {h.how_to_enable && <p className="pr-note pr-mt-1 pr-m-0 pr-prewrap">켜는 법 — {h.how_to_enable}</p>}
         </div>
       )}
+      {eng.paused_until && (
+        <p className="pr-callout pr-m-0 pr-fs-13" role="status">
+          박자 멈춤 — {eng.paused_by || 'update-all'} 이 포털을 다시 띄우려고 새 박자를 {when(eng.paused_until)} 까지 멈췄습니다. 클러스터의 해석은
+          계속 돌고, 포털이 다시 뜨면 이어서 묻습니다.
+        </p>
+      )}
       <span className="pr-meta">
         엔진 {eng.running ? '도는 중' : '멈춤'} · 마지막 박자 {when(eng.last_tick)}
         {eng.last_error && <span className="pr-danger"> · 마지막 오류 — {eng.last_error}</span>}
@@ -246,7 +254,7 @@ function AutoHome() {
     <>
       <RulesSection rules={rules} err={err} />
       <BoardSection rules={rules ?? []} />
-      <SubjectsSection />
+      <SubjectsSection rules={rules ?? []} />
     </>
   );
 }
@@ -425,10 +433,38 @@ function BoardSection({ rules }: { rules: RuleRow[] }) {
 }
 
 // ── 5. 감지 목록 ───────────────────────────────────────────────────────────
-function SubjectsSection() {
+function SubjectsSection({ rules }: { rules: RuleRow[] }) {
+  const nav = useNavigate();
   const [state, setState] = useState('');
   const [rows, setRows] = useState<Subject[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [ruleId, setRuleId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [runErr, setRunErr] = useState<string | null>(null);
+  const rule = rules.find((r) => r.id === ruleId);
+  // 지금 돌리기(AP-25) — 켠 시각 · 조용함 · 「같은 입력이면 다시 안 돈다」를 넘고 단계(stage)와 한도는 규칙 그대로다
+  const runNow = (s: Subject) => {
+    if (!rule || !s.project || !s.revision) return;
+    const stage = STAGE[rule.stage ?? ''] ?? rule.stage ?? '—';
+    const what =
+      rule.stage === 'auto'
+        ? '입력 확인을 지나면 곧바로 클러스터에 제출합니다.'
+        : rule.stage === 'approve'
+          ? '입력 확인을 지나면 승인을 기다립니다.'
+          : '제출하지 않고 냈을 것만 기록합니다.';
+    const ok = window.confirm(
+      `규칙 「${rule.title || rule.id}」(판 ${rule.latest_version} · ${stage}${rule.enabled ? '' : ' · 꺼진 규칙'})을\n과제 ${s.project} · 차수 ${s.revision} 에 지금 돌립니다.\n${what}\n\n돌릴까요?`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setRunErr(null);
+    runRuleNow(rule.id, s.project, s.revision)
+      .then((r) => {
+        if (r.run?.id) nav(`/procedures/auto/runs/${encodeURIComponent(r.run.id)}`);
+      })
+      .catch((e: Error) => setRunErr(e.message))
+      .finally(() => setBusy(false));
+  };
   useEffect(() => {
     setRows(null);
     setErr(null);
@@ -449,8 +485,22 @@ function SubjectsSection() {
         </select>
       </div>
       <span className="pr-note">
-        원천 앱(CAD · 해석 모델)에서 새 입력이 온 과제 · 차수입니다. 입력이 일정 시간 조용해진 뒤에 준비를 판정합니다.
+        원천 앱(CAD · 해석 모델)에서 새 입력이 온 과제 · 차수입니다. 입력이 일정 시간 조용해진 뒤에 준비를 판정합니다. 규칙은 켠 뒤에 바뀐
+        과제 · 차수에만 저절로 돕니다 — 그 전의 과제 · 차수에 돌리려면 규칙을 고르고 「지금 돌리기」를 누릅니다.
       </span>
+      <div className="pr-row">
+        <select className="pr-input pr-input-tight ap-rule-pick" aria-label="지금 돌릴 규칙" value={ruleId} onChange={(e) => setRuleId(e.target.value)}>
+          <option value="">지금 돌릴 규칙 — 고르지 않음</option>
+          {rules.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.title || r.id} · 판 {r.latest_version}
+              {r.stage ? ` · ${STAGE[r.stage] ?? r.stage}` : ''}
+              {r.enabled ? '' : ' · 꺼짐'}
+            </option>
+          ))}
+        </select>
+      </div>
+      {runErr && <ErrorBanner message={`지금 돌리지 못했습니다 — ${runErr}`} />}
       {err && <ErrorBanner message={err} />}
       {!err && !rows && <Spinner label="감지 목록을 불러오는 중…" />}
       {rows && rows.length === 0 && <p className="pr-note">감지한 과제 · 차수가 없습니다.</p>}
@@ -464,6 +514,7 @@ function SubjectsSection() {
                 <th>상태</th>
                 <th>막힌 까닭</th>
                 <th>마지막 변화</th>
+                {rule && <th aria-label="지금 돌리기" />}
               </tr>
             </thead>
             <tbody>
@@ -476,6 +527,15 @@ function SubjectsSection() {
                   </td>
                   <td className="ap-wrap">{s.block_reason ? reasonText(s.block_reason) : '—'}</td>
                   <td>{when(s.last_change)}</td>
+                  {rule && (
+                    <td>
+                      {s.project && s.revision && (
+                        <button type="button" className="btn-secondary pr-btn-sm" disabled={busy} onClick={() => runNow(s)}>
+                          지금 돌리기
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -719,6 +779,21 @@ function RunView() {
     );
     if (ok) void act(() => approveRun(run.id), '승인했습니다. 엔진의 다음 박자에 제출합니다.');
   };
+  // 막힌 단계 다시 확인(AP-24) — 앱 · 박스 문제가 풀린 뒤 같은 입력으로. 대체 · 취소된 실행은 서버가 거절한다
+  const blocked = steps.filter((s) => s.kind === 'analysis' && s.state === 'blocked' && !s.run_ref);
+  const canRecheck = blocked.length > 0 && ['running', 'awaiting_approval', 'planned', 'partial', 'failed'].includes(run.state);
+  const recheck = () => {
+    const after =
+      run.stage === 'shadow'
+        ? '그림자 실행이라 확인만 다시 하고 제출하지 않습니다.'
+        : run.stage === 'auto' || run.approved_by
+          ? '확인을 지나면 곧바로 클러스터에 제출합니다' + (run.approved_by ? '(이미 승인된 실행입니다).' : '.')
+          : '확인을 지나면 승인을 기다립니다.';
+    const ok = window.confirm(
+      `막힌 해석 ${blocked.length}개(${blocked.map((s) => s.step_id).join(', ')})를 같은 입력으로 다시 확인합니다.\n${after}\n이미 쓴 보고서가 그 해석을 기다렸다면 새로 씁니다(RA 에 올린 옛 보고서는 그대로 남습니다).\n\n다시 확인할까요?`,
+    );
+    if (ok) void act(() => recheckRun(run.id), '다시 확인을 걸었습니다. 엔진의 다음 박자에 확인합니다.');
+  };
   const cancel = () => {
     const ok = window.confirm(
       '이 실행을 취소합니다.\n아직 내지 않은 단계는 취소되고, 클러스터에서 이미 도는 해석은 앱이 취소를 받지 않으면 끝까지 돕니다.\n취소할까요?',
@@ -776,6 +851,11 @@ function RunView() {
           {run.state === 'awaiting_approval' && (
             <button type="button" className="btn-primary pr-btn-sm" disabled={busy} onClick={approve}>
               제출 승인
+            </button>
+          )}
+          {canRecheck && (
+            <button type="button" className="btn-secondary pr-btn-sm" disabled={busy} onClick={recheck}>
+              막힌 단계 다시 확인
             </button>
           )}
           {!RUN_ENDED.has(run.state) && (

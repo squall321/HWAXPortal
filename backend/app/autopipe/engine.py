@@ -39,6 +39,8 @@ PAGE_MAX = 100              # 원천 하나에서 한 박자에 받는 쪽 상�
 CHECK_RETRY_MAX = 360       # 확인(auto_profiles · auto_check) — 넘으면 막힘
 SUBMIT_RETRY_MAX = 360      # 제출 — 같은 idem_key 로 다시. 넘으면 실패(앱에 잡이 섰을 수 있다고 적는다)
 DAY_S = 86400
+# 다시 확인을 받는 실행 상태(AP-24) — 대체 · 취소된 실행은 사람이 멈추거나 뒤 차수가 대신한 것이라 되살리지 않는다
+RECHECK_RUN_STATES = ("running", "awaiting_approval", "planned", "partial", "failed")
 
 
 def parse_iso(s) -> int | None:
@@ -88,6 +90,8 @@ class Engine:
         self._tmap: dict | None = None
         self._ra_tried: set = set()       # 이 박자에 RA 게시를 해 본 (실행, 단계) — 다시 하기는 다음 박자에
         self._tried: set = set()          # 이 박자에 결과 모름으로 실패한 (실행, 단계) — 같은 박자의 다음 훑기에서 다시 하지 않는다(횟수 = 박자 수)
+        self.paused_until: int | None = None   # update-all 이 포털을 내리기 전에 세운 박자 멈춤의 끝(메모리 — 다시 뜨면 풀린다, AP-26)
+        self.paused_by: str | None = None
 
     def now(self) -> int:
         return int(self.clock())
@@ -107,12 +111,19 @@ class Engine:
         if self._own_client and self._client is not None:
             await self._client.aclose()
 
+    def paused(self) -> bool:
+        return self.paused_until is not None and self.now() < self.paused_until
+
     def health(self) -> dict:
+        p = self.paused()
         return {"running": bool(self.task is not None and not self.task.done()), "last_tick": self.last_tick,
-                "last_error": self.last_error, "ticks": self.ticks}
+                "last_error": self.last_error, "ticks": self.ticks, "paused_until": self.paused_until if p else None,
+                "paused_by": self.paused_by if p else None}
 
     # ── 박자 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
     async def tick(self) -> dict:
+        if self.paused():
+            return {"skipped": "paused", "until": self.paused_until, "by": self.paused_by}
         if self._lock.locked():
             return {"skipped": "busy"}
         async with self._lock:
@@ -153,6 +164,9 @@ class Engine:
         profiles: dict = {}
         runs = self.store.open_runs()
         for run in runs:
+            if self.paused():               # update-all 이 기다린다 — 실행 하나를 끝낸 자리에서 박자를 접는다(남은 실행은 다음 박자에, AP-26)
+                out["paused"] = True
+                break
             try:
                 await self._advance_run(run["id"], now, profiles)
             except Exception as exc:  # noqa: BLE001 — 실행 하나의 뜻밖의 실패가 다른 실행의 박자를 막지 않는다
@@ -163,6 +177,9 @@ class Engine:
         # 끝난 실행의 RA 게시 다시 하기 — 실행은 닫혀도 확실히 실패하지 않은 게시(pending · drafted)는 박자마다 상한까지 다시 한다
         opened = {r["id"] for r in runs}
         for rid in self.store.ra_retry_runs(RA.ATTEMPTS_MAX):
+            if self.paused():
+                out["paused"] = True
+                break
             if rid in opened:
                 continue
             try:
@@ -653,6 +670,113 @@ class Engine:
         self.store.set_run(run_id, now, state="cancelled", reason=f"사람이 취소했다({by})", **({} if live else {"ended_at": now}))
         self.store.event(run_id, now, "cancelled", {"by": by, "cancelled": cancelled, "live": live, "auto_cancel": calls})
         return {"run_id": run_id, "cancelled": cancelled, "left_running": live, "auto_cancel": calls}
+
+    def recheck(self, run_id: str, by: str, step: str | None = None) -> tuple[dict | None, str | None]:
+        """막힌 해석 단계를 같은 입력으로 다시 확인한다(AP-24) — 앱 · 박스 문제(서비스 신원 · 허용 목록 · 공유 볼륨 · 계약 도구)가 풀린 뒤
+        사람이 누른다. 막힌 단계와, 그것을 기다리다 건너뛰었거나 그것 없이 쓴 뒤 단계(뒤 해석 · 보고서)를 대기로 되돌리고 실행을 다시 연다.
+        다음 박자가 확인부터 다시 한다. 돌려주는 것은 (결과, 거절 까닭) — 까닭 'not_found' 는 404, 그 밖은 409."""
+        now = self.now()
+        run = self.store.get_run(run_id)
+        if run is None:
+            return None, "not_found"
+        if run["state"] not in RECHECK_RUN_STATES:
+            return None, f"이 실행은 {run['state']} 입니다 — 대체되거나 취소된 실행 · 막힘 없이 끝난 실행은 다시 확인하지 않습니다"
+        steps = self.store.steps(run_id)
+        blocked = [s["step_id"] for s in steps if s["kind"] == "analysis" and s["state"] == "blocked" and not s.get("run_ref")]
+        if step:
+            if step not in blocked:
+                return None, f"단계 {step} 은 막힘이 아닙니다"
+            blocked = [step]
+        if not blocked:
+            return None, "막힌 해석 단계가 없습니다"
+        if self.store.latest_run(rule_id=run["rule_id"], project=run["project"]) != run_id:
+            return None, "같은 과제에 뒤 실행이 있습니다 — 옛 실행을 되살리지 않습니다(뒤 실행을 보세요)"
+        subj = self.store.subject(f"{run['project']}\x1f{run['revision']}")
+        if subj is not None and subj["fingerprint"] != run["fingerprint"]:
+            return None, "입력이 바뀌었습니다 — 새 입력의 실행이 조용함을 기다린 뒤 따로 섭니다"
+        spec = self.store.version_spec(run["rule_id"], run["version_no"]) or {"steps": []}
+        needs = {x["id"]: set(x.get("needs") or []) for x in spec["steps"]}
+        reset = set(blocked)
+        grew = True
+        while grew:                         # 막힌 단계를 (거쳐) 기다리는 뒤 단계 — 건너뜀 · 대기는 되돌리고, 그것 없이 쓴 보고서는 다시 쓴다
+            grew = False
+            for s in steps:
+                sid = s["step_id"]
+                if sid in reset or not needs.get(sid, set()) & reset:
+                    continue
+                if s["state"] in ("skipped", "pending") or (s["kind"] == "report" and s["state"] == "done"):
+                    reset.add(sid)
+                    grew = True
+        replaced = []
+        for s in steps:
+            if s["step_id"] not in reset:
+                continue
+            fields = {"state": "pending", "error": None, "attempts": 0, "check": None, "idem_key": None, "submitted_at": None,
+                      "ended_at": None}
+            if s["kind"] == "report":
+                if s.get("report_md"):      # 옛 보고서는 사건에 남긴다 — RA 에 이미 올린 것은 RA 에 그대로 있고, 다시 쓴 것은 새 보고서로 올라간다
+                    replaced.append({"step": s["step_id"], "ra_report_id": s.get("ra_report_id"), "ra_state": s.get("ra_state"),
+                                     "report_md": s["report_md"][:200_000]})
+                fields.update(report_md=None, verdict=None, ra_report_id=None, ra_state=None, ra_error=None, ra_attempts=0)
+            self.store.set_step(run_id, s["step_id"], now, **fields)
+        order = [s["step_id"] for s in steps if s["step_id"] in reset]
+        self.store.set_run(run_id, now, state="running", ended_at=None, reason=f"다시 확인 — {by}")
+        self.store.event(run_id, now, "recheck", {"by": by, "steps": blocked, "reset": order, "from_state": run["state"],
+                                                  "replaced_reports": replaced})
+        return {"run_id": run_id, "rechecked": blocked, "reset": order, "stage": run["stage"],
+                "approved": bool(run.get("approved_by"))}, None
+
+    async def run_now(self, rule_id: str, project: str, revision: str, by: str) -> tuple[dict | None, str | None]:
+        """사람이 이 규칙을 감지한 과제 · 차수 하나에 지금 돌린다(AP-25) — 켠 시각 · 조용함 · 「어느 판이든 같은 지문이면 다시 안 돈다」를
+        넘는다. 범위 제외 · ready_when · 단계(stage) · 한도는 그대로 본다. 같은 과제에 도는 실행이 있으면 대체하지 않고 거절한다."""
+        now = self.now()
+        rule = self.store.get_rule(rule_id)
+        if rule is None or rule.get("archived"):
+            return None, "not_found"
+        spec = rule.get("spec") or {}
+        subj = self.store.subject(f"{project}\x1f{revision}")
+        if subj is None:
+            return None, "감지한 적 없는 과제 · 차수입니다 — 원천 앱이 알려 준(auto_changes) 과제 · 차수만 돌립니다"
+        if project in set((spec.get("scope") or {}).get("exclude") or []):
+            return None, "이 규칙의 제외 목록에 있는 과제입니다"
+        live = self.store.active_run(rule_id=rule_id, project=project)
+        if live:
+            return None, f"이 과제에 도는 실행이 있습니다({live[:8]}) — 끝나거나 취소한 뒤에 돌립니다"
+        ready_when = (spec.get("trigger") or {}).get("ready_when") or []
+        if ready_when:
+            tmap = await self.gw().tools_map(fresh=True)
+            if tmap is None:
+                return None, "게이트웨이 /tools-map 을 읽지 못해 준비(ready_when)를 판정하지 못했습니다"
+            names = {S.ready_split(e)[0]: resolve_backend(S.ready_split(e)[0], tmap) for e in ready_when}
+            unmet = [e for e in ready_when if not self._ready_ok(e, subj["ready"], names)]
+            if unmet:
+                return None, f"아직 준비되지 않았습니다(ready_when: {', '.join(unmet)})"
+        steps_by = {x["id"]: x for x in spec["steps"]}
+        rid = self.store.create_run(rule_id=rule_id, version_no=rule["latest_version"], subject=subj, stage=spec["stage"],
+                                    steps=[(sid, steps_by[sid]["kind"]) for sid in S.order(spec["steps"])], now=now)
+        if rid is None:
+            return None, f"이 규칙의 판 {rule['latest_version']} 이 같은 입력으로 이미 돌았습니다 — 다시 돌리려면 새 판을 저장합니다"
+        self.store.set_run(rid, now, reason=f"사람이 지금 돌렸다({by})")
+        self.store.event(rid, now, "run_now", {"by": by, "rule_enabled": bool(rule.get("enabled"))})
+        self.store.set_subject_state(subj["skey"], "ready", now)
+        return {"run": self.store.get_run(rid)}, None
+
+    async def quiesce(self, *, ttl_s: int, wait_s: float, by: str) -> dict:
+        """update-all 이 포털을 내리기 전에 부른다(AP-26) — 새 박자를 ttl_s 동안 멈추고, 도는 박자가 실행 하나를 끝낸 자리에서 접기를
+        wait_s 까지 기다린다. 해석 잡은 앱 쪽에서 계속 돌고 다시 뜬 포털이 이어서 묻는다 — 기다리는 것은 포털의 한 박자(제출 기록 · RA 게시)뿐이다."""
+        self.paused_until = self.now() + max(1, int(ttl_s))
+        self.paused_by = (by or "update-all")[:80]
+        busy = self._lock.locked()
+        t0 = time.monotonic()
+        idle = True
+        if busy:
+            try:
+                await asyncio.wait_for(self._lock.acquire(), timeout=max(0.0, float(wait_s)))
+                self._lock.release()
+            except TimeoutError:
+                idle = False
+        return {"enabled": self.enabled, "paused_until": self.paused_until, "was_busy": busy, "idle": idle,
+                "waited_s": round(time.monotonic() - t0, 1)}
 
 
 def start(app, settings, engine: Engine) -> asyncio.Task | None:

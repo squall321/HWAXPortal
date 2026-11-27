@@ -248,6 +248,18 @@ class AutoStore:
             return None
         return run_id
 
+    def active_run(self, *, rule_id: str, project: str) -> str | None:
+        """이 규칙 · 과제에서 나아가는(running) 또는 승인을 기다리는 실행 — 지금 돌리기가 앞 실행을 대체하지 않게 본다(AP-25)."""
+        row = self._conn().execute("SELECT id FROM auto_runs WHERE rule_id=? AND project=? AND state IN ('running','awaiting_approval')"
+                                   " ORDER BY created_at DESC, rowid DESC LIMIT 1", (rule_id, project)).fetchone()
+        return row["id"] if row else None
+
+    def latest_run(self, *, rule_id: str, project: str) -> str | None:
+        """이 규칙 · 과제의 가장 최근 실행 — 다시 확인이 뒤 실행이 있는 옛 실행을 되살리지 않게 본다(AP-24)."""
+        row = self._conn().execute("SELECT id FROM auto_runs WHERE rule_id=? AND project=? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                                   (rule_id, project)).fetchone()
+        return row["id"] if row else None
+
     def supersede(self, *, rule_id: str, project: str, new_run: str, now: int) -> list[str]:
         """AP-D5 — 같은 규칙 · 같은 과제의 앞 실행이 끝나지 않았으면: 도는 해석(queued · running)은 그대로, 아직 내지 않은 해석은 cancelled,
         보고서 단계는 남긴다(끝난 결과가 「대체됨」 표지로 보고서에 남는다), 실행은 superseded. 제출을 시작했지만 답을 잃은 단계(idem_key 만

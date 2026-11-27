@@ -357,6 +357,7 @@ try:
     from app.autopipe import routes as autopipe_routes
 
     app.include_router(autopipe_routes.router)
+    app.include_router(autopipe_routes.internal_router)
 except Exception:  # noqa: BLE001
     _log.error("자동 파이프라인 라우터 등록 실패 — 포털은 계속 뜬다", exc_info=True)
 

@@ -32,6 +32,9 @@
 #                               그 멈춤이 수명(기다림 + 30분)으로 §4 전에 풀렸으면 §4 는 그 사이 시작된 심의를 한 번 더 기다린다. §2 가 SignalForge 를
 #                               미뤘으면 §4 의 signalforge-mcp 도 함께 미룬다. Drive 에서 SignalForge SIF 가 새로 왔으면 SignalForge 는 기다리지 않는다
 #                               (받기가 떠 있는 인스턴스의 이미지를 이미 덮어썼다).
+#   §2) 포털을 내리기 직전의 자동 파이프라인 박자 기다림(docs/auto-pipeline AP-26 — deploy-all 의 _autopipe_quiesce, 재기동할 때만).
+#     HWAX_AUTOPIPE_WAIT_S=300  새 박자를 멈추고 도는 박자(제출 기록 · RA 게시)가 접히기를 기다리는 상한(초, 최대 1800). 해석 잡은 기다리지 않는다 —
+#                               앱 쪽에서 돌고 다시 뜬 포털이 이어서 묻는다. 넘기면 ⚠ 를 찍고 그대로 내린다. 꺼진 박스는 ○.
 #   끝) 박스 훅 — infra/hooks/post-update.d/*.local.sh 를 끝 요약 앞에서 이름 차례로 돌린다(git 이 모르는 박스 파일 — docs/core-link SRC-12).
 #     실패는 종료코드에 넣지 않고 끝 요약의 따로 줄 하나로 낸다. 없으면 ○.
 #     ./infra/scripts/update-all.sh --hooks-when-idle   # 심의 · 리스크 카드 대조 · DynaForge · StepForge · DocForge 작업이 있거나
