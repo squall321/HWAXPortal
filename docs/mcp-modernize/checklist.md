@@ -47,17 +47,20 @@
 
 ## M3 목적 단위
 
-- [x] 게이트웨이 M3 — 목적 72(다앱 13 · 앱 59) · 덧씌우기 · list_tool_apps(by='purpose') · 앱 입구 · 검색 목적 층(기존 183쌍 나빠짐 0 · purpose@1 0.94 · HE app@1 0.66 → 0.89) · 보기 purpose: · prompts · skill:// 자원 · 채택 원장. 로컬 master `959a74b`(WDA 입구를 읽기 format_list 로) · dev 반영 · **원격 push 는 cae00 7차 update-all 이 끝난 뒤**
+- [x] 게이트웨이 M3 — 목적 72(다앱 13 · 앱 59) · 덧씌우기 · list_tool_apps(by='purpose') · 앱 입구 · 검색 목적 층(기존 183쌍 나빠짐 0 · purpose@1 0.94 · HE app@1 0.66 → 0.89) · 보기 purpose: · prompts · skill:// 자원 · 채택 원장. master `20cc30f`(WDA 입구 읽기 format_list · 회의록 트리거 좁힘 · 목적 목록 기본 단계 뺌 3.7만 → 1.7만 자 · 리스크 입구 읽기) · dev 반영 · 올림(11-27, 사용자 「빨리 다」)
 - [x] 검색 작은 고침(M2 `c1ffe6e` — 나빠짐 0)
 - [x] 검색 목적 층 · `list_tool_apps(by='purpose')` · 앱 입구 `entry`(M3)
 - [x] 보기 `purpose:<key>` · prompts `purpose-<key>`(M3) — [ ] 포털 hub_view MODES · PC 킷 목적 고르기(화면)
-- [ ] 웹 챗 목적 예산 · 좌석 후보 그림자 · 위임 · 루틴(에이전트 서버 가지 `wt1127/purpose` 짓는 중)
+- [x] 웹 챗 목적 예산 · 좌석 · 위임 · 루틴이 목적 표를 읽음 — 에이전트 서버 main `87bcd64`(모두 그림자 기본 · dev 그림자 측정: 입구 놓침 2/10 → 0 · 토큰 Qwen −55% · Claude −88 ~ 90%) · dev `.env` 16K 값 걷고 `CHAT_TOOL_PURPOSE=on`(백업 `.env.bak-20261127-mm`)
+  - [ ] cae00 그림자 기간 뒤 on 으로 16문항 A/B · 좌석은 panel_read 후보(안 3)가 먼저 · 위임 목적 예산 켜기
 - [ ] 평가셋 — HE samples(app@1) · 목적 쌍(purpose@1) · 186쌍 사람 검토 · cae00 스냅숏 평가
 
 ## M4 Skills · Events
 
 - [x] SKILL.md 를 resource `skill://hwax/<키>/SKILL.md` 로(M3)
-- [ ] 게이트웨이 SDK 2.x 이행 · 전용 venv · 바퀴 꾸러미(가지 `wt1127/sdk2` 짓는 중) → Skills 확장(skills/list)
+- [x] 게이트웨이 SDK 2.x 이행 — 가지 `wt1127/sdk2`(`40461b8` · `9020d95`, 저수준 Server · 두 세대 · 전용 venv Python 3.12 · 바퀴 꾸러미 tools/gateway-wheels · 시험 1,350) — **cae00 에 venv 를 먼저 지어야 해서 master 에 안 넣음**
+  - [ ] update-all 의 게이트웨이 venv 단계(포털 가지 짓는 중) → 꾸러미 Drive(사람) → 8차에 master
+  - [ ] Skills 확장(skills/list · get — SDK 2.3 에 모듈이 없어 직접) · Events 허브(poll · stream) — 가지 짓는 중
 - [ ] 게이트웨이 Events 확장(poll · stream) — 원천 준비됨: ste `list_job_events`(가지) · SmartTwin `job_changes`(main 058c601c) · StepForge `auto_changes` kind `stepforge.revision.changed`(가지 55f4c384)
 - [ ] 자동 파이프라인 감지를 이벤트로(지금의 묻기는 대비 길로 남김)
 - [ ] Tasks — SDK 구현을 지켜본다
