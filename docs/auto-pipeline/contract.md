@@ -154,6 +154,8 @@
 - `verdict` 는 `pass` · `fail` · `marginal` · `unknown` 넷이다. **기준이 없으면 `unknown` 이고 지어내지 않는다.** 「전 각도가 끝났다」 같은 완료 판정은
   공학적 합부가 아니다 — 그것만 있으면 `unknown` 이고 완료 여부는 `notes` 에.
 - `metrics[].value` 는 숫자다. 단위는 꼭 싣는다.
+- `app_version` 은 **비지 않는 글**이다 — 비거나 null 이면 포털이 봉투를 버리고 그 단계는 `failed`(envelope_invalid)다. 해석기 바이너리의 판을 모르면
+  앱 자신의 빌드 커밋을 싣고, 그것도 모르면 `"unknown"` 처럼 모른다는 글을 싣는다(11-27 — DynaForge 대조에서 찾았다, context-notes AP-29).
 - `state` 가 `done` 이 아니면 `isError: true` · `error: "not_done"` 이다.
 - 빈 결과는 `notes` 에 사유를 싣는다 — 「값이 없다」와 「이 박스에 없다」를 가른다.
 
@@ -172,7 +174,7 @@
 1. `auto_submit` 을 같은 `idem_key` 로 두 번 부르면 실행이 하나다.
 2. `auto_check` 는 아무것도 바꾸지 않는다(DB · 큐 · 파일).
 3. `isError: false` 응답에 `error` 칸이 없다.
-4. `auto_result` 의 `metrics[].unit` 이 비지 않는다.
+4. `auto_result` 의 `metrics[].unit` 과 `app_version` 이 비지 않는다(바이너리 판을 모르는 박스에서도).
 5. SP key · 개발 단계를 모르는 과제를 지어낸 값으로 싣지 않는다(null).
 6. 서비스 신원(게이트웨이 서비스 계정)으로 불러도 `auto_changes` 가 모든 과제를 준다.
 

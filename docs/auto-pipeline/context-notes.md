@@ -258,3 +258,11 @@
   보였다. 과제 key · 차수가 풀린 항목을 받으면 **같은 refs 로 지은 막힘 줄을 지운다**. refs 가 바뀌면(앞 판을 새로 이음) 못 걷는다 — 그 줄은 이력처럼 남는다.
 - StepForge 에 짚은 것 — sha256 이 null 이면 같은 ref 에 새 파일이 와도 지문이 같아 새 실행이 서지 않는다(지문은 at 를 일부러 뺀다 — 같은 파일이 다시
   와도 같은 지문). 파일을 가진 앱이라 sha 를 채워 달라고 했다. 두 앱 다 받아들였다(sha 채움 · 같은 과제 · 세션이면 refs 꼴 고정).
+
+**AP-29 DynaForge 실물 꼴을 포털 검증기에 넣어 봤다 — 결과 봉투의 `app_version` 이 비면 봉투째 버린다.**
+- DynaForge 가 가지 `auto-pipeline`(`b950bef0`)에 KR-AP1 ~ 4 를 다 지었다. 그 코드(`platform/backend/app/modules/auto/drop.py`)의 답 꼴을 그대로 포털
+  `contract.py` 에 넣었다 — 감지 · 프로파일 · 확인 · 제출 · 상태 · 취소는 모두 받는다(`links` · `title` · `report_id` 같은 모르는 칸은 버린다).
+- 결과 봉투만 걸린다. DynaForge `app_version()` 은 해석기 바이너리의 BUILD_INFO 커밋이 없으면 `None` 이고, 포털 `envelope_ok` 는 비지 않는 글을
+  요구한다 → 몇 시간 돈 전각도 낙하의 결과가 끝에서 `failed envelope_invalid` 로 버려진다. 계약 문서는 예시만 있고 「꼭」 을 적지 않았다(포털 잘못).
+- 고침 — 포털은 엄격함을 그대로 두고(봉투의 출처 칸이다) 계약에 「비지 않는 글 · 모르면 앱 빌드 커밋 · 그것도 모르면 \"unknown\"」 을 적었다. §4 시험
+  4번에 더했다. DynaForge 에는 늘 채우게 청했다. 프로파일 답의 app_version 은 지금처럼 비어도 받는다(표시용).
