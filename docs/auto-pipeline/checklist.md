@@ -13,9 +13,12 @@
 
 - [x] `contract.md` — 원천 `auto_changes` + 해석 다섯 · subject · 결과 봉투 · 상태 낱말 · idem_key 규칙(v1, 11-27)
 - [x] `portal-api.md` — 포털 표 · 엔진 박자 · 창구 · 신원(11-27)
-- [ ] 계약 도구 이름이 심의 좌석 자유 조회 접두(`_FREE_ALLOW`)와 안 겹치는지 확인(D-18)
-- [ ] 앱 요청서 — ThermalShock(계약 · SP key) · DynaForge(감지 창구 · 전각도 계약) · StepForge(감지 창구 · SP key) · ste/SmartTwinMCP(서비스 계정 제출)
-- [ ] cae00 받은 편지함 물음(PLAN §9) — 87 에 넘긴다
+- [x] 계약 도구 이름이 심의 좌석 자유 조회 접두(`_FREE_ALLOW`)와 안 겹치는지 확인(D-18 — `auto_` 없음, 11-27)
+- [x] 앱 코드 조사 → 계약 v1.1(AP-11)
+- [x] 앱 요청서 `requests/` — StepForge · DynaForge · ThermalShock · KooSlurm · ODB 허브(11-27)
+- [ ] 보냄 — StepForge(stepforge-d4) · DynaForge(kooremapper-4a) · KooSlurm(smarttwinmcp-c8) · ThermalShock(열린 세션 없음 — 사용자) · ODB 허브(cae00 — 사람)
+- [x] cae00 물음 `cae00-questions.md` AQ-1 ~ AQ-9(11-27)
+- [ ] 87 에 넘김 → 받은 편지함
 
 ## M1 포털 뼈대(dev)
 
