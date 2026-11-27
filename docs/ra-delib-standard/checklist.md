@@ -33,6 +33,6 @@
 
 - [x] server-setup.md(cae00 사람 몫)
 - [x] 업데이트 이력 · CLAUDE.md 문서 표
-- [x] 리스크 앱 화면 요청(게시 단추 — 리스크 앱 화면 세션 몫) — `risk-frontend-request.md` → 리스크 앱 main `5885e5a`(카드 · 시험 13) — 단, 리스크 앱에 「RA 초안으로 보내기」 단추(11-22 요청서 `docs/ra-report-draft-frontend-request.md`)가 아직 없어 화면에서 초안을 못 만들므로 카드는 아직 뜨지 않는다(RS-12)
+- [x] 리스크 앱 화면 요청(게시 단추 — 리스크 앱 화면 세션 몫) — `risk-frontend-request.md` → 리스크 앱 main `5885e5a`(카드 · 시험 13) — 단, 리스크 앱에 「RA 초안으로 보내기」 단추(11-22 요청서 `docs/ra-report-draft-frontend-request.md`)가 아직 없어 화면에서 초안을 못 만들므로 카드는 아직 뜨지 않는다(RS-12) → 초안 단추도 지음 `abe0709`(11-27, DR-1 ~ DR-16) — 리스크 앱의 RA 초안 문이 켜진 박스에서 초안을 보내면 카드가 선다
 - [x] cae00 받은 편지함 — 87 에 넘김(11-26, request-1125 R25-23)
 - [x] dev 반영(11-26 사용자 승인 — 포털 · 게이트웨이 재기동, 새 리스너가 커밋 뒤에 떴다 · 포털 창구 셋 401(없으면 404) · 게이트웨이 `/tools-map` 에 `ra_report_format` · 감사 env 그대로 — 함께 켜진 다른 세션 커밋 없음)
