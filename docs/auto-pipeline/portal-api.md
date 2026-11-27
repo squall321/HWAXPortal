@@ -32,6 +32,7 @@
 - `stage` — `shadow` · `approve` · `auto`(AP-D2).
 - `steps[].kind` — `analysis`(계약 앱) · `report`(`per_analysis` · `summary` · `revdiff`). `deliberation` 은 M5 — v1 검증은 「아직 없음」으로 거절한다.
 - `app` 은 게이트웨이 백엔드 키(앱 id)다. 도구는 `/tools-map` 의 `orig` 로 (백엔드, 원래 이름 `auto_*`) → 노출 이름을 찾는다.
+- analysis 가 다른 analysis 를 `needs` 로 가리킬 수 있다(예 ODB 추출 → 열충격). 그때 포털은 앞 단계 결과 봉투를 `upstream` 으로 넘긴다(계약 v1.1 §2).
 - 검증 — id 꼴(`^[a-z0-9][a-z0-9_-]{0,39}$`) · 겹침 · `needs` 가 있는 단계를 가리킴 · 순환 없음 · report 의 needs 는 analysis · `quiet_s` 60 ~ 86400 ·
   한도 양수 · `night_only` 는 analysis 단계 · 단계 수 ≤ 12.
 - 판은 불변. 고치면 새 판. 규칙은 켜기/끄기(`enabled`)가 판과 따로 있다.
@@ -56,15 +57,17 @@
 
 1. **감지** — 원천 앱마다 `auto_changes(since=커서)`. 받은 항목으로 `auto_subjects` 를 넣거나 고친다(지문이 바뀌면 `last_change` 갱신). 커서는 끝까지
    받았을 때만 나아간다. 실패는 `auto_cursors.last_error` 에 남기고 다음 원천으로.
-2. **판정** — `last_change + quiet_s` 가 지났고 `ready_when` 이 다 서면 `ready`. `project` 가 null 이면 `blocked: project_key`.
+2. **판정** — `last_change + quiet_s` 가 지났고 `ready_when` 이 다 서면 `ready`. `project` 가 null 이면 `blocked: project_key`, `revision` 이 null 이면 `blocked: revision`.
 3. **실행 만들기** — 켜진 규칙마다 범위(전 과제 − 제외)에 드는 `ready` 주제에 실행을 만든다(유일 열쇠로 멱등).
    - 같은 규칙 · 같은 과제의 앞 차수 실행이 끝나지 않았으면 AP-D5 — 앞 실행의 `queued` · `running` 단계는 그대로, `pending` · `ready` 단계는
      `cancelled`, 실행은 `superseded`(superseded_by = 새 실행).
 4. **단계 나아가기** — 실행마다 의존이 끝난 단계를.
-   - analysis · `pending` → `auto_check`. 준비 안 됨이면 `blocked`(missing 을 그대로 남김).
+   - analysis · `pending` → `auto_check`(앞 analysis 가 있으면 그 결과 봉투를 `upstream` 으로). 준비 안 됨이면 `blocked`(missing 을 그대로 남김 — 낱말
+     `project_key` · `revision` · `input` · `human_input` · `infra` · `permission`, 모르는 낱말도 그대로). 앞 analysis 가 failed · skipped 면 `skipped`(upstream_failed).
    - `shadow` 실행은 check 까지 하고 실행을 `planned` 로 둔다(제출 없음 · 「냈을 것」 기록 — profile 의 cost 를 함께).
    - `approve` 실행은 모든 analysis 가 check 를 지나면 `awaiting_approval`. 사람이 승인하면 `auto` 처럼 나아간다.
-   - `auto` · 승인된 실행 — 한도 안에서 `auto_submit(idem_key)` → `queued`. 응답을 잃으면 다음 박자에 같은 idem_key 로 다시 부른다.
+   - `auto` · 승인된 실행 — 한도 안에서 `auto_submit(idem_key)` → `queued`. 응답을 잃으면 다음 박자에 같은 idem_key 로 다시 부른다. 제출 답이 곧바로
+     `done` 이면(동기 앱) 상태를 묻지 않고 `auto_result` 로 간다.
    - `queued` · `running` → `auto_status`(단계마다 `polled_at` 으로 너무 자주 묻지 않게, 기본 120초). `done` 이면 `auto_result` 를 받아 봉투 검증 →
      `done` · verdict. 봉투가 꼴에 안 맞으면 `failed`(까닭: envelope_invalid) — 성공처럼 보이는 실패를 막는다.
    - report — needs 가 모두 끝(done · failed · skipped)이면 보고서를 쓴다(§5). needs 가운데 done 이 하나도 없으면 `skipped`.
@@ -108,8 +111,9 @@
 
 ## 7. 신원
 
-- 해석 · 원천 앱 호출은 포털이 **호출마다 찍는 짧은 서비스 토큰**으로 한다(절차 PAT 와 같은 체계 — 수명 15분 · 실행 · 단계에 묶인 jti `ap-<run>-<step>`).
-  클레임은 core-link 의 서비스 PAT 꼴(청중 `mcp-gateway-service` · `sub` `system:auto-pipeline` · `scopes` `["service"]` · `purpose` `service`)이다.
+- 해석 · 원천 앱 호출은 포털이 **호출마다 찍는 짧은 서비스 토큰**으로 한다(절차 PAT 와 같은 체계 — 수명 15분 · 실행 · 단계에 묶인 jti).
+  클레임은 core-link 의 서비스 PAT 꼴(청중 `mcp-gateway-service` · `sub` `system:auto-pipeline` · `scopes` `["service"]` · `purpose` `service`)이고, 포털
+  `auth/service_pat.py` 의 `service_claims` 로 만든다. **jti 는 `svc-` 로 시작해야 게이트웨이가 받는다** — `svc-ap-<run>-<step>`.
 - 길게 사는 서비스 PAT 를 저장하지 않는다 — 만료 관리 · 유출 표면이 없다. 무엇을 부를 수 있는지는 게이트웨이 박스 파일 `service_tools.local.json` 이
   정한다(포털이 정하지 않는다).
 - 이 결정은 PLAN §4.6 의 「1 ~ 365일 서비스 PAT · 만료 표시」를 바꾼다(context-notes AP-8).

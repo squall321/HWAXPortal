@@ -43,7 +43,7 @@
 
 **AP-8 서비스 토큰은 저장하지 않고 호출마다 찍는다.**
 - PLAN §4.6 은 관리자가 발급한 1 ~ 365일 서비스 PAT 를 쓰고 만료를 표시한다고 적었다. 미리 지으며 바꿨다.
-- 포털이 절차 PAT 와 같은 체계로 호출마다 15분짜리를 찍는다(청중 `mcp-gateway-service` · `sub` `system:auto-pipeline` · jti `ap-<run>-<step>`). 저장할 비밀 · 만료 관리 · 유출 표면이 없다.
+- 포털이 절차 PAT 와 같은 체계로 호출마다 15분짜리를 찍는다(청중 `mcp-gateway-service` · `sub` `system:auto-pipeline` · jti `svc-ap-<run>-<step>` — 게이트웨이가 jti 접두 `svc-` 를 검사한다, AP-11). 저장할 비밀 · 만료 관리 · 유출 표면이 없다.
 - 무엇을 부를 수 있는지는 여전히 게이트웨이 박스 파일 `service_tools.local.json` 이 정한다.
 
 **AP-9 권한은 grant_only 키 하나.**
@@ -54,3 +54,11 @@
 - RA 시스템 양식의 `/api/imports/from-format` 은 HTML 뼈대 번들이 있어야 한다. 보고서 종류마다 HTML 뼈대를 지어야 해서 미루었다.
 - 대신 지금 쓰는 블록 꼴 `POST /api/reports/ai-draft` 로 시스템 계정 개인 공간에 초안을 만들고 `POST /api/mounts` 로 게시판에 건다. 시스템 계정은 관리자가 게시판을 미리 연결한 것이 사전 승인이라 확인 토큰 없이 게시된다(RA 문서 §6.4).
 - 시스템 공간 대시보드의 「양식별 수신」이 보려면 형식을 시스템 이름으로 등록한다(`ra-register-format.py`).
+
+**AP-11 앱 코드 조사로 계약을 v1.1 로 고쳤다(11-27).**
+- `project` 는 SP 허브 `plm_task` key(과제명)다 — StepForge 가 쥔 `task_code` 는 과제코드라 다르다. `revision` 은 개발 단계 코드(DynaForge `dev_rev` 낱말)다. StepForge 에는 개발 단계 칸이 없다(과제 = CAD 개정 하나 · `rev_label` 은 자유 이름).
+- 사람별 위임 앱(DynaForge · ste)은 서비스 신원으로 부르면 게이트웨이 서비스 계정 명의가 되어 시야가 좁다 — 계약에 「`auto_*` 에 한해 모든 과제 읽기」를 적었다.
+- 열충격은 잡 없는 동기 예측이고 입력은 ODB++ · 사람 값(패키지 종류 · 볼 크기)이다 → `sync` · `human_input` · `upstream`(앞 단계 결과 넘기기)을 더했다.
+- ste 전각도의 결과는 완료 판정뿐이라 공학 합부를 못 준다 → 낙하 계약의 주인은 DynaForge 사슬(stcx 잡 → 후처리 예약 → sphere 리포트)로 정했다. ste 는 v1 에서 쓰지 않는다.
+- 게이트웨이는 서비스 토큰의 jti 가 `svc-` 로 시작해야 받는다(gateway.py 상수) → 포털이 찍는 jti 를 `svc-ap-…` 로 고쳤다.
+- 계산 클러스터 공유 폴더 요청서 SH-01 ~ 06 원문이 와 KooSlurm(c8)에 넘겼다(request-1125 R25-26). 낙하 실주행은 SH-01 · 02 뒤다.
