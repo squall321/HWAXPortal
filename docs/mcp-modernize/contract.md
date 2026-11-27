@@ -25,7 +25,7 @@
 | C3 | 닫힌 어휘는 enum | 정해진 낱말 집합이면 enum. 큰 집합(100개 넘음)은 설명에 찾는 도구 이름을 적는다 | `Literal["x", "y"]` |
 | C4 | 숫자 경계 | `limit` · `page` · 개수 · 비율에 최소 · 최대. 상한은 설명에도 적는다 | `Field(ge=1, le=200)` |
 | C5 | 구조 있는 객체 | 자유형 `object` 대신 모델(`$defs`)로. 정말 자유형이면 키 예시를 설명에 | pydantic 모델 인자 |
-| C6 | 읽기 · 쓰기 표지 | 모든 도구에 `readOnlyHint` · 바꾸는 도구는 `destructiveHint` · 같은 호출을 거듭해도 같으면 `idempotentHint`. 바깥 세계를 부르면 `openWorldHint`. **tools/list 에 camelCase 로 나오는지 꼭 확인** | 1.x 는 `ToolAnnotations(readOnlyHint=True)`(camelCase — ⚠ 1.x 에서 `read_only_hint=` 로 쓰면 모르는 칸으로 붙어 `{"read_only_hint": true}` 가 나가고 클라이언트는 표지를 못 받는다). 2.x 는 `ToolAnnotations(read_only_hint=True)` |
+| C6 | 읽기 · 쓰기 표지 | 모든 도구에 `readOnlyHint` · 바꾸는 도구는 `destructiveHint` · 같은 호출을 거듭해도 같으면 `idempotentHint`. 바깥 세계를 부르면 `openWorldHint`. **tools/list 에 camelCase 로 나오는지 꼭 확인** | 1.x 는 `ToolAnnotations(readOnlyHint=True)`(camelCase — ⚠ 1.x 에서 `read_only_hint=` 로 쓰면 모르는 칸으로 붙어 `{"read_only_hint": true}` 가 나가고 클라이언트는 표지를 못 받는다 — **예외도 경고도 없다**. 파이썬 속성(`t.annotations.readOnlyHint`)을 보는 시험은 이것을 못 잡으니, tools/list 로 받은 JSON 의 열쇠 꼴을 단언하는 시험을 둔다). 2.x 는 `ToolAnnotations(read_only_hint=True)` |
 | C7 | 결과 꼴 | 구조 있는 결과는 반환 타입을 모델로 적어 실제 필드가 있는 `outputSchema` 를 낸다. 큰 결과는 요약 + handle · 페이지. ⚠ SDK 는 구조 결과가 있으면 같은 내용을 글로도 실어 응답이 두 배가 된다 — 큰 결과(수 MB)를 내는 도구는 게이트웨이가 한쪽만 모델에 넘길 때까지(PLAN M2) 모델을 달지 않아도 된다. 결과 모델은 추가 칸을 허용해 앱이 칸을 더해도 깨지지 않게 | 반환 타입 힌트 |
 | C8 | 정직한 한도 | 잘랐으면 잘랐다고(`truncated` · `total` · `next_cursor`). 조용히 200 · 100 에서 끊지 않는다 | 결과 칸 |
 | C9 | 이름 | 앱 안에서 뜻이 겹치지 않는 동사_대상. 앱 사이 흔한 이름(`search` · `list_jobs` · `cancel_job`)은 앱 접두를 스스로 달지 않는다 — 게이트웨이가 겹칠 때만 접두를 붙인다. 설명에 게이트웨이 접두 이름을 박지 않는다 | — |
