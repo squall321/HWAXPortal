@@ -11,7 +11,8 @@
 
 ## M0 계약 굳히기
 
-- [ ] `contract.md` — 계약 다섯 도구 · subject · 결과 봉투 JSON Schema · 상태 낱말 · idem_key 규칙
+- [x] `contract.md` — 원천 `auto_changes` + 해석 다섯 · subject · 결과 봉투 · 상태 낱말 · idem_key 규칙(v1, 11-27)
+- [x] `portal-api.md` — 포털 표 · 엔진 박자 · 창구 · 신원(11-27)
 - [ ] 계약 도구 이름이 심의 좌석 자유 조회 접두(`_FREE_ALLOW`)와 안 겹치는지 확인(D-18)
 - [ ] 앱 요청서 — ThermalShock(계약 · SP key) · DynaForge(감지 창구 · 전각도 계약) · StepForge(감지 창구 · SP key) · ste/SmartTwinMCP(서비스 계정 제출)
 - [ ] cae00 받은 편지함 물음(PLAN §9) — 87 에 넘긴다

@@ -1,6 +1,6 @@
 # 자동 파이프라인 — 과제·차수에 새 입력이 오면 정해 둔 해석 · 보고서를 저절로(계획, 2026-11-27)
 
-> 체크리스트는 [checklist.md](checklist.md), 결정 기록은 [context-notes.md](context-notes.md).
+> 체크리스트는 [checklist.md](checklist.md), 결정 기록은 [context-notes.md](context-notes.md). 앱 계약 정본 [contract.md](contract.md) · 포털 안 설계 · 창구 [portal-api.md](portal-api.md).
 
 ## 1. 요청(사용자 11-26 · 11-27)
 
@@ -158,7 +158,7 @@ limits: {max_concurrent: 2, night_only: [drop], per_project_per_day: 1}
 - 해석 앱 호출은 서비스 PAT `system:auto-pipeline`(청중 `mcp-gateway-service`)로 게이트웨이를 거친다. 게이트웨이 서비스 허용 목록에 계약 도구만 연다.
 - 앱이 서비스 신원의 제출을 받는지는 앱마다 다르다. 클러스터 제출은 서비스 계정 sbatch(KooSlurm SM-01 계열)와 이어진다 — 앱 세션 · 운영 확인이 필요하다.
 - 결과 · 보고서에는 「자동 — 규칙 <id> v<판>, 켠 사람 <이름>, 과제 담당 <이름>」을 적는다. 사람 이름은 서명이 아니라 연락처다.
-- 서비스 PAT 수명은 1 ~ 365일이다. 만료 30일 전부터 현황판 · 알림으로 보인다(조용히 죽지 않게 — 무음 결함 교훈).
+- (11-27 바뀜 — AP-8) 길게 사는 서비스 PAT 를 저장하지 않고, 포털이 호출마다 15분짜리 서비스 토큰을 찍는다. 만료 관리가 없다.
 
 ### 4.7 화면
 
