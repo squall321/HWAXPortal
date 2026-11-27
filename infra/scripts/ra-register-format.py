@@ -11,6 +11,9 @@ id 는 RA 가 `sys.<system>.<kind>` 로 만들고, 같은 내용으로 다시 �
   2. `--apply` 면 등록한다. 등록은 그 PAT 주인의 RA 권한으로 된다 — `--owner-board` 의 부서에 템플릿을 만들 수 있는 사람이어야 한다.
   3. `--use` 면 그 id · 판을 박스 파일 `infra/ra-formats.local.json`(gitignore)에 적는다. 에이전트 서버 · 게이트웨이가 그 파일을 재기동 없이
      읽어 그때부터 그 형식으로 올린다(각자의 `/health` `ra_formats` 로 확인한다). 파일을 지우면 종전 `deliberation` v1 로 돌아간다.
+     `--auto-pipeline` 이면 맨 위 줄이 아니라 포털 자동 파이프라인 줄(`auto_pipeline.formats` 의 해석별 · 종합 · 이전 차수 대비 셋)에 적고,
+     `--board`(자동 보고서 전용 시스템 공간) · `--token-file`(시스템 계정 토큰 파일 — 리포 루트 기준 상대 경로, 0600)도 그 줄에 적는다.
+     포털은 그 줄을 박자마다 읽는다(자동 파이프라인 /health 의 ra 로 확인한다 — docs/auto-pipeline AP-27).
 
 **기본은 아무것도 바꾸지 않는다** — 인자 없이 부르면 미리보기뿐이고, `--use` 없이 등록만 해서는 올리는 곳이 바뀌지 않는다.
 
@@ -21,6 +24,9 @@ id 는 RA 가 `sys.<system>.<kind>` 로 만들고, 같은 내용으로 다시 �
   $PY infra/scripts/ra-register-format.py --owner-board <최상위 조직 slug> --apply --use --board sys-hwax
       # 심의 보고서 표준(docs/ra-delib-standard) — 소유는 최상위 조직(RA 는 소유 부서 트리 밖 사람에게 형식을 보이지 않는다),
       # 게시판은 RA 시스템 공간. 심의 결과 카드에 「시스템 공간에 올리기」 단추가 생기고 사람이 확인한 뒤 게시한다.
+  $PY infra/scripts/ra-register-format.py --auto-pipeline --owner-board <최상위 조직 slug> --apply --use \
+      --board <자동 보고서 전용 시스템 공간 slug> --token-file infra/secrets/ra-auto-pipeline.token
+      # 자동 파이프라인(docs/auto-pipeline) — 형식은 auto-pipeline(시스템 hwax-auto)이 기본. 시스템 계정 토큰 파일은 사람이 먼저 0600 으로 둔다.
 
 끝 코드 — 0 끝 · 2 준비 실패(형식 파일 · PAT · mcp 모듈 · RA 도구가 없다 — RA 가 v0.176 전이면 도구가 없다) · 3 RA 가 거절했다(까닭을 찍는다) ·
 4 `--use` 인데 쓸 판을 알 수 없다(등록 전이다 — `--apply` 를 함께 준다).
@@ -45,6 +51,8 @@ TOOL = "register_report_format"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _BOARD_RE = re.compile(r"(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}")         # RA 공간 slug — 포털 app/agent/ra_post.py 와 같은 꼴(fullmatch)
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,23}$")
+AUTO_ROW = "auto_pipeline"
+AUTO_KINDS = ("per_analysis", "summary", "revdiff")                # 포털 app/autopipe/ra.py 의 KINDS 와 같은 글자(시험이 맞댄다)
 
 
 def _probe():
@@ -117,8 +125,61 @@ def write_box(kind: str, template_id: str, version: int, path: Path = BOX_FILE, 
     return doc
 
 
+def _token_file_ok(token_file: str) -> bool:
+    """리포 루트 기준 상대 경로 — 포털 리더(app/autopipe/ra.py)가 받는 꼴. 루트 밖으로 나가는 `..` 도 받지 않는다."""
+    return bool(token_file) and token_file == token_file.strip() and not Path(token_file).is_absolute() and ".." not in Path(token_file).parts
+
+
+def write_box_auto(template_id: str, version: int, path: Path = BOX_FILE, board: str | None = None,
+                   token_file: str | None = None) -> dict:
+    """포털 자동 파이프라인 줄(auto_pipeline)의 formats 셋을 같은 형식으로 적는다(AP-27). 그 줄의 다른 칸 — 이미 둔 board · token_file — 은
+    주지 않으면 그대로 둔다. 다른 줄(deliberation 등)은 건드리지 않는다. 임시 파일에 쓰고 바꿔 끼운다."""
+    if not _ID_RE.fullmatch(template_id or "") or not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise ValueError(f"쓸 수 없는 id · 판 — {template_id!r} v{version!r}")
+    if board is not None and not _BOARD_RE.fullmatch(board):
+        raise ValueError(f"쓸 수 없는 게시판 — {board!r}")
+    if token_file is not None and not _token_file_ok(token_file):
+        raise ValueError(f"토큰 파일은 리포 루트 기준 상대 경로다 — {token_file!r}")
+    doc = read_box(path)
+    doc.setdefault("_doc", "RA 에 스스로 등록한 형식의 id · 판 — infra/scripts/ra-register-format.py --use 가 쓴다. 지우면 종전 템플릿으로 돌아간다.")
+    row = dict(doc[AUTO_ROW]) if isinstance(doc.get(AUTO_ROW), dict) else {}
+    fmts = dict(row["formats"]) if isinstance(row.get("formats"), dict) else {}
+    for k in AUTO_KINDS:
+        fmts[k] = {"template_id": template_id, "template_version": version}
+    row["formats"] = fmts
+    if board is not None:
+        row["board"] = board
+    if token_file is not None:
+        row["token_file"] = token_file
+    doc[AUTO_ROW] = row
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+    return doc
+
+
+def _auto_missing(row: dict, root: Path = ROOT) -> list[str]:
+    """적은 뒤에도 포털이 아직 올리지 않는 까닭 — 게시판 · 토큰 파일(있는지 · 0600). 토큰 값은 읽지 않는다."""
+    out = []
+    if not row.get("board"):
+        out.append("게시판이 없다 — --board <자동 보고서 전용 시스템 공간>")
+    tf = row.get("token_file")
+    if not tf:
+        out.append("시스템 계정 토큰 파일이 없다 — --token-file <리포 루트 기준 상대 경로>")
+    else:
+        try:
+            st = (root / tf).stat()
+        except OSError:
+            out.append(f"토큰 파일 {tf} 이 아직 없다 — 시스템 계정의 rat_ 토큰을 넣고 chmod 600")
+        else:
+            if st.st_mode & 0o077:
+                out.append(f"토큰 파일 {tf} 의 권한이 0600 이 아니다 — chmod 600")
+    return out
+
+
 async def run(call: Callable[[dict], Awaitable[Any]], fmt: dict, *, owner_board: str, apply: bool, use: bool,
-              box_file: Path = BOX_FILE, log: Callable[[str], None] = print, board: str | None = None) -> tuple[int, dict]:
+              box_file: Path = BOX_FILE, log: Callable[[str], None] = print, board: str | None = None,
+              auto_pipeline: bool = False, token_file: str | None = None) -> tuple[int, dict]:
     """미리보기 → (--apply) 등록 → (--use) 박스 파일. call 은 register_report_format 을 부르고 답을 dict 로 돌려준다."""
     out: dict = {"format": fmt["kind"], "owner_board": owner_board}
     pre = await call(call_args(fmt, owner_board, False))
@@ -144,13 +205,22 @@ async def run(call: Callable[[dict], Awaitable[Any]], fmt: dict, *, owner_board:
         if not isinstance(version, int) or isinstance(version, bool):
             log("✗ 쓸 판을 알 수 없다 — 아직 등록되지 않았거나 내용이 달라졌다. --apply 를 함께 준다")
             return 4, out
-        write_box(fmt["kind"], pre["template_id"], version, box_file, board=board)
         out["box_file"] = box_file.name
         if board:
             out["board"] = board
-        log(f"✓ {box_file.name} 에 적었다 — {fmt['kind']} → {pre['template_id']} v{version}"
-            + (f" · 게시판 {board}(심의 결과 카드에 「시스템 공간에 올리기」 단추)" if board else "")
-            + ". 에이전트 서버 · 게이트웨이의 /health ra_formats 로 확인한다")
+        if auto_pipeline:
+            doc = write_box_auto(pre["template_id"], version, box_file, board=board, token_file=token_file)
+            log(f"✓ {box_file.name} 의 {AUTO_ROW} 줄에 적었다 — 해석별 · 종합 · 이전 차수 대비 → {pre['template_id']} v{version}"
+                + (f" · 게시판 {board}" if board else "") + ". 포털 자동 파이프라인 /health 의 ra 로 확인한다")
+            missing = _auto_missing(doc[AUTO_ROW])
+            out["auto_pipeline_missing"] = missing
+            for m in missing:
+                log(f"○ 아직 올리지 않는다 — {m}")
+        else:
+            write_box(fmt["kind"], pre["template_id"], version, box_file, board=board)
+            log(f"✓ {box_file.name} 에 적었다 — {fmt['kind']} → {pre['template_id']} v{version}"
+                + (f" · 게시판 {board}(심의 결과 카드에 「시스템 공간에 올리기」 단추)" if board else "")
+                + ". 에이전트 서버 · 게이트웨이의 /health ra_formats 로 확인한다")
     elif not apply:
         log("○ 미리보기만 했다 — 등록은 --apply, 그 형식으로 올리기 시작하려면 --use")
     else:
@@ -160,16 +230,22 @@ async def run(call: Callable[[dict], Awaitable[Any]], fmt: dict, *, owner_board:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="HWAX 의 보고서 형식을 Report Archive 에 스스로 등록한다(미리보기가 기본)")
-    ap.add_argument("--format", default="deliberation", help="infra/ra/formats/<이름>.json")
+    ap.add_argument("--format", default=None, help="infra/ra/formats/<이름>.json(기본 deliberation — --auto-pipeline 이면 auto-pipeline)")
     ap.add_argument("--owner-board", required=True, help="이 형식을 소유할 RA 부서 slug(비울 수 없다 — RA 의 규칙)")
     ap.add_argument("--apply", action="store_true", help="등록한다(없으면 미리보기)")
     ap.add_argument("--use", action="store_true", help="그 id · 판을 박스 파일에 적어 그 형식으로 올리기 시작한다")
-    ap.add_argument("--board", default=None, help="--use 와 함께 — 심의 보고서를 올릴 RA 시스템 공간 slug(예 sys-hwax). 사람이 확인한 뒤 게시한다")
+    ap.add_argument("--board", default=None, help="--use 와 함께 — 심의 보고서를 올릴 RA 시스템 공간 slug(예 sys-hwax). 사람이 확인한 뒤 게시한다."
+                                                  " --auto-pipeline 이면 자동 보고서 전용 시스템 공간(확인 없이 게시한다)")
+    ap.add_argument("--auto-pipeline", action="store_true", help="--use 가 포털 자동 파이프라인 줄(auto_pipeline.formats 셋)에 적는다")
+    ap.add_argument("--token-file", default=None, help="--auto-pipeline --use 와 함께 — 시스템 계정 토큰 파일(리포 루트 기준 상대 경로, 0600)")
     ap.add_argument("--gateway", default=os.environ.get("HWAX_GATEWAY_URL", "http://127.0.0.1:9110/mcp"))
     ap.add_argument("--token-env", default="HWAX_GATEWAY_PAT", help="PAT 를 담은 환경변수 이름")
     a = ap.parse_args(argv)
+    if a.token_file is not None and not (a.auto_pipeline and a.use and _token_file_ok(a.token_file)):
+        print(f"✗ --token-file 은 --auto-pipeline --use 와 함께, 리포 루트 기준 상대 경로로 준다 — {a.token_file!r}", file=sys.stderr)
+        return 2
     try:
-        fmt = load_format(a.format)
+        fmt = load_format(a.format or ("auto-pipeline" if a.auto_pipeline else "deliberation"))
     except (ValueError, OSError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
@@ -209,7 +285,8 @@ def main(argv: list[str] | None = None) -> int:
                 async def call(args: dict) -> Any:
                     return probe.as_json(await s.call_tool(exposed, args))
                 return await run(call, fmt, owner_board=a.owner_board, apply=a.apply, use=a.use,
-                                 log=lambda m: print(m, file=sys.stderr), board=a.board)
+                                 log=lambda m: print(m, file=sys.stderr), board=a.board, auto_pipeline=a.auto_pipeline,
+                                 token_file=a.token_file)
 
     code, out = asyncio.run(go())
     print(json.dumps(out, ensure_ascii=False, indent=1))

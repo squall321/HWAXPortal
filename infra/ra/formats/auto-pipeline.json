@@ -1,5 +1,5 @@
 {
- "_doc": "HWAX 자동 파이프라인(docs/auto-pipeline)이 RA 시스템 계정으로 올리는 보고서 형식 — 해석별 · 종합 · 이전 차수 대비 셋이 같은 네 칸을 쓴다. 블록 id 넷은 심의 형식(deliberation.json)과 같은 글자다(backend/app/autopipe/report.py 가 채운다 — 문자열 배열 rich_text, 항목 2,000자). 시스템 이름을 심의(hwax)와 따로 두어 RA 시스템 공간 대시보드의 「양식별 수신」이 자동 보고서만 센다(PLAN §4.5). 등록은 `infra/scripts/ra-register-format.py --format auto-pipeline --owner-board <최상위 조직> --apply` 로 하고 **--use 는 쓰지 않는다** — 그 옵션은 박스 파일의 맨 위 줄에 적는데, 자동 파이프라인은 박스 파일의 auto_pipeline.formats.<종류> 에서 읽는다(손으로 적는다 — portal-api §5).",
+ "_doc": "HWAX 자동 파이프라인(docs/auto-pipeline)이 RA 시스템 계정으로 올리는 보고서 형식 — 해석별 · 종합 · 이전 차수 대비 셋이 같은 네 칸을 쓴다. 블록 id 넷은 심의 형식(deliberation.json)과 같은 글자다(backend/app/autopipe/report.py 가 채운다 — 문자열 배열 rich_text, 항목 2,000자). 시스템 이름을 심의(hwax)와 따로 두어 RA 시스템 공간 대시보드의 「양식별 수신」이 자동 보고서만 센다(PLAN §4.5). 등록과 박스 파일 쓰기는 `infra/scripts/ra-register-format.py --auto-pipeline --owner-board <최상위 조직> --apply --use --board <자동 보고서 전용 시스템 공간> --token-file <토큰 파일>` 한 번이다 — --auto-pipeline 이 맨 위 줄이 아니라 박스 파일의 auto_pipeline.formats(해석별 · 종합 · 이전 차수 대비)에 적는다(portal-api §5 · context-notes AP-27).",
  "system": "hwax-auto",
  "kind": "report",
  "name": "자동 해석 보고서",

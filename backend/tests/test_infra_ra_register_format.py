@@ -258,3 +258,61 @@ def test_board_는_use_없이_받지_않는다(monkeypatch, capsys):
 def test_포털_리더와_등록_스크립트의_게시판_꼴이_같다():
     from app.agent import ra_post
     assert reg._BOARD_RE.pattern == ra_post._BOARD_RE.pattern
+
+
+# ── 자동 파이프라인 줄(--auto-pipeline — docs/auto-pipeline AP-27) ────────────────────────────────────────────────────
+def test_auto_pipeline_은_그_줄의_형식_셋에_적고_다른_줄과_칸은_지킨다(tmp_path):
+    box = tmp_path / "ra-formats.local.json"
+    reg.write_box("deliberation", "sys.hwax.deliberation", 1, box, board="sys-hwax")
+    doc = reg.write_box_auto("sys.hwax-auto.report", 1, box, board="sys-hwax-auto", token_file="infra/secrets/ra-auto.token")
+    row = doc["auto_pipeline"]
+    assert set(row["formats"]) == set(reg.AUTO_KINDS)
+    assert all(v == {"template_id": "sys.hwax-auto.report", "template_version": 1} for v in row["formats"].values())
+    assert row["board"] == "sys-hwax-auto" and row["token_file"] == "infra/secrets/ra-auto.token"
+    assert doc["deliberation"]["board"] == "sys-hwax", "심의 줄은 그대로"
+    doc = reg.write_box_auto("sys.hwax-auto.report", 2, box)
+    assert doc["auto_pipeline"]["board"] == "sys-hwax-auto" and doc["auto_pipeline"]["token_file"] == "infra/secrets/ra-auto.token"
+    assert doc["auto_pipeline"]["formats"]["revdiff"]["template_version"] == 2
+    for kw in ({"token_file": "/etc/x"}, {"token_file": "../x"}, {"token_file": " x"}, {"board": "../x"}):
+        with pytest.raises(ValueError):
+            reg.write_box_auto("sys.hwax-auto.report", 3, box, **kw)
+    assert json.loads(box.read_text(encoding="utf-8"))["auto_pipeline"]["formats"]["summary"]["template_version"] == 2
+
+
+def test_포털_리더가_적은_줄을_그대로_읽는다(tmp_path, monkeypatch):
+    """등록 스크립트가 쓴 줄 = 포털 app/autopipe/ra.py 가 읽는 꼴 — 종류 이름 · 칸 이름 · 토큰 파일 경로 규칙(0600)."""
+    from app.agent import ra_post
+    from app.autopipe import ra as autopipe_ra
+    assert tuple(reg.AUTO_KINDS) == tuple(autopipe_ra.KINDS)
+    box = tmp_path / "ra-formats.local.json"
+    monkeypatch.setattr(ra_post, "PATH", box)
+    monkeypatch.setattr(autopipe_ra, "ROOT", tmp_path)
+    tok = tmp_path / "infra/secrets/ra-auto.token"
+    tok.parent.mkdir(parents=True)
+    tok.write_text("rat_test")
+    tok.chmod(0o600)
+    reg.write_box_auto("sys.hwax-auto.report", 4, box, board="sys-hwax-auto", token_file="infra/secrets/ra-auto.token")
+    cfg = autopipe_ra.config()
+    assert cfg["error"] is None and cfg["configured"] and cfg["board"] == "sys-hwax-auto"
+    assert cfg["formats"] == {k: ("sys.hwax-auto.report", 4) for k in reg.AUTO_KINDS}
+
+
+def test_run_의_auto_pipeline_은_아직_올리지_못하는_까닭을_말한다(tmp_path):
+    box = tmp_path / "ra-formats.local.json"
+    log: list[str] = []
+    fmt = reg.load_format("auto-pipeline")
+    code, out = asyncio.run(reg.run(FakeRA(), fmt, owner_board="mx", box_file=box, log=log.append, apply=True, use=True,
+                                    auto_pipeline=True))
+    assert code == 0 and "auto_pipeline" in json.loads(box.read_text(encoding="utf-8"))
+    assert "deliberation" not in json.loads(box.read_text(encoding="utf-8")) and "report" not in json.loads(box.read_text(encoding="utf-8")), \
+        "맨 위 줄(형식 kind)에 적지 않는다"
+    assert any("게시판이 없다" in m for m in out["auto_pipeline_missing"]) and any("토큰 파일이 없다" in m for m in out["auto_pipeline_missing"])
+    assert any(m.startswith("○ 아직 올리지 않는다") for m in log)
+
+
+def test_token_file_은_auto_pipeline_use_와_함께만_받는다(monkeypatch, capsys):
+    monkeypatch.setenv("HWAX_GATEWAY_PAT", "x")
+    assert reg.main(["--owner-board", "mx", "--token-file", "infra/secrets/t"]) == 2
+    assert reg.main(["--owner-board", "mx", "--auto-pipeline", "--token-file", "infra/secrets/t"]) == 2
+    assert reg.main(["--owner-board", "mx", "--auto-pipeline", "--use", "--token-file", "/abs/t"]) == 2
+    assert "--token-file" in capsys.readouterr().err
