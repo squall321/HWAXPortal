@@ -16,9 +16,10 @@
 - [x] 계약 도구 이름이 심의 좌석 자유 조회 접두(`_FREE_ALLOW`)와 안 겹치는지 확인(D-18 — `auto_` 없음, 11-27)
 - [x] 앱 코드 조사 → 계약 v1.1(AP-11)
 - [x] 앱 요청서 `requests/` — StepForge · DynaForge · ThermalShock · KooSlurm · ODB 허브(11-27)
-- [ ] 보냄 — StepForge(stepforge-d4) · DynaForge(kooremapper-4a) · KooSlurm(smarttwinmcp-c8) · ThermalShock(열린 세션 없음 — 사용자) · ODB 허브(cae00 — 사람)
+- [x] 보냄(11-27) — StepForge(stepforge-d4) · DynaForge(kooremapper-4a) · KooSlurm(smarttwinmcp-c8)
+- [ ] ThermalShock — 열린 세션 없음(사용자가 세션을 열면 넘긴다) · ODB 허브 — cae00 사람(AQ-8)
 - [x] cae00 물음 `cae00-questions.md` AQ-1 ~ AQ-9(11-27)
-- [ ] 87 에 넘김 → 받은 편지함
+- [x] 87 에 넘김(11-27) → [ ] 받은 편지함에 실림
 
 ## M1 포털 뼈대(dev)
 
