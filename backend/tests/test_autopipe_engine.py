@@ -215,6 +215,23 @@ def test_과제_key_나_개발_단계가_null_이면_막힘이고_실행이_없�
     assert len(sub) == 1 and sub[0]["state"] == "blocked" and sub[0]["block_reason"] == reason
 
 
+def test_사람이_개발_단계를_넣어_풀리면_같은_refs_의_막힘_줄을_걷고_실행이_선다(mk):
+    """AP-28 — StepForge · DynaForge 는 개발 단계를 사람이 정하는 칸으로 두고, 비면 null 로 실은 뒤 단계를 넣으면 같은 과제를 다시 내보낸다.
+    막힘 줄(자리 줄)이 남으면 감지 목록에 같은 과제가 막힘과 준비로 두 번 보인다. 다른 refs 의 막힘 줄은 그대로다."""
+    h = mk(FakeAnalysis(THERMAL))
+    h.rule()
+    h.src.add("TASK-A", None, ref="p-1", at=h.t + 10)
+    h.src.add("TASK-B", None, ref="p-2", at=h.t + 10)
+    h.tick(20)
+    assert sorted((s["project"], s["block_reason"]) for s in h.store.subjects()) == [("TASK-A", "revision"), ("TASK-B", "revision")]
+    h.src.add("TASK-A", "dv1", ref="p-1", at=h.t + 10)        # 사람이 단계를 넣었다 — 같은 과제가 다시 나온다
+    h.tick(20)
+    sub = sorted((s["project"], s["revision"], s["state"]) for s in h.store.subjects())
+    assert sub == [("TASK-A", "dv1", "waiting_quiet"), ("TASK-B", None, "blocked")], sub
+    h.tick(700)
+    assert [(r["project"], r["revision"]) for r in h.runs()] == [("TASK-A", "dv1")]
+
+
 @pytest.mark.parametrize("missing", [[{"kind": "infra", "why": "공유 볼륨 없음"}],
                                      [{"kind": "human_input", "name": "pkg_type", "why": "사람 값"}],
                                      [{"kind": "앱이_새로_만든_낱말"}]])

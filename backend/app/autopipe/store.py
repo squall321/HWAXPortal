@@ -202,6 +202,13 @@ class AutoStore:
                        d["fingerprint"], _j(d.get("ready") or {}), d.get("first_seen") or now, d["last_change"], d["state"],
                        d.get("block_reason"), now))
 
+    def drop_subject(self, skey: str) -> bool:
+        """주제 줄 하나를 지운다 — 과제 key · 차수를 몰라 막힘으로 세웠던 자리 줄이 풀렸을 때만 쓴다(AP-28)."""
+        c = self._conn()
+        with c:
+            cur = c.execute("DELETE FROM auto_subjects WHERE skey=?", (skey,))
+        return cur.rowcount == 1
+
     def set_subject_state(self, skey: str, state: str, now: int) -> None:
         c = self._conn()
         with c:

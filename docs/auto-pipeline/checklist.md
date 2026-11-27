@@ -17,6 +17,9 @@
 - [x] 앱 코드 조사 → 계약 v1.1(AP-11)
 - [x] 앱 요청서 `requests/` — StepForge · DynaForge · ThermalShock · KooSlurm · ODB 허브(11-27)
 - [x] 보냄(11-27) — StepForge(stepforge-d4) · DynaForge(kooremapper-4a) · KooSlurm(smarttwinmcp-c8)
+- [x] 받음(11-27, AP-28) — StepForge(사람이 정하는 개발 단계 칸 `set_revision(dev_rev)`) · DynaForge(세션에 과제 · 개발 단계 칸 · 기준 없이 수치만 ·
+  auto_* 만 모두 읽기) — 둘 다 가지에서 짓고 main · Drive 는 87 의 다음 운영 회차에. KooSlurm(c8)은 앞 질문에 막혀 아직 못 읽음
+- [x] 개발 단계를 나중에 넣어 풀린 항목의 막힘 줄을 걷는다(11-27, AP-28)
 - [ ] ThermalShock — 열린 세션 없음(사용자가 세션을 열면 넘긴다) · ODB 허브 — cae00 사람(AQ-8)
 - [x] cae00 물음 `cae00-questions.md` AQ-1 ~ AQ-9(11-27)
 - [x] 87 에 넘김(11-27) → [ ] 받은 편지함에 실림

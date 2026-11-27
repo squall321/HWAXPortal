@@ -240,3 +240,18 @@
 - 형식 기본값은 `--auto-pipeline` 이면 `auto-pipeline`(시스템 `hwax-auto`). 적은 뒤 게시판 · 토큰 파일이 없거나 0600 이 아니면 「○ 아직 올리지 않는다」를
   줄마다 말한다(토큰 값은 읽지 않는다). 시스템 계정 토큰 파일을 만드는 것은 사람이다(AQ 물음 — RA 시스템 계정).
 
+## 2026-11-27 — 앱 둘의 답(StepForge · DynaForge)
+
+**AP-28 두 앱 다 「사람이 정하는 개발 단계 칸」 — 비면 null, 넣으면 같은 과제를 다시 낸다. 포털은 그때 막힘 줄을 걷는다.**
+- StepForge(stepforge-d4) — 받음. 개정 정보에 개발 단계 칸(`set_revision(dev_rev=…)`, 낱말 · 형식은 DynaForge `parse_stage` 그대로)을 더하고
+  `auto_changes` 는 그 값만 싣는다(rev_label 이 「DV1」 이어도 짐작 안 함). project 는 `get_project_meta.plm_task.key` 와 같은 판정(못 잇거나 여럿이면 null),
+  refs `{"step_forge": 과제 id}`(+ 앞 판을 이었으면 `step_forge_supersedes`), inputs 는 step 파일마다 `{kind: "cad_file", ref, sha256, at}`, ready
+  `parsed`(마지막 parse 잡이 done). 줄의 updated_at 은 과제 만든 때 · parse 끝 · 개정 정보(단계 포함)를 정한 때 · 이은 허브 과제 갱신 가운데 가장 늦은 것.
+- DynaForge(kooremapper-4a) — 받음. 세션에 허브 과제(판 확정과 같은 풀이 — 못 풀면 거절) · 개발 단계 칸, 비면 null. refs 에 세션 id 와 linked_cad 의
+  StepForge 과제 id. ready `deck_ready`. 전각도 낙하 profile 둘(162 · 26 방향) · verdict 는 늘 unknown(출처 있는 기준이 없다 — 수치만) · 서비스 신원은
+  `auto_*` 에서만 모든 세션 읽기, 제출 계정은 운영 답 전까지 `service_identity: false` · `auto_submit` permission. SH-01 · 02 전에는 `auto_check` 가 infra.
+- 둘 다 가지에서 짓고 main · Drive 는 87 의 다음 운영 회차에 착지 값으로 준다. 포털 검증기(`contract.py`)는 두 꼴을 그대로 받는다(sha256 null · refs 둘째 키).
+- 포털 고침 — 단계를 넣으면 같은 과제가 다시 오는데, 비었을 때 세운 막힘 줄(`?<백엔드>:<refs 해시>`)이 남아 감지 목록에 같은 과제가 막힘 · 준비로 두 번
+  보였다. 과제 key · 차수가 풀린 항목을 받으면 **같은 refs 로 지은 막힘 줄을 지운다**. refs 가 바뀌면(앞 판을 새로 이음) 못 걷는다 — 그 줄은 이력처럼 남는다.
+- StepForge 에 짚은 것 — sha256 이 null 이면 같은 ref 에 새 파일이 와도 지문이 같아 새 실행이 서지 않는다(지문은 at 를 일부러 뺀다 — 같은 파일이 다시
+  와도 같은 지문). 파일을 가진 앱이라 sha 를 채워 달라고 했다.

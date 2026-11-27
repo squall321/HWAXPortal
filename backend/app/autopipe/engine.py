@@ -237,9 +237,10 @@ class Engine:
         p, r = subj["project"], subj["revision"]
         upd = parse_iso(it.get("updated_at"))
         upd = now if upd is None or upd > now else upd
+        qkey = f"?{backend}:{C.sha(subj['refs'] or it)[:20]}"     # 과제 key · 차수를 모를 때의 자리 줄 — 앱의 refs 로 짓는다
         if p is None or r is None:
             # 짐작하지 않는다 — 과제 key · 개발 단계를 모르는 항목은 막힘으로만 보인다(계약 v1.1 §0.1)
-            skey = f"?{backend}:{C.sha(subj['refs'] or it)[:20]}"
+            skey = qkey
             ex = self.store.subject(skey)
             fp = C.fingerprint({backend: it["inputs"]})
             self.store.put_subject({"skey": skey, "project": p, "revision": r, "refs": subj["refs"], "inputs": {backend: it["inputs"]},
@@ -247,6 +248,8 @@ class Engine:
                                     "last_change": ex["last_change"] if ex and ex["fingerprint"] == fp else upd, "state": "blocked",
                                     "block_reason": "project_key" if p is None else "revision"}, now)
             return
+        if self.store.drop_subject(qkey):   # 사람이 개발 단계를 넣는 등으로 풀렸다 — 같은 refs 의 막힘 줄을 걷는다(AP-28)
+            logger.info("자동 파이프라인 막힘 줄이 풀렸다 %s → 과제 · 차수 줄", qkey)
         skey = f"{p}\x1f{r}"
         ex = self.store.subject(skey)
         inputs = dict((ex or {}).get("inputs") or {})
