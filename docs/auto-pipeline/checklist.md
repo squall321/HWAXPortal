@@ -20,6 +20,7 @@
 - [x] 받음(11-27, AP-28) — StepForge(사람이 정하는 개발 단계 칸 `set_revision(dev_rev)`) · DynaForge(세션에 과제 · 개발 단계 칸 · 기준 없이 수치만 ·
   auto_* 만 모두 읽기) — 둘 다 가지에서 짓고 main · Drive 는 87 의 다음 운영 회차에. KooSlurm(c8)은 앞 질문에 막혀 아직 못 읽음
 - [x] 개발 단계를 나중에 넣어 풀린 항목의 막힘 줄을 걷는다(11-27, AP-28)
+- [x] 앱 오류 글 앞의 FastMCP 머리(「Error executing tool <이름>: 」)를 떼고 앱 낱말로 읽는다(11-27, AP-30 — StepForge 청, 머리 있는 꼴 · 없는 꼴 둘 다 시험)
 - [ ] ThermalShock — 열린 세션 없음(사용자가 세션을 열면 넘긴다) · ODB 허브 — cae00 사람(AQ-8)
 - [x] cae00 물음 `cae00-questions.md` AQ-1 ~ AQ-9(11-27)
 - [x] 87 에 넘김(11-27) → [ ] 받은 편지함에 실림

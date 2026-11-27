@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -23,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 CALL_TIMEOUT = 110.0      # 벽시계 기한 — 게이트웨이 호출 상한(600초)보다 짧게(절차 slow 단계와 같은 값). 넘으면 결과 모름(transient)
 MAP_TTL_S = 30.0          # 한 박자 안에서 /tools-map 을 다시 읽지 않는다
+# FastMCP 는 도구가 올린 예외 앞에 「Error executing tool <원래 이름>: 」 를 붙인다 — 그 뒤가 앱의 {error, detail} JSON 이다(StepForge 11-27 · AP-30).
+# 이 머리를 떼지 않으면 app:not_ready(제출 → 막힘) · app:not_done(결과 → 다음 박자)이 tool_error(실패)로 떨어진다. CallToolResult 를 직접 내는 앱
+# (DynaForge `_auto_out`)은 머리가 없다 — 둘 다 받는다.
+_FASTMCP_HEAD = re.compile(r"Error executing tool [A-Za-z0-9_.\-]+\s*:\s*")
 
 
 @dataclass
@@ -77,8 +82,9 @@ def judge(is_error: bool, content: list) -> Reply:
             return Reply(False, error="unreachable", detail=text[:300], transient=True)
         if text.startswith("JSON-RPC 오류"):
             return Reply(False, error="rpc_error", detail=text[:300], transient=True)
+        head = _FASTMCP_HEAD.match(text)
         try:
-            body = json.loads(text)
+            body = json.loads(text[head.end():] if head else text)
         except ValueError:
             body = None
         if isinstance(body, dict) and isinstance(body.get("error"), str) and body["error"]:

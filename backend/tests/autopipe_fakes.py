@@ -4,6 +4,8 @@
   (<백엔드에서 하이픈 뺀 것>_<원래 이름>).
 - POST /mcp 는 initialize(mcp-session-id) · notifications/initialized · tools/call(SSE data: 줄, result{content[text], isError}) · DELETE 를 받는다.
 - 서비스 허용 목록 밖 도구는 isError=true 와 'forbidden: … service-denied(not-listed)' 글이다(gateway.py 와 같은 꼴).
+- 앱을 raises=True 로 만들면 오류를 예외로 올리는 FastMCP 앱(StepForge)처럼 글 앞에 'Error executing tool <원래 이름>: ' 가 붙는다.
+  기본(False)은 CallToolResult 를 직접 내는 앱(DynaForge `_auto_out`) — 머리 없는 JSON 이다.
 앱은 contract.md §1 · §2 의 답 꼴 그대로다 — 같은 idem_key 로 다시 내면 created:false 로 같은 run_ref.
 """
 from __future__ import annotations
@@ -44,8 +46,9 @@ class FakeAnalysis:
     """해석 앱 — auto_profiles · auto_check · auto_submit · auto_status · auto_result (+ 선택 auto_cancel)."""
 
     def __init__(self, backend: str, *, profile: str = "default", sync: bool = False, service_identity: bool = True,
-                 with_cancel: bool = False) -> None:
+                 with_cancel: bool = False, raises: bool = False) -> None:
         self.backend = backend
+        self.raises = raises
         self.profile = profile
         self.sync = sync
         self.service_identity = service_identity
@@ -60,10 +63,13 @@ class FakeAnalysis:
         self.lose_submit = 0                          # 이만큼 제출 답을 잃는다(실행은 선다 — 게이트웨이 502)
         self.metrics: list | None = None
         self.verdict = "pass"
+        self.fail: dict[str, dict] = {}               # 도구 → 본문 — 주면 그 도구는 isError=true 로 이것을 낸다(not_ready · not_done 등)
 
     def handle(self, tool: str, args: dict):
         """(isError, 답 dict) 또는 ('lost', None)."""
         self.calls.append((tool, args))
+        if tool in self.fail:
+            return True, self.fail[tool]
         if tool == "auto_profiles":
             return False, {"app_version": "abc12345", "service_identity": self.service_identity,
                            "profiles": [{"id": self.profile, "title": "기본 조건", "inputs": [{"kind": "cad_assembly", "required": True}],
@@ -116,8 +122,10 @@ class FakeAnalysis:
 class FakeSource:
     """원천 앱 — auto_changes(since, limit). 커서는 항목 순번 글이다(불투명)."""
 
-    def __init__(self, backend: str, page: int = 200) -> None:
+    def __init__(self, backend: str, page: int = 200, *, raises: bool = False) -> None:
         self.backend = backend
+        self.raises = raises
+        self.error: dict | None = None      # 주면 isError=true 로 이것을 낸다(bad_since 등)
         self.tools = ["auto_changes"]
         self.items: list[dict] = []
         self.page = page
@@ -132,6 +140,8 @@ class FakeSource:
 
     def handle(self, tool: str, args: dict):
         self.calls.append((tool, args))
+        if self.error is not None:
+            return True, self.error
         if self.raw is not None:
             return False, self.raw
         start = int(args.get("since") or 0)
@@ -196,7 +206,10 @@ class FakeGateway:
             is_err, data = self.apps[bk].handle(orig, args)
             if is_err == "lost":
                 return httpx.Response(502, text="bad gateway")
-            return self._sse({"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}], "isError": bool(is_err)})
+            text = json.dumps(data, ensure_ascii=False)
+            if is_err and getattr(self.apps[bk], "raises", False):
+                text = f"Error executing tool {orig}: {text}"      # FastMCP 가 올린 예외에 붙이는 머리(이름은 앱의 원래 이름)
+            return self._sse({"content": [{"type": "text", "text": text}], "isError": bool(is_err)})
         return httpx.Response(400)
 
     @staticmethod

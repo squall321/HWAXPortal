@@ -268,3 +268,15 @@
   4번에 더했다. DynaForge 에는 늘 채우게 청했다. 프로파일 답의 app_version 은 지금처럼 비어도 받는다(표시용).
 - DynaForge 가 고쳤다(가지 `auto-pipeline` `e5e7157f` — 읽어서 확인) — `auto_result` · `auto_profiles` 의 app_version 은 BUILD_INFO 커밋 앞 8자리, 모르거나 못 읽으면
   `"unknown"`. 런타임에 git 이 없어 그 밖의 앱 빌드 커밋은 없다. §4 시험(판을 모르는 박스 넷)과 변이 확인을 더했다.
+
+**AP-30 앱 오류 글 앞의 FastMCP 머리를 뗀다 — 못 떼면 제출의 `not_ready` 가 실패로, 결과의 `not_done` 이 실패로 떨어진다.**
+- StepForge 가 SF-AP1 ~ 3 을 다 지었다(가지 `feat-ap1` `8844d821` — 아직 push 전, 착지 값은 87 의 다음 운영 회차에). 꼴은 AP-28 그대로(input kind
+  `cad_file` — 포털 검증기는 kind 를 글로만 본다). 청한 것 하나 — FastMCP 는 도구가 올린 모든 예외 앞에 `Error executing tool <원래 이름>: ` 를 붙이고
+  StepForge 는 그 뒤에 `{"error": "bad_since"|"bad_limit", "detail"}` 를 싣는다(isError true).
+- 포털 `gateway.judge` 는 isError 글을 통째로 `json.loads` 했다 → 머리가 붙으면 `tool_error`. 원천(auto_changes)은 커서 오류 글이 덜 깔끔할 뿐이지만,
+  **해석 앱이 같은 꼴이면 엔진 갈래가 바뀐다** — 제출의 `app:not_ready` 는 막힘(사람이 고치면 다시 확인)이어야 하는데 실패, 결과의 `app:not_done` 은
+  다음 박자 재시도여야 하는데 실패. 지금 해석 앱(DynaForge)은 `CallToolResult` 를 직접 내 머리가 없어 걸리지 않지만(`_auto_out` — 읽어서 확인),
+  열충격 · ODB 허브가 예외로 올리면 걸린다.
+- 고침 — 글 맨 앞의 `Error executing tool <이름>:` 를 떼고 나머지를 JSON 으로 읽는다(머리 없는 꼴도 그대로). 머리 뒤가 JSON 이 아니면(pydantic 인자
+  오류 등) 전처럼 `tool_error`. 시험 가짜에 `raises`(FastMCP 처럼 머리를 붙인다 — 이름은 앱의 원래 이름)를 두고 판정 단위 · 제출 not_ready · 결과
+  not_done · 원천 bad_since 를 머리 있는 꼴 · 없는 꼴 둘 다로 본다. 머리 떼기를 지우면 머리 있는 다섯이 깨진다(변이 확인). 계약 §0.3 에 두 꼴을 적었다.

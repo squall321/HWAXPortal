@@ -202,6 +202,60 @@ def test_isError_false_에_error_칸이_실리면_실패다(mk):
     assert st["state"] == "failed" and "envelope_invalid" in st["error"] and "error 칸" in st["error"]
 
 
+# ── 앱 오류 글의 FastMCP 머리(AP-30) ──────────────────────────────────────────────────────────────────────────────────────────
+# 예외를 올리는 FastMCP 앱(StepForge)은 「Error executing tool <이름>: 」 뒤에 {error, detail} 를 싣는다. CallToolResult 를 직접 내는 앱(DynaForge)은
+# 머리가 없다. 둘 다 같은 app:<낱말> 로 읽혀야 제출의 not_ready 가 막힘이 되고 결과의 not_done 이 다음 박자 재시도가 된다(머리를 못 떼면 둘 다 실패다).
+@pytest.mark.parametrize("text,error,missing", [
+    ('Error executing tool auto_submit: {"error": "not_ready", "detail": "입력", "missing": [{"kind": "cad_assembly"}]}',
+     "app:not_ready", [{"kind": "cad_assembly"}]),
+    ('{"error": "not_ready", "detail": "입력", "missing": []}', "app:not_ready", []),
+    ('Error executing tool auto_changes:{"error": "bad_since", "detail": "커서"}', "app:bad_since", None),
+    ("Error executing tool auto_check: 1 validation error for auto_checkArguments\nsubject\n  Field required", "tool_error", None),
+    ("forbidden: x — service-denied(not-listed): 허용 목록에 없다", "permission", None),
+])
+def test_앱_오류는_FastMCP_머리가_있든_없든_같은_낱말로_읽는다(text, error, missing):
+    from app.autopipe.gateway import judge
+    rep = judge(True, [{"type": "text", "text": text}])
+    assert not rep.ok and rep.error == error
+    if missing is not None:
+        assert rep.data["missing"] == missing
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_제출의_not_ready_는_머리가_붙어도_막힘이다(mk, raises):
+    app = FakeAnalysis(THERMAL, raises=raises)
+    app.fail["auto_submit"] = {"error": "not_ready", "detail": "입력이 없다", "missing": [{"kind": "cad_assembly"}]}
+    h = mk(app)
+    h.rule()
+    run = _ready_run(h)
+    st = h.steps(run["id"])["thermal"]
+    assert st["state"] == "blocked" and st["error"].startswith("missing:cad_assembly"), st["error"]
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_결과의_not_done_은_머리가_붙어도_다음_박자에_다시_묻는다(mk, raises):
+    app = FakeAnalysis(THERMAL, sync=True, raises=raises)
+    app.fail["auto_result"] = {"error": "not_done", "detail": "반입 중"}
+    h = mk(app)
+    h.rule()
+    run = _ready_run(h)
+    st = h.steps(run["id"])["thermal"]
+    assert st["state"] == "running" and "app:not_done" in st["error"], st["error"]
+    del app.fail["auto_result"]
+    h.tick(120)
+    assert h.steps(run["id"])["thermal"]["state"] == "done"
+
+
+def test_원천의_오류도_머리를_떼고_낱말로_적는다(mk):
+    h = mk(FakeAnalysis(THERMAL))
+    h.rule()
+    h.src.raises = True
+    h.src.error = {"error": "bad_since", "detail": "커서를 읽을 수 없다"}
+    h.tick(1)
+    cur = {c["source"]: c for c in h.store.cursors()}[SRC]
+    assert cur["cursor"] is None and cur["last_error"].startswith("app:bad_since: 커서를"), cur["last_error"]
+
+
 # ── 막힘 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("field,reason", [("project", "project_key"), ("revision", "revision")])
 def test_과제_key_나_개발_단계가_null_이면_막힘이고_실행이_없다(mk, field, reason):

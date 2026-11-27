@@ -35,6 +35,8 @@
 
 - 모든 답은 JSON 객체다. 실패는 MCP `isError: true` 와 `{"error": "<낱말>", "detail": "<사람 글>"}` 이다. **`isError: false` 로 오류를 싣지 않는다** —
   포털은 `isError` 와 아래 칸으로 성공을 판정한다(포털 절차 PLAN 5-6 — 실패 다섯 모양 중 셋이 `isError=false` 였다).
+  FastMCP 앱이 오류를 예외로 올리면 글 앞에 `Error executing tool <이름>: ` 가 붙는다 — 포털은 그 머리를 떼고 뒤의 JSON 을 읽는다. 머리 없이
+  `CallToolResult(isError=True)` 로 내도 된다(DynaForge). 어느 쪽이든 머리 뒤는 위 꼴의 JSON 하나여야 한다.
 - 시각은 ISO 8601 UTC(`2026-11-27T01:02:03Z`). 앱 판은 `app_version`(SIF 안 BUILD_INFO 의 커밋 앞 8자리 등).
 - **상태 · 판정 낱말은 앱이 바꿔 싣는다.** 예 — DynaForge `succeeded` → `done` · `canceled` → `cancelled`, Slurm `COMPLETED` → `done`, 열충격
   `OK` · `WARNING` · `FAIL` → `pass` · `marginal` · `fail`.
