@@ -868,6 +868,10 @@
       "key_tools": ["describe_search_status", "search_internal", "search_scholar", "get_page", "search_in_page", "get_quote"],
       "writes": [],
       "confirm": [],
+      "unlisted_writes": {
+        "tools": ["get_page"],
+        "why": "URL 을 주면 원장에 문서를 더한다(같은 내용이면 같은 doc_id) — 읽으려고 부르는 도구라 확인 카드를 세우지 않는다. 앱이 쓰기 표지를 단 뒤(MCP 현대화 M2 · WebResearchMCP 633c701) 목록 밖 쓰기로 남긴다"
+      },
       "samples": [
         "OCA 점탄성 크리프 관련 논문 찾아줘",
         "이 URL 수집해서 핵심 문장 인용해줘",
@@ -939,6 +943,10 @@
       "key_tools": ["deliberate_jobs", "deliberate_start", "deliberate_status", "deliberate_result", "deliberate_transcript", "deliberate_continue", "deliberate_list"],
       "writes": ["deliberate_start", "deliberate_continue", "deliberate_batch_start"],
       "confirm": ["deliberate_cancel", "deliberate_batch_stop"],
+      "unlisted_writes": {
+        "tools": ["deliberate_batch_status"],
+        "why": "주인이 부르면 그때의 그룹을 묶음 원장에 고쳐 적는 부수 기록 — 상태를 보려고 부르는 도구라 확인 카드를 세우지 않는다(MCP 현대화 M2 · 에이전트 서버 7a8187e 표지)"
+      },
       "samples": [
         "폴드 힌지 먼지 유입 원인 규명 심의 열어줘",
         "A안·B안 중 어느 쪽이 나은지 안 선택 심의 돌려줘",
@@ -979,6 +987,10 @@
       "key_tools": ["risk_list_projects", "risk_get_coverage", "risk_list_panels", "risk_get_diff", "risk_get_precedents", "risk_taxonomy", "risk_get_registry"],
       "writes": ["risk_start_job", "risk_create_project", "risk_create_diff", "risk_capture_snapshot", "risk_open_target", "risk_set_ecad_board", "risk_set_project_subject", "risk_set_board_transform", "risk_set_item_location", "risk_ledger_put_template", "risk_ledger_put_layer", "risk_ledger_build", "risk_build_evidence_bundle"],
       "confirm": ["risk_submit_panel_result", "risk_add_finding", "risk_job_action", "risk_add_source", "risk_ack_gate", "risk_decide_sameas", "risk_repersist_panel", "risk_ledger_apply_decision", "risk_numbers_put"],
+      "unlisted_writes": {
+        "tools": ["risk_get_brief"],
+        "why": "부를 때마다 브리프를 다시 조립해 원장에 덮어 쓰고 품질 칸을 적는 부수 기록 — 읽으려고 부르는 도구라 확인 카드를 세우지 않는다(MCP 현대화 M2 · 리스크 앱 be01f4f 표지)"
+      },
       "samples": [
         "심사 과제 목록이랑 커버리지 보여줘",
         "이 과제 최근 변경 diff 요약하고 선례 있나 봐줘",
