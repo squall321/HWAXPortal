@@ -382,7 +382,11 @@ def test_보내는_곳과_칸이_RA_소스와_맞는다():
     assert "_require_admin" not in add and "can_edit(" in add and '"entity_ids": after' in add and '"added":' in add
     assert "entity_ids: list[int]" in rep_schemas.split("class ReportEntitiesAdd", 1)[1][:600]
     for tool in ("create_object", "update_object", "link_objects", "add_object_alias"):
-        body = mcp.split(f"async def {tool}(", 1)[1][:600]
+        # 함수 하나 전체(다음 정의 앞까지)에서 찾는다 — RA 가 인자를 Annotated[…, Field(description=…)] 로 바꾸며 docstring 이
+        # 인자 뒤로 밀려 앞 600자 안에 없게 됐다(MCP 공통 계약 C2 · HWAXPortal docs/mcp-modernize, RA 11-27 로컬 판)
+        rest = mcp.split(f"async def {tool}(", 1)[1]
+        ends = [i for i in (rest.find("\nasync def "), rest.find("\n@")) if i > 0]
+        body = rest[:min(ends) if ends else len(rest)]
         assert "[시스템 관리자 전용]" in body, tool
     mine = Path(RA.__file__).read_text(encoding="utf-8").split('"""', 2)[2]
     assert not any(w in mine for w in ("/api/ai/ontology/write", "create_object", "update_object", "link_objects", "/relations")), \
