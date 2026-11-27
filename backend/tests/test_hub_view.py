@@ -34,6 +34,31 @@ TOOLS_MAP = {
     # 게이트웨이가 아는 보기 — 없으면(보기 이전 판) 포털은 저장하되 '아직 전체로 돈다' 고 알린다(검토 10-31)
     "views": ["full", "bundle", "light"],
 }
+# 목적 보기(docs/mcp-modernize M3)를 아는 게이트웨이 — `/tools-map` 의 views 에 purpose, purposes.items(목적 표). 트리거 · 질의 예 · 단계 차례는 화면에
+# 내리지 않는다(list_tool_apps(by='purpose') 의 37K 자를 피하는 길 — 화면에 쓸 칸만)
+PURPOSE_MAP = {
+    **TOOLS_MAP, "views": ["full", "bundle", "light", "purpose"],
+    "purposes": {"fingerprint": "fp1", "app_entries": {}, "items": [
+        {"key": "drop-prep", "title": "낙하 해석 준비", "summary": "형상에서 낙하 해석 입력까지", "kind": "multi",
+         "apps": ["heax-step_forge", "smart-twin-mcp"], "entry": {"backend": "heax-step_forge", "tool": "x", "name": "step_x"}, "live": True,
+         "steps": [{"backend": "heax-step_forge", "tool": "x", "name": "step_x", "why": "형상"},
+                   {"backend": "heax-step_forge", "tool": "m", "name": "mesh_q", "why": "메시"},
+                   {"backend": "smart-twin-mcp", "tool": "r", "name": "run_drop", "why": "제출"},
+                   {"backend": "box-only", "tool": "z", "name": None, "why": "이 박스에 없다"},
+                   {"backend": "_gateway", "tool": "search_tools", "name": "search_tools", "why": "찾기"}],
+         "triggers": ["낙하 준비"], "samples": ["낙하 해석 준비해줘"]},
+        {"key": "voc-scan", "title": "VOC 훑기", "summary": "시장 신호", "kind": "app", "apps": ["signalforge"],
+         "entry": {"backend": "signalforge", "tool": "q", "name": "voc_q"}, "live": True,
+         "steps": [{"backend": "signalforge", "tool": "q", "name": "voc_q", "why": "검색"}], "triggers": [], "samples": []},
+        {"key": "knowledge", "title": "정본 지식 찾기", "summary": "정본 허브", "kind": "app", "apps": ["rootdesigndatahub", "failuretrace"],
+         "entry": {"backend": "rootdesigndatahub", "tool": "g", "name": "rootdesigndatahub_object_get"}, "live": True,
+         "steps": [{"backend": "rootdesigndatahub", "tool": "g", "name": "rootdesigndatahub_object_get", "why": "정본"},
+                   {"backend": "failuretrace", "tool": "g", "name": "failuretrace_object_get", "why": "형제"}], "triggers": [], "samples": []},
+        {"key": "box-only", "title": "다른 박스 전용", "summary": "이 박스에 앱이 없다", "kind": "app", "apps": ["box-only"],
+         "entry": {"backend": "box-only", "tool": "z", "name": None}, "live": False,
+         "steps": [{"backend": "box-only", "tool": "z", "name": None, "why": "없음"}], "triggers": [], "samples": []},
+    ]},
+}
 
 
 class _Gateway:
@@ -203,7 +228,10 @@ def test_옛_DB_에도_칸이_생긴다(tmp_path):
 
 def test_보기_글의_꼴():
     """게이트웨이 _parse_view 와 같은 규칙이다(그쪽 시험이 이 모듈을 읽어 맞댄다) — 칸 이름 · 꼴이 갈리면 사람 설정이 조용히 전체로 떨어진다."""
-    assert MODES == ("full", "bundle", "light")
+    assert MODES == ("full", "bundle", "light", "purpose"), "앞 셋(E-4)의 차례는 그대로 — 목적(M3)은 뒤에 붙인다"
+    assert parse_view(" PURPOSE:drop-prep,report-write,drop-prep ") == ("purpose", ["drop-prep", "report-write"])
+    assert parse_view("purpose:") is None and parse_view("purpose:Drop!") is None
+    assert format_view("purpose", ["drop-prep", "voc-scan", "drop-prep"]) == "purpose:drop-prep,voc-scan"
     for raw, want in (("full", ("full", [])), (" LIGHT ", ("light", [])), ("bundle:cad", ("bundle", ["cad"])),
                       ("bundle:cad, mesh,cad", ("bundle", ["cad", "mesh"])), ("bundle:", None), ("bundle:CAD!", None),
                       ("bundle:" + ",".join(f"a{i}" for i in range(33)), None), ("all", None), ("", None), (None, None)):
@@ -242,3 +270,73 @@ def test_게이트웨이와_머리_이름_영역_꼴이_같다():
     assert _gateway_literal("_VIEW_AREA_RE") == AREA_RE.pattern
     # 포털 등록 배치(setupBat.ts)가 다는 표지 — 게이트웨이가 이 값의 머리로 청한 연결에만 포털 보기를 얹는다(어긋나면 배치로 붙인 Claude 가 늘 전체다)
     assert _gateway_literal("VIEW_PORTAL") == HEADER_PORTAL
+
+
+# ── 목적 보기(docs/mcp-modernize M3) ──────────────────────────────────────────────────────────────────────
+def test_목적_고르기는_화면에_쓸_칸만_내리고_내_권한_안의_단계_도구를_센다(env):
+    """목적마다 제목 · 요약 · 관련 앱(라벨) · 이 박스에 있나 · 내 권한 안의 단계 도구 수. 트리거 · 질의 예 · 단계 차례는 내리지 않는다 — 목적 표
+    전체를 글로 펴는 list_tool_apps(by='purpose')(37K 자) 대신 `/tools-map` 의 purposes 에서 고른 칸만이다. 허브 자체 도구는 늘 실려 세지 않는다."""
+    c, gw = env
+    gw.tools_map = PURPOSE_MAP
+    _login(c, "boss@corp.com")
+    body = c.get("/auth/access/view").json()
+    assert body["purpose_supported"] is True and body["view_supported"] is True
+    rows = {o["key"]: o for o in body["purpose_options"]}
+    assert list(rows) == ["drop-prep", "voc-scan", "knowledge", "box-only"], "차례는 게이트웨이 표 그대로"
+    d = rows["drop-prep"]
+    assert set(d) == {"key", "title", "summary", "kind", "apps", "live", "tool_count", "step_count"}, "트리거 · 질의 예 · 단계는 내리지 않는다"
+    assert (d["title"], d["live"], d["tool_count"], d["step_count"]) == ("낙하 해석 준비", True, 3, 5), d
+    assert d["apps"] == [{"app": "heax-step_forge", "label": "StepForge"}, {"app": "smart-twin-mcp", "label": "SmartTwin"}]
+    assert rows["knowledge"]["tool_count"] == 2, "목적 보기는 단계에 있으면 형제 허브 사본도 싣는다(묶음과 다르다)"
+    assert rows["box-only"]["live"] is False and rows["box-only"]["tool_count"] == 0
+    assert len(json.dumps(body["purpose_options"], ensure_ascii=False)) < 2000
+    _login(c, "user@corp.com")                         # 기본 사용자 — StepForge · SignalForge · SmartTwin 권한이 없다
+    rows = {o["key"]: o for o in c.get("/auth/access/view").json()["purpose_options"]}
+    assert rows["drop-prep"]["tool_count"] == 0 and rows["voc-scan"]["tool_count"] == 0 and rows["knowledge"]["tool_count"] == 2
+
+
+def test_목적을_고르면_저장되고_게이트웨이_캐시를_깨고_권한_응답에_실린다(env):
+    c, gw = env
+    gw.tools_map = PURPOSE_MAP
+    h = _login(c, "user@corp.com")
+    r = c.put("/auth/access/view", json={"mode": "purpose", "purposes": ["voc-scan", "drop-prep", "voc-scan"]}, headers=h)
+    assert r.status_code == 200, r.text
+    assert (r.json()["mode"], r.json()["purposes"], r.json()["areas"]) == ("purpose", ["voc-scan", "drop-prep"], [])
+    assert ("POST", "/conn-invalidate", {"email": "user@corp.com"}) in gw.calls
+    assert _ent(c, "user@corp.com")["view"] == "purpose:voc-scan,drop-prep", "게이트웨이 _parse_view 가 읽는 글 그대로"
+    assert _put(c, h, "bundle", ["cad"]).status_code == 200 and _ent(c, "user@corp.com")["view"] == "bundle:cad", "묶음으로 돌아가면 목적은 버린다"
+
+
+@pytest.mark.parametrize("purposes,why", [([], "하나 이상"), (["nosuch"], "모르는 목적"), (["box-only"], "단계가 하나도 없는 목적"),
+                                          (["Drop!"], "모르는 목적")])
+def test_모르는_목적과_이_박스에_없는_목적은_받지_않는다(env, purposes, why):
+    c, gw = env
+    gw.tools_map = PURPOSE_MAP
+    h = _login(c, "user@corp.com")
+    r = c.put("/auth/access/view", json={"mode": "purpose", "purposes": purposes}, headers=h)
+    assert r.status_code == 400 and why in r.json()["detail"], r.text
+    assert _ent(c, "user@corp.com")["view"] == "full", "거절하면 그대로다"
+
+
+@pytest.mark.parametrize("tm", [TOOLS_MAP, {**PURPOSE_MAP, "views": ["full", "bundle", "light"]}, {**PURPOSE_MAP, "purposes": {"items": []}}])
+def test_목적_보기를_모르는_게이트웨이면_목적은_저장하지_않는다(env, tm):
+    """묶음 · 가벼운은 옛 게이트웨이에도 저장하고 '아직 전체로 돈다' 고 알리지만, 목적 글은 손잡이를 끈 게이트웨이가 틀린 꼴(전체)로 읽는다 — 저장하면
+    '저장했다' 와 '전체로 돈다' 가 갈린다. 앞 셋은 그대로 안다(view_supported)."""
+    c, gw = env
+    gw.tools_map = tm
+    h = _login(c, "user@corp.com")
+    body = c.get("/auth/access/view").json()
+    assert body["purpose_supported"] is False and body["view_supported"] is True
+    r = c.put("/auth/access/view", json={"mode": "purpose", "purposes": ["drop-prep"]}, headers=h)
+    assert r.status_code == 400 and "목적 보기를 모릅니다" in r.json()["detail"], r.text
+    assert _ent(c, "user@corp.com")["view"] == "full"
+
+
+def test_저장해_둔_목적이_표에서_사라지면_알린다(env):
+    c, gw = env
+    gw.tools_map = PURPOSE_MAP
+    h = _login(c, "user@corp.com")
+    assert c.put("/auth/access/view", json={"mode": "purpose", "purposes": ["drop-prep", "voc-scan"]}, headers=h).status_code == 200
+    gw.tools_map = {**PURPOSE_MAP, "purposes": {**PURPOSE_MAP["purposes"], "items": PURPOSE_MAP["purposes"]["items"][1:]}}
+    body = c.get("/auth/access/view").json()
+    assert (body["mode"], body["purposes"], body["unknown_purposes"]) == ("purpose", ["drop-prep", "voc-scan"], ["drop-prep"])

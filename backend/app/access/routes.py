@@ -212,7 +212,8 @@ async def set_hub_app(key: str, body: HubAppIn, request: Request,
 
 
 # ── 개인 Claude 보기(docs/request-1029 E-4 — 사용자 결정 10-31) ──────────────────────────────────────────
-# 전체(지금 그대로) · 묶음(고른 영역 + 정본 읽기 도구 + 허브 자체 도구, 형제 허브 사본은 뺀다) · 가벼운(search_tools · invoke_tool 둘). 게이트웨이가
+# 전체(지금 그대로) · 묶음(고른 영역 + 정본 읽기 도구 + 허브 자체 도구, 형제 허브 사본은 뺀다) · 가벼운(search_tools · invoke_tool 둘) · 목적(고른
+# 목적들의 단계 도구 + 허브 자체 도구 — docs/mcp-modernize M3, 게이트웨이 손잡이 GATEWAY_PURPOSE_VIEW). 게이트웨이가
 # **개인 PAT 의 tools/list 에만** 얹는다 — 검색 · 부르기 · 이름 · 권한은 그대로다(선호이지 권한이 아니다). 끄기와 같은 길(권한 응답 · 같은 면제 ·
 # 같은 캐시 깨기)이고, 연결 머리 X-HWAX-View 가 이 설정을 덮는다(리포 .mcp.json 은 늘 full — 리포 파이프라인은 늘 전체 목록으로 돈다).
 # ⚠ 게이트웨이는 이 설정을 머리 `X-HWAX-View: portal` 로 청한 연결에만 얹는다 — 이 화면의 등록 배치 · 명령이 Claude Code · Desktop 에 단다. 머리 없는
@@ -224,17 +225,33 @@ _VIEW_NOTE = (f"보기는 이 화면의 등록 배치 · 명령으로 붙인 개
               "포털 웹 챗 · 웹 심의 · 절차와 리포 파이프라인(.mcp.json)도 늘 전체다.")
 
 
-def _hub_view_body(policy, ents, tm: dict, view: str, muted: set[str]) -> dict:
-    """보기 화면의 표 — 지금 보기 · 영역 골라 쓰기(영역마다 내 권한 안의 도구 수) · 미분류 수. 셈은 게이트웨이 `/tools-map` 의 map · areas 와 포털
-    권한 표로 한다 — 끈 앱과 형제 허브 사본(apps[].role == sibling — 묶음 보기가 싣지 않는다)과 허브 자체 도구(늘 실린다)는 세지 않는다."""
-    mode, areas = parse_view(view) or ("full", [])
-    roles = {str(a.get("app")): a.get("role") for a in tm.get("apps") or [] if isinstance(a, dict)}
+def _purpose_items(tm: dict) -> list[dict]:
+    """게이트웨이 `/tools-map` 의 purposes.items — 목적 보기를 모르는 옛 게이트웨이 · 끈 박스(GATEWAY_PURPOSES=0)는 칸이 없어 빈 목록이다."""
+    p = tm.get("purposes")
+    items = p.get("items") if isinstance(p, dict) else None
+    return [i for i in items or [] if isinstance(i, dict) and i.get("key")]
 
-    def counted(key: str) -> bool:
-        if key == "_gateway" or key in muted or roles.get(key) == "sibling":
+
+def _hub_view_body(policy, ents, tm: dict, view: str, muted: set[str]) -> dict:
+    """보기 화면의 표 — 지금 보기 · 영역 골라 쓰기(영역마다 내 권한 안의 도구 수) · 목적 골라 쓰기(목적마다 제목 · 요약 · 관련 앱 · 내 권한 안의
+    단계 도구 수) · 미분류 수. 셈은 게이트웨이 `/tools-map` 의 map · areas · purposes 와 포털 권한 표로 한다 — 끈 앱과 형제 허브 사본(apps[].role ==
+    sibling — 묶음 보기가 싣지 않는다)과 허브 자체 도구(늘 실린다)는 세지 않는다.
+    목적은 `/tools-map` 의 purposes(목적 72개 남짓 — 제목 · 요약 · 단계 이름)만 읽어 화면에 쓸 칸만 내린다 — 목적 묶음 전체를 글로 펴는
+    list_tool_apps(by='purpose')(37K 자)는 부르지 않는다(docs/mcp-modernize M3). 트리거 · 질의 예 · 단계 차례는 브라우저로 보내지 않는다."""
+    mode, keys = parse_view(view) or ("full", [])
+    areas = keys if mode == "bundle" else []
+    purposes = keys if mode == "purpose" else []
+    roles = {str(a.get("app")): a.get("role") for a in tm.get("apps") or [] if isinstance(a, dict)}
+    labels = {str(a.get("app")): str(a.get("label") or a.get("app")) for a in tm.get("apps") or [] if isinstance(a, dict)}
+
+    def usable(key: str) -> bool:                 # 내 권한 안이고 끄지 않은 백엔드 앱(허브 자체 도구는 늘 실려 세지 않는다)
+        if key == "_gateway" or key in muted:
             return False
         need = policy.keys_for_gateway([key])
         return (not need) or bool(set(need) & set(ents.keys))
+
+    def counted(key: str) -> bool:                # 묶음이 싣는 셈 — 형제 허브 사본은 묶음에 들지 않는다(목적 보기는 단계에 있으면 싣는다)
+        return roles.get(key) != "sibling" and usable(key)
     by_area: dict[str, int] = {}
     unclassified = 0
     names_area = tm.get("areas") or {}
@@ -250,13 +267,28 @@ def _hub_view_body(policy, ents, tm: dict, view: str, muted: set[str]) -> dict:
     known = {str(m["area"]) for m in meta}
     # 게이트웨이가 보기를 아나 — `/tools-map` 의 views 가 보기 셋을 다 말할 때만. 모르는 옛 게이트웨이는 권한 응답의 view 를 읽지 않아 늘 전체로 돈다 —
     # 저장은 하되 화면이 그렇다고 알린다(종전엔 '저장했습니다' 만 보였다, 검토 10-31).
-    views = tm.get("views")
+    views = {str(v) for v in tm.get("views") or []} if isinstance(tm.get("views"), list) else set()
+    items = _purpose_items(tm)
+
+    def purpose_row(it: dict) -> dict:
+        # 단계 도구 가운데 이 박스에 있고(노출 이름이 있다) 내 권한 안인 것 — 목적 보기가 실제로 더 싣는 셈(허브 자체 도구는 늘 실려 세지 않는다)
+        names = {str(st.get("name")) for st in it.get("steps") or []
+                 if isinstance(st, dict) and st.get("name") and usable(str(st.get("backend") or ""))}
+        apps = [str(a) for a in it.get("apps") or [] if str(a) and str(a) != "_gateway"]
+        return {"key": str(it["key"]), "title": str(it.get("title") or it["key"])[:120], "summary": str(it.get("summary") or "")[:300],
+                "kind": str(it.get("kind") or ""), "apps": [{"app": a, "label": labels.get(a, a)} for a in apps],
+                "live": bool(it.get("live")), "tool_count": len(names), "step_count": len(it.get("steps") or [])}
+    known_p = {str(i["key"]) for i in items}
     return {"mode": mode, "areas": areas, "unknown_areas": [a for a in areas if a not in known],
             "area_options": [{"area": str(m["area"]), "label": str(m.get("label") or m["area"]),
                               "description": str(m.get("description") or "")[:300], "tool_count": by_area.get(str(m["area"]), 0)}
                              for m in meta],
+            "purposes": purposes, "unknown_purposes": [k for k in purposes if k not in known_p],
+            "purpose_options": [purpose_row(i) for i in items],
             "unclassified": unclassified, "note": _VIEW_NOTE,
-            "view_supported": isinstance(views, list) and set(MODES) <= {str(v) for v in views}}
+            # 앞 셋(E-4)과 목적(M3)을 따로 묻는다 — 목적 보기 손잡이(GATEWAY_PURPOSE_VIEW)를 끈 게이트웨이도 앞 셋은 안다
+            "view_supported": {"full", "bundle", "light"} <= views,
+            "purpose_supported": "purpose" in views and bool(items)}
 
 
 @router.get("/auth/access/view")
@@ -276,6 +308,7 @@ async def my_hub_view(request: Request, principal: Principal = Depends(get_curre
 class HubViewIn(BaseModel):
     mode: str = Field(max_length=10)
     areas: list[str] = Field(default_factory=list, max_length=AREAS_MAX)
+    purposes: list[str] = Field(default_factory=list, max_length=AREAS_MAX)   # 목적 보기의 목적 키(게이트웨이 tool_purposes.json)
 
 
 @router.put("/auth/access/view")
@@ -284,11 +317,11 @@ async def set_hub_view(body: HubViewIn, request: Request,
                        settings: Settings = Depends(get_settings),
                        _csrf: None = Depends(require_csrf)) -> dict:
     """보기를 바꾼다. 묶음은 영역이 하나 이상이고, 영역은 지금 게이트웨이의 영역 키(`/tools-map` 의 area_meta)만 받는다 — 오타가 빈 묶음이 되지
-    않게. 바꾼 뒤 게이트웨이 캐시를 바로 깬다(끄기와 같다 — 새 연결부터 먹는다, 열린 세션은 재연결). 게이트웨이가 보기를 모르면(옛 판) 저장은 하고
+    않게. 목적은 목적 키(`/tools-map` 의 purposes)가 하나 이상이고, 이 박스에 단계가 있는 목적만 받는다(docs/mcp-modernize M3). 바꾼 뒤 게이트웨이 캐시를 바로 깬다(끄기와 같다 — 새 연결부터 먹는다, 열린 세션은 재연결). 게이트웨이가 보기를 모르면(옛 판) 저장은 하고
     응답의 view_supported 가 false 다 — 화면이 '아직 전체로 돈다' 고 알린다."""
     mode = body.mode.strip().lower()
     if mode not in MODES:
-        raise AuthError(f"모르는 보기입니다: {body.mode[:10]} — full · bundle · light", status_code=400)
+        raise AuthError(f"모르는 보기입니다: {body.mode[:10]} — {' · '.join(MODES)}", status_code=400)
     tm = await _gateway_tools_map(settings)
     if tm is None:
         raise AuthError("게이트웨이에 닿지 못해 영역을 확인할 수 없습니다 — 잠시 뒤 다시 시도하세요", status_code=502)
@@ -300,9 +333,25 @@ async def set_hub_view(body: HubViewIn, request: Request,
         bad = [a for a in areas if a not in known]
         if bad:
             raise AuthError(f"모르는 영역입니다: {', '.join(bad)[:120]}", status_code=400)
+    if mode == "purpose":
+        # 목적 키는 지금 게이트웨이의 목적 표(`/tools-map` purposes)로만 받는다 — 오타 · 다른 박스의 키가 빈 목적이 되지 않게. 목적 보기를 모르는(또는
+        # 손잡이를 끈) 게이트웨이는 그 글을 틀린 꼴(전체)로 읽으므로 저장하지 않는다 — 묶음 · 가벼운과 달리 '저장했지만 전체로 돈다' 를 만들지 않는다.
+        views = tm.get("views") if isinstance(tm.get("views"), list) else []
+        items = {str(i["key"]): i for i in _purpose_items(tm)}
+        if "purpose" not in {str(v) for v in views} or not items:
+            raise AuthError("지금 허브(게이트웨이)는 목적 보기를 모릅니다 — 게이트웨이를 새 판으로 올리거나 GATEWAY_PURPOSE_VIEW 를 켠 뒤 고르세요", status_code=400)
+        areas = list(dict.fromkeys(a.strip().lower() for a in body.purposes if a.strip()))
+        if not areas:
+            raise AuthError("목적 보기는 목적을 하나 이상 고릅니다", status_code=400)
+        bad = [a for a in areas if a not in items]
+        if bad:
+            raise AuthError(f"모르는 목적입니다: {', '.join(bad)[:120]}", status_code=400)
+        dead = [a for a in areas if not items[a].get("live")]
+        if dead:
+            raise AuthError(f"이 박스에 단계가 하나도 없는 목적입니다: {', '.join(dead)[:120]}", status_code=400)
     text = format_view(mode, areas)
-    if parse_view(text) is None:                  # 게이트웨이가 못 읽는 글은 저장하지 않는다(영역 꼴 — hub_view.AREA_RE)
-        raise AuthError("영역 이름의 꼴이 틀렸습니다", status_code=400)
+    if parse_view(text) is None:                  # 게이트웨이가 못 읽는 글은 저장하지 않는다(키 꼴 — hub_view.AREA_RE)
+        raise AuthError("영역 · 목적 이름의 꼴이 틀렸습니다", status_code=400)
     store = _store(request)
     if store.set_hub_view(principal.email, text) is None:
         raise AuthError("계정 원장에 없는 사용자입니다 — 로그아웃 후 다시 로그인하세요", status_code=404)

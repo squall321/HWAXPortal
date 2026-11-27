@@ -99,7 +99,7 @@ export async function saveHubApp(app: string, muted: boolean): Promise<HubApps> 
 }
 
 /** 개인 Claude 보기 — 허브 도구 목록(tools/list)만 줄인다. 검색 · 부르기 · 권한은 그대로다(docs/request-1029 E-4). */
-export type HubViewMode = 'full' | 'bundle' | 'light';
+export type HubViewMode = 'full' | 'bundle' | 'light' | 'purpose';
 
 export interface HubViewArea {
   area: string;
@@ -109,6 +109,21 @@ export interface HubViewArea {
   tool_count: number;
 }
 
+/** 목적 묶음(게이트웨이 tool_purposes.json — docs/mcp-modernize M3) 한 줄. 서버가 `/tools-map` 의 purposes 에서 화면에 쓸 칸만 내린다. */
+export interface HubViewPurpose {
+  key: string;
+  title: string;
+  summary: string;
+  /** multi(여러 앱을 잇는 목적) · app(한 앱의 길 안내). */
+  kind: string;
+  apps: { app: string; label: string }[];
+  /** 이 박스에 단계가 하나라도 있나 — 없으면 고를 수 없다. */
+  live: boolean;
+  /** 내 권한 안의 단계 도구 수(끈 앱 · 허브 자체 도구는 세지 않는다). */
+  tool_count: number;
+  step_count: number;
+}
+
 export interface HubView {
   mode: HubViewMode;
   /** 묶음일 때 고른 영역(게이트웨이 tool_areas.json 의 키). */
@@ -116,6 +131,13 @@ export interface HubView {
   /** 저장해 둔 영역 가운데 지금 게이트웨이에 없는 것. */
   unknown_areas: string[];
   area_options: HubViewArea[];
+  /** 목적일 때 고른 목적 키. */
+  purposes: string[];
+  /** 저장해 둔 목적 가운데 지금 게이트웨이 표에 없는 것. */
+  unknown_purposes: string[];
+  purpose_options: HubViewPurpose[];
+  /** 게이트웨이가 목적 보기를 아나(`/tools-map` 의 views 에 purpose · 목적 표가 있다) — false 면 목적은 저장할 수 없다. */
+  purpose_supported: boolean;
   /** 영역이 없는 도구 수 — 어느 묶음에도 들지 않는다(찾기로 닿는다). */
   unclassified: number;
   note: string;
@@ -130,11 +152,15 @@ export async function fetchHubView(): Promise<HubView> {
 }
 
 /** 보기를 바꾼다 — 서버가 영역을 게이트웨이 키로 확인하고 게이트웨이 캐시를 바로 깬다(새 연결부터 먹는다). */
-export async function saveHubView(mode: HubViewMode, areas: string[]): Promise<HubView> {
+export async function saveHubView(
+  mode: HubViewMode,
+  areas: string[],
+  purposes: string[] = [],
+): Promise<HubView> {
   const res = await apiFetch('/auth/access/view', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode, areas }),
+    body: JSON.stringify({ mode, areas, purposes }),
   });
   if (!res.ok) throw await detail(res, '보기를 저장하지 못했습니다.');
   return (await res.json()) as HubView;
