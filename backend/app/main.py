@@ -207,6 +207,23 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         app.state.procedures_error = f"{type(exc).__name__}: {exc}"
         _log.error("절차 기동 실패 — 모듈만 끄고 포털은 계속 뜬다", exc_info=True)
+    # 자동 파이프라인(docs/auto-pipeline) — 원장은 절차 저장소의 연결을 같이 쓴다(꺼져 있어도 열어 규칙 편집 · 검증은 된다). 박자 작업은 켜져 있고
+    # AUTO_PIPELINE_TICK_S > 0 일 때만 띄운다(engine.start). 못 열어도 포털은 뜬다.
+    app.state.autopipe_store = None
+    app.state.autopipe_engine = None
+    if app.state.procedures_store is not None:
+        try:
+            from app.autopipe import engine as _ap_engine
+            from app.autopipe import token as _ap_token
+            from app.autopipe.store import AutoStore
+
+            app.state.autopipe_store = AutoStore(app.state.procedures_store)
+            app.state.autopipe_engine = _ap_engine.Engine(
+                settings=settings, store=app.state.autopipe_store,
+                mint=lambda run, step: _ap_token.mint(app.state.keystore, settings, run, step))
+            _ap_engine.start(app, settings, app.state.autopipe_engine)
+        except Exception:  # noqa: BLE001
+            _log.error("자동 파이프라인 기동 실패 — 그 모듈만 끄고 포털은 계속 뜬다", exc_info=True)
     # 상호작용 기록(docs/interaction-data) — 켜진 박스에서만 원장을 연다(꺼지면 파일도 만들지 않는다 — 지금과 바이트까지 같다).
     # 못 열어도 포털은 뜬다 — 창구는 첫 요청에서 다시 열어 보고, /health/interactions 가 collector_dead 로 붉다.
     app.state.interaction_store = None
@@ -236,6 +253,10 @@ async def lifespan(app: FastAPI):
     await notice_poller.stop(app.state.notice_poller)     # 원장을 닫기 전에 — 도는 틱이 닫힌 연결에 쓰지 않게
     await usage_fold.stop(app.state.usage_fold)           # 도는 접기를 접는다(제 연결이라 원장 닫기와 얽히지 않는다)
     await interactions_collector.stop(getattr(app.state, "interactions_task", None))   # 원장을 닫기 전에 — 도는 주기가 닫힌 연결에 쓰지 않게
+    if getattr(app.state, "autopipe_engine", None) is not None:      # 절차 저장소를 닫기 전에 — 도는 박자가 닫힌 연결에 쓰지 않게
+        from app.autopipe import engine as _ap_engine
+
+        await _ap_engine.stop(app.state.autopipe_engine)
     if getattr(app.state, "interaction_store", None) is not None:
         app.state.interaction_store.close()
     await agent_panel.close_all()          # 열린 패널의 게이트웨이 MCP 세션 — 게이트웨이는 세션 유휴 만료가 없다
@@ -331,6 +352,13 @@ try:
 except Exception as exc:  # noqa: BLE001
     app.state.procedures_error = f"{type(exc).__name__}: {exc}"
     _log.error("절차 라우터 등록 실패 — 포털은 계속 뜬다", exc_info=True)
+# 자동 파이프라인 창구(docs/auto-pipeline) — 절차와 따로 등록한다(이것이 실패해도 절차 · 루틴은 산다).
+try:
+    from app.autopipe import routes as autopipe_routes
+
+    app.include_router(autopipe_routes.router)
+except Exception:  # noqa: BLE001
+    _log.error("자동 파이프라인 라우터 등록 실패 — 포털은 계속 뜬다", exc_info=True)
 
 # Dev-only mock SAML IdP — a real signing IdP fixture to exercise the SP path.
 if settings.app_env == "dev" and settings.saml_mock_idp_enabled:

@@ -62,3 +62,80 @@
 - ste 전각도의 결과는 완료 판정뿐이라 공학 합부를 못 준다 → 낙하 계약의 주인은 DynaForge 사슬(stcx 잡 → 후처리 예약 → sphere 리포트)로 정했다. ste 는 v1 에서 쓰지 않는다.
 - 게이트웨이는 서비스 토큰의 jti 가 `svc-` 로 시작해야 받는다(gateway.py 상수) → 포털이 찍는 jti 를 `svc-ap-…` 로 고쳤다.
 - 계산 클러스터 공유 폴더 요청서 SH-01 ~ 06 원문이 와 KooSlurm(c8)에 넘겼다(request-1125 R25-26). 낙하 실주행은 SH-01 · 02 뒤다.
+
+## 2026-11-27 — 포털 백엔드를 미리 지으며 정한 것(가지 `wt1127/autopipe-core`, 기본 꺼짐 · 계약 꼴 가짜로 시험)
+
+**AP-12 규칙은 켠 뒤에 바뀐 과제 · 차수에만 돈다. 판을 고쳐도 같은 지문은 다시 돌지 않는다.**
+- 주제의 `last_change`(앱이 준 `updated_at`, 없거나 미래면 포털 시각)가 규칙의 `enabled_at` 보다 앞이면 실행을 만들지 않는다. 처음 켜거나 다시 켤 때
+  이미 본 모든 과제에 한꺼번에 해석을 내지 않기 위해서다(원천의 첫 묻기 `since=null` 은 지금까지의 과제를 모두 준다 — PLAN §7 클러스터 비용).
+- 실행의 유일 열쇠는 문서대로 (규칙, 판, 과제, 차수, 지문)이지만, 실행을 만들기 전에 「이 규칙이 어느 판이든 같은 (과제, 차수, 지문)에 실행을 만든 적이
+  있나」를 본다. 그래서 stage 를 shadow → auto 로 바꾸는 새 판은 앞으로 바뀌는 입력부터 낸다(그림자 계획을 한꺼번에 내지 않는다).
+- 같은 박자에 여러 차수가 준비되면 오래된 변화부터 실행을 만든다 — 가장 새 입력의 실행이 마지막에 서서 앞 것을 대체한다. 「새」의 기준은 차수 코드의 차례가
+  아니라 입력이 바뀐 시각이다.
+- 지금 없는 것 — 「이 과제에 지금 한 번 돌려라」 사람 단추(남은 일).
+
+**AP-13 서비스 토큰은 `service_claims` 를 그대로 부르고 셋만 바꾼다 — 수명 15분 · nbf −60초 · jti `svc-ap-<실행 앞 12자>-<단계>`.**
+- 게이트웨이 `_service_scope` 는 jti 가 `svc-` 로 시작해야 받는다(AP-11). 원천 감지는 `svc-ap-src-<백엔드>`, 앱 목록은 `svc-ap-prof-<백엔드>` 다. 감사
+  note 는 `svc:ap-…` 로 남는다.
+- 토큰 원장(`record_pat`)에 적지 않는다. 호출마다 한 줄씩 원장이 끝없이 자라고, 관리자 서비스 토큰 목록은 사람이 발급한 길게 사는 토큰을 보는 화면이다.
+  무엇을 불렀는지는 원장 `auto_events` 와 게이트웨이 감사가 남긴다.
+- 게이트웨이 허용 목록(박스 파일 `service_tools.local.json`, 게이트웨이 리포는 고치지 않는다)의 꼴은 이렇다. 노출 이름이 아니라 (백엔드 키, 원래 이름)이다.
+  ```json
+  {"jobs": {"auto-pipeline": {"tools": [
+      "heax-step_forge:auto_changes", "heax-kooremapper_mcp:auto_changes",
+      "heax-thermal_shock_mcp:auto_profiles", "heax-thermal_shock_mcp:auto_check", "heax-thermal_shock_mcp:auto_submit",
+      "heax-thermal_shock_mcp:auto_status", "heax-thermal_shock_mcp:auto_result"]}}}
+  ```
+- 시험이 게이트웨이 원문에서 `_service_scope` 와 상수를 떼어 와 이 토큰을 넣어 본다(`tests/test_autopipe_token.py`). 처음의 jti `ap-…` 는 거기서 401 꼴이다.
+
+**AP-14 대체(AP-D5)의 세부 — 안 낸 해석만 취소하고, 보고서 단계는 남긴다.**
+- portal-api §4 는 「앞 실행의 pending · ready 단계는 cancelled」라고 적었다. 그대로 하면 도는 해석이 끝나도 보고서 단계가 이미 취소돼 「끝난 결과는 대체됨
+  표지로 보고서에 남는다」(AP-D5)가 지켜지지 않는다. 그래서 취소는 analysis 단계에만 걸고, 보고서는 가리킨 해석이 다 끝나면 「대체됨 — 차수 N 이 뒤에
+  왔다」 머리로 쓴다. 끝난 해석이 하나도 없으면 보고서는 건너뜀이다.
+- 제출을 시작했지만 답을 잃은 단계(idem_key 만 있다)는 취소하지 않는다. 앱에 잡이 섰을 수 있어 같은 idem_key 로 다시 물어 끝까지 본다.
+- 사람의 취소(`POST /runs/{id}/cancel`)는 보고서 단계까지 취소한다 — 멈추라는 뜻이다. 도는 해석은 앱에 `auto_cancel` 이 있으면 부르고, 없으면 끝까지 둔다고 답에 적는다.
+- 그림자 실행(`planned`)은 끝난 기록이라 대체하지 않는다.
+
+**AP-15 결과 모름은 다시 하고, 막힘은 그 실행의 끝이다.**
+- 확인(`auto_profiles` · `auto_check`)과 제출의 불통 · 기한은 박자마다 다시 한다 — 360박자(60초 박자면 약 6시간)까지. 넘으면 확인은 막힘, 제출은 실패이고
+  「앱에 잡이 섰을 수 있다 — idem_key 로 찾는다」를 적는다. 처음엔 10박자였는데, 앱 점검 10분에 실행이 막힘으로 굳어 입력이 바뀌기 전에는 다시 돌 길이 없었다.
+- 제출 재시도는 한도를 다시 보지 않는다(이미 낸 제출을 확인하는 호출이다). 결과 모르는 제출도 동시 수 자리를 쥔다.
+- 상태 묻기의 불통은 끝없이 다시 묻는다(잡은 앱 쪽에서 돈다). 꼴이 틀린 상태 답은 실패다.
+- 막힘(입력 없음 · human_input · infra · permission · 앱에 계약 도구 없음 · 서비스 신원 못 받음 · 없는 profile)은 그 실행에서 끝이다. 박스 문제가 풀린 뒤
+  같은 입력으로 다시 확인하는 사람 단추는 남은 일이다.
+
+**AP-16 단계 차례 · stage 판정의 세부.**
+- 같은 박자 안에서 단계를 의존 차례로 여러 번 훑는다 — 동기 앱은 한 박자에 확인 → 제출 → 결과 → 보고서까지 간다.
+- approve 는 지금 확인할 수 있는 해석(앞 해석이 없거나 끝난 것)이 다 확인을 지나면 `awaiting_approval` 이다. 앞 해석 결과가 있어야 하는 뒤 해석은 승인 뒤에
+  확인한다. 낼 해석이 하나도 없으면(모두 막힘) 승인을 묻지 않고 보고서 · 끝으로 간다.
+- shadow 에서 앞 해석 결과가 있어야 하는 뒤 해석은 pending 에 「그림자 — 앞 해석(…)의 결과가 있어야 확인한다」를 남긴다.
+- 실행 상태가 running 이어도 stage 가 shadow 이거나 승인 전이면 내지 않는다(다른 해석의 확인이 밀려 실행이 running 에 머무는 동안 — 변이 실험으로 찾았다).
+- 과제당 하루 상한은 지난 24시간(굴러가는 창)이고, 이미 한 단계를 낸 실행의 다른 단계는 막지 않는다.
+
+**AP-17 RA 게시의 세부(AP-10 을 지으며).**
+- dry_run 으로 먼저 물어 경고(형식이 블록을 받지 않음)가 있으면 만들지 않는다(리스크 보고서 RA 초안과 같은 자세). 만들기 답을 잃으면 다시 만들지 않는다 —
+  같은 보고서가 둘이 된다(`ra_outcome_unknown`). 게시(`/api/mounts`)는 게시판마다 한 번이라 다시 해도 겹치지 않아, 잠깐 실패(pending · drafted)는 다음
+  박자부터 세 번까지 다시 한다. `X-Client: mcp` 를 싣지 않으니 RA 의 확인 토큰 단계가 없다(RA `mounts/routes.py` — MCP 길에만 건다).
+- 블록은 심의 형식과 같은 네 id(background · results · recommendation · minutes)로 쓴다. 형식 정의 `infra/ra/formats/auto-pipeline.json`(시스템 `hwax-auto` ·
+  종류 `report` → `sys.hwax-auto.report`)을 더했다. 등록은 `ra-register-format.py --format auto-pipeline --apply` 로 하고 **`--use` 는 쓰지 않는다** — 그
+  옵션은 박스 파일의 맨 위 줄에 적는데, 자동 파이프라인은 `auto_pipeline.formats.<종류>` 를 읽는다(손으로 적는다 — 남은 일로 옵션을 더할 수 있다).
+- 토큰 파일은 리포 루트 기준 상대 경로 · 보통 파일 · 0600 이어야 쓴다. 값은 ASCII 보이는 글자만 받는다(아니면 요청 머리를 짓다 박자째 터졌다 — 시험에서 찾음).
+- 결과 · 보고서의 「켠 사람」은 규칙을 마지막으로 켠 사람(`enabled_by`)이다. 「과제 담당」은 원천이 아직 주지 않아 싣지 않았다(남은 일).
+
+**AP-18 박스 파일의 다른 두 리더가 `auto_pipeline` 줄을 「모르는 종류」로 경고한다.**
+- 에이전트 서버 `ra_formats.py` 와 게이트웨이 `_ra_formats_load` 는 `deliberation` 말고 다른 키를 보면 그 줄만 버리고 `/health` 의 `ra_formats.error` 에
+  「모르는 종류 auto_pipeline」을 적는다. 심의 형식 줄은 그대로라 동작은 같다. 두 리더가 이 키를 건너뛰게 하는 것은 그 리포 몫이다(포털 `ra_post.py` 는
+  `deliberation` 줄만 읽어 영향이 없다 — 시험이 본다).
+
+**AP-19 앱 이름 · 원천.**
+- 규칙의 `app` 과 `ready_when` 머리는 게이트웨이 백엔드 키다. 글자 그대로 없으면 `heax-<이름>` 을 본다 — 계약 문서의 예 `step_forge.parsed` 가 이 박스의
+  `heax-step_forge` 로 풀린다. 노출 이름은 `/tools-map` 의 map · orig 로만 찾는다(짐작 없음).
+- 묻는 원천은 켜진 규칙의 `ready_when` 머리 ∪ 손잡이 `AUTO_PIPELINE_SOURCES` 다. 원천 하나의 실패(불통 · 꼴 틀림 · 쪽이 안 끝남)는 그 커서의 `last_error`
+  에만 남고 커서를 나아가지 않는다.
+- `/tools-map` 에서 앱이 `reachable: false` 면 결과 모름(다시)이고, 붙어 있는데 계약 도구가 없으면 막힘(`tool_missing`)이다.
+
+**AP-20 창구 꼴은 문서 그대로이고 덧붙인 칸만 있다(화면 세션이 같은 문서로 짓는다).**
+- `/health` 의 `ra` 에 `formats` · `error`, `/board` 응답은 `{rule, columns, rows}` 이고 행에 `rule_id` · `stage` 를 더했다. 실행 상세의 단계에는 마크다운
+  대신 `has_report` 가 있다(본문은 `/runs/{id}/report`). `/subjects` 는 내부 열쇠(`skey`)를 빼고 낸다. 규칙 검증 실패는 422 `{ok:false, errors}` 다.
+- 새 경로 설정은 없다(원장은 절차 저장소 파일). 시험 격리는 `AUTO_PIPELINE_TICK_S=0`(conftest) 하나를 더했다 — 켠 박스의 backend/.env 를 읽어도 시험
+  기동이 박자를 띄우지 않는다(`test_suite_isolation`).

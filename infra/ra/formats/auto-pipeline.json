@@ -1,0 +1,38 @@
+{
+ "_doc": "HWAX 자동 파이프라인(docs/auto-pipeline)이 RA 시스템 계정으로 올리는 보고서 형식 — 해석별 · 종합 · 이전 차수 대비 셋이 같은 네 칸을 쓴다. 블록 id 넷은 심의 형식(deliberation.json)과 같은 글자다(backend/app/autopipe/report.py 가 채운다 — 문자열 배열 rich_text, 항목 2,000자). 시스템 이름을 심의(hwax)와 따로 두어 RA 시스템 공간 대시보드의 「양식별 수신」이 자동 보고서만 센다(PLAN §4.5). 등록은 `infra/scripts/ra-register-format.py --format auto-pipeline --owner-board <최상위 조직> --apply` 로 하고 **--use 는 쓰지 않는다** — 그 옵션은 박스 파일의 맨 위 줄에 적는데, 자동 파이프라인은 박스 파일의 auto_pipeline.formats.<종류> 에서 읽는다(손으로 적는다 — portal-api §5).",
+ "system": "hwax-auto",
+ "kind": "report",
+ "name": "자동 해석 보고서",
+ "description": "HWAX 포털 자동 파이프라인이 과제 · 차수마다 해석 결과 봉투로 코드가 쓴 보고서(해석별 · 종합 · 이전 차수 대비). 사람 작성 목록에는 뜨지 않는다.",
+ "blocks": [
+  {
+   "id": "background",
+   "type": "rich_text",
+   "props": {
+    "label": "자동 실행(규칙 · 판 · 과제 · 차수 · 입력 지문)",
+    "required": true
+   }
+  },
+  {
+   "id": "results",
+   "type": "rich_text",
+   "props": {
+    "label": "해석 결과"
+   }
+  },
+  {
+   "id": "recommendation",
+   "type": "rich_text",
+   "props": {
+    "label": "판정 요약"
+   }
+  },
+  {
+   "id": "minutes",
+   "type": "rich_text",
+   "props": {
+    "label": "근거 부록"
+   }
+  }
+ ]
+}
