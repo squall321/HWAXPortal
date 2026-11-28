@@ -479,7 +479,7 @@ export interface ConfirmCall {
   args_text: string;
   workload?: string;
   /** 심의 시작 · 이어하기 호출의 요약(에이전트 서버 _confirm_delib_summary — 인자에서만 센다, docs/request-1125 WD-06). 같은 내용이 본문 카드 글의
-   *  '심의 —' 줄로도 온다 — 화면은 아직 이 칸으로 고치기(confirm_edit)를 하지 않는다. */
+   *  '심의 —' 줄로도 온다. 화면은 카드 맨 위에 고정해 보이고 editable 칸(save_report · job · rounds)을 바꿔 승인 말과 함께 confirm_edit 로 보낸다. */
   summary?: ConfirmDelibSummary;
   again: boolean;
 }
@@ -497,6 +497,12 @@ export interface ConfirmDelibSummary {
   editable: string[];
   modifiers?: string[];
   previous_job_id?: string;
+}
+
+/** 승인 말에 싣는 카드 고침(포털 ChatRequest.confirm_edit — docs/request-1125 WD-06). 바꾼 칸만. */
+export interface ConfirmEditWire {
+  id: string;
+  set: { save_report?: boolean; job?: string; rounds?: number };
 }
 
 /** 확인 카드(SSE confirm) — 사람이 이번 말로 시키지 않았거나 되돌리기 어려운 작업은 에이전트 서버가 보내지 않고 멈춘다.

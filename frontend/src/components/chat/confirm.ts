@@ -17,3 +17,29 @@ export function confirmState(messages: Message[], i: number, now: number): Confi
   if (after.length > 0 || m.error || !m.text.includes(card.id)) return 'closed';
   return typeof card.expires_at === 'number' && now > card.expires_at ? 'expired' : 'open';
 }
+
+// ── 심의 확인 카드의 고치기(docs/request-1125 WD-06) ─────────────────────────────────────────────────────────────
+/** 엔진의 심의 종류(HWAXAgentServer delib_jobs.JOBS 의 키 · label) — 카드의 '종류' 고르기. 엔진이 받지 않는 값은 에이전트 서버가 버린다(시험이 견준다). */
+export const ENGINE_JOBS: readonly (readonly [string, string])[] = [
+  ['default', '자유 심의'], ['diagnosis', '원인 규명'], ['option-select', '안 선택'], ['credibility', '신뢰 판정'],
+  ['mechanism', '메커니즘 규명'], ['sim-plan', '해석 설계'], ['test-plan', '시험 설계'], ['build-plan', '구축 계획'],
+  ['risk-review', '리스크 심사'], ['risk-review-sealed', '리스크 심사(봉인)'],
+];
+/** 카드에서 고를 수 있는 라운드 — 0 은 엔진 기본(3). 에이전트 서버 _confirm_apply_edit 와 같은 범위(0 · 2~8). */
+export const EDIT_ROUNDS: readonly number[] = [0, 2, 3, 4, 5, 6, 7, 8];
+
+export interface DelibEdit {
+  save_report: boolean;
+  job: string;
+  rounds: number;
+}
+
+/** 카드가 보인 값(summary) 대비 바꾼 칸만 — 승인 말의 confirm_edit.set. 이어하기는 종류를 앞 잡에서 잇는다(엔진이 job 을 버린다 — 싣지 않는다). */
+export function editDiff(sm: { call: string; job: string; rounds: number; save_report: boolean; editable: string[] }, ed: DelibEdit):
+  { save_report?: boolean; job?: string; rounds?: number } {
+  const out: { save_report?: boolean; job?: string; rounds?: number } = {};
+  if (sm.editable.includes('save_report') && ed.save_report !== sm.save_report) out.save_report = ed.save_report;
+  if (sm.editable.includes('job') && sm.call === 'deliberate_start' && ed.job && ed.job !== sm.job) out.job = ed.job;
+  if (sm.editable.includes('rounds') && ed.rounds !== sm.rounds && (ed.rounds === 0 || (ed.rounds >= 2 && ed.rounds <= 8))) out.rounds = ed.rounds;
+  return out;
+}

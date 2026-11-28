@@ -25,7 +25,7 @@ import {
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
-import type { ActivityItem, AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
+import type { ActivityItem, AgentCatalog, ConfirmEditWire, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
 import { subjectFromPrior } from '../components/chat/subject';
@@ -56,6 +56,11 @@ import {
   jobCardsFromMeta,
   type DraftPins,
 } from './chatStore';
+
+/** 보내기 한 번에만 싣는 것 — 확인 카드에서 바꾼 칸(docs/request-1125 WD-06, 승인 말에만). */
+export interface SendExtra {
+  confirmEdit?: ConfirmEditWire;
+}
 
 /** 챗에서 켜 둔 분석 루틴(docs/analysis-routines R3) — 다음 발화 한 번에 실려 간다. title 은 보이기용이라 서버로 가지 않는다. */
 export interface ArmedRoutine {
@@ -123,7 +128,7 @@ interface ChatContextValue {
   /** 글을 보낸다. 켜 둔 루틴(armedRoutine)이 있으면 이 발화에 실어 보내고 끈다(한 번 쓰기) — 사람이 쓴 글이 루틴에 덧붙인 말(note)이고,
    *  글이 비면 '루틴: <제목>' 을 글로 싣는다(덧붙인 말이 아니다). extraDelibOpts 를 준 발화(심의 넘기기 · 이어하기)는 켜 둔 루틴을 쓰지 않는다.
    *  routineOpt — 값으로 넘기는 루틴 요청(이어서 · 다시 시도). null 이면 켜 둔 루틴을 쓰지도 싣지도 않는다(한 번 누름 보내기 — ChatActionBar). */
-  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: RoutineRequest | null) => void;
+  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: RoutineRequest | null, extra?: SendExtra) => void;
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 후속 심의를 스티어링. roster 를 주면 그 명단으로
    *  간다(사람이 좌석을 직접 고름 — 재심사가 좌석을 더 얹지 않는다). 없으면 같은 전문가 + 재심사. */
   continueDeliberation: (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => void;
@@ -892,7 +897,7 @@ export function ChatProvider({
 
   const sendMessage = useCallback(
     // routineOpt — 셋째 인자(값으로 넘기는 이어서 · 다시 시도 · 한 번 누름 보내기). undefined 면 켜 둔 루틴을 쓰고, null 이면 루틴 없이 보낸다.
-    (message: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: SentRoutine | null) => {
+    (message: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: SentRoutine | null, extra?: SendExtra) => {
       // 분석 루틴(R3) — 넘겨받은 요청이 먼저고, 없으면 켜 둔 루틴을 한 번 쓰고 끈다. 심의 넘기기 · 이어하기(extraDelibOpts)는 켜 둔 루틴을
       // 쓰지 않는다 — 에이전트 서버는 루틴 가지를 심의보다 먼저 보므로 그 심의가 루틴 실행으로 바뀐다. 권한이 없으면 싣지 않는다.
       const armed = routineOpt === undefined && !extraDelibOpts ? armedRoutineRef.current : null;
@@ -1147,6 +1152,8 @@ export function ChatProvider({
         ...(routineReq ? { routine: routineReq } : {}),
         // MCP Apps 패널 표지(HA-20) — 이 화면에는 호스트 부품(McpAppPanel)이 있다. 권한이 없으면 싣지 않는다(포털이 손잡이 · 권한을 다시 본다)
         ...(can('feat:panels') ? { uiHost: UI_HOST_TOKEN } : {}),
+        // 확인 카드에서 바꾼 칸(WD-06) — 카드의 '실행' 이 승인 말과 함께 싣는다
+        ...(extra?.confirmEdit ? { confirmEdit: extra.confirmEdit } : {}),
         // 웹 챗 Claude 의 고른 모델 · 생각 깊이(CC-8) — 입력창 칸이 목록을 받은 사람만(아니면 null — 싣지 않아 박스 기본)
         ...((() => {
           const p = claudePick();

@@ -348,6 +348,24 @@ _ROUTINE_INPUT_KEYS = 24
 _ROUTINE_INPUT_CHARS = 20_000
 
 
+class ConfirmEditSet(BaseModel):
+    """확인 카드에서 바꾼 칸(docs/request-1125 WD-06) — 에이전트 서버 _CONFIRM_EDIT_KEYS(save_report · job · rounds) 셋뿐이다. 값의 판정(엔진의 심의 종류 ·
+    0 · 2~8)은 에이전트 서버가 다시 한다 — 여기는 꼴만. 모르는 칸은 422(바꾼 줄 알았던 칸이 조용히 버려지지 않게)."""
+    model_config = {"extra": "forbid"}
+
+    save_report: StrictBool | None = None
+    job: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,39}$")
+    rounds: int | None = Field(default=None, ge=0, le=8)
+
+
+class ConfirmEdit(BaseModel):
+    """승인 말과 함께 오는 카드 고침 — {id: 카드 번호, set: {…}}. 에이전트 서버는 그 카드의 심의 시작 · 이어하기 호출에만 얹는다(_confirm_apply_edit)."""
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    set: ConfirmEditSet
+
+
 class RoutineReq(BaseModel):
     """챗 루틴 모드 한 턴(R3-design 3.1) — 새 실행은 {id, version?, inputs, note?}, 이어서 · 다시 붙기는 {run_id}, 끝난 실행의 RA 초안 올리기는
     {run_id, upload_ra: true}(R3-design 8). 에이전트 서버의 실행기가 게이트웨이 routine_run_start 로 실행을 만들거나 잇는다(R3 D1). 모르는 칸은
@@ -433,6 +451,8 @@ class ChatRequest(BaseModel):
     # 그대로 옮긴다. 고를 수 있는 사람인지 · 박스 목록 안인지는 에이전트 서버가 본다(밖이면 기본으로 돌고 답 아래에 알린다). Claude 턴이 아니면 읽히지 않는다.
     claude_model: str | None = Field(default=None, max_length=64, pattern=r"^claude-[a-z0-9]+(?:-[a-z0-9]+)*$")
     claude_effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    # 확인 카드에서 바꾼 칸(docs/request-1125 WD-06) — 승인 말과 함께 온다. 바꾼 칸이 있을 때만 에이전트 서버에 옮긴다(에이전트 서버 ChatRequest 에도 같은 칸).
+    confirm_edit: ConfirmEdit | None = None
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -1287,6 +1307,10 @@ async def _relay_stream(
         payload["claude_model"] = body.claude_model
     if body.claude_effort:
         payload["claude_effort"] = body.claude_effort
+    if body.confirm_edit is not None:  # 확인 카드에서 바꾼 칸(WD-06) — 바꾼 것만. 아무것도 안 바꿨으면 싣지 않는다(종전 요청 그대로)
+        _ce = {k: v for k, v in body.confirm_edit.set.model_dump().items() if v is not None}
+        if _ce:
+            payload["confirm_edit"] = {"id": body.confirm_edit.id, "set": _ce}
     if body.documents:  # 붙인 문서의 추출문 — 원본이 아니라 평문이다
         payload["documents"] = [d.model_dump() for d in body.documents]
     if body.images:  # 올린 그림 — 에이전트 서버가 저장하고 주소를 돌려준다(user_images)

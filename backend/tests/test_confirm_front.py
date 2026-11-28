@@ -43,7 +43,9 @@ def test_카드_단추는_켜_둔_루틴을_싣지_않고_답할_수_없는_카�
     """단추가 셋째 인자 없이 보내면 켜 둔 분석 루틴이 실린다 — 에이전트 chat() 은 루틴 가지를 카드 판정보다 먼저 보므로 카드가 승인되지 않고
     루틴이 단추 글을 덧붙인 말로 돈다(10-30 반대 검토). 동작은 브라우저 시험이 보고, 여기는 그 자리를 글자로 묶는다."""
     src = _read("components/chat/ConfirmCard.tsx")
-    assert "onClick={() => sendMessage(card.approve_text, undefined, null)}" in src
+    # '실행' 은 카드에서 바꾼 칸(WD-06)을 넷째 인자로 싣는다 — 셋째(루틴)는 늘 null 이다
+    assert "sendMessage(card.approve_text, undefined, null, changed ? { confirmEdit: { id: card.id, set } } : undefined)" in src
+    assert "onClick={approve}" in src
     assert "onClick={() => sendMessage(card.decline_text, undefined, null)}" in src, "단추 글을 화면이 지어내면 서버의 답 판정(_confirm_reply)과 어긋난다"
     assert "const off = state !== 'open' || streaming || busy;" in src and src.count("disabled={off}") == 2
     lst = _read("components/chat/MessageList.tsx")

@@ -547,6 +547,38 @@ ol.md-list li.md-li-d2 {
   color: var(--fg-muted);
   font-size: 0.8rem;
 }
+/* 심의 호출의 요약 · 고치기(docs/request-1125 WD-06) — 카드 맨 위에 종류 · 라운드 · RA 저장 · 근거 · 앱 · 좌석 */
+.msg-confirm-sum {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.82rem;
+}
+.mcs-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+}
+.mcs-row + .mcs-row,
+.mcs-seats {
+  margin-top: 0.3rem;
+}
+.mcs-row select {
+  font-size: 0.8rem;
+}
+.mcs-row select:disabled,
+.mcs-row input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mcs-facts,
+.mcs-seats {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
 
 /* 엔진 이어가기의 손잡이 줄(docs/request-1125 WD-05) — 라운드 · 같은 좌석으로 */
 .dv-continue-opts {
