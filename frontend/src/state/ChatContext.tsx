@@ -643,7 +643,11 @@ export function ChatProvider({
   // 개인 Claude 가 save_conversation 으로 남긴 대화와 포털이 들인 엔진 잡(WD-03)이 새로 고침 없이 사이드바에 선다). 메시지는 열 때 로드한다.
   // 있던 대화는 손대지 않는다 — 웹 대화는 브라우저 사본에만 있는 칸(좌석 명단 · 쉬운 설명 등)이 있어 열 때 '열 때 최신 로드' 가 맞춘다. 출처가 MCP 인
   // 대화(서버가 정본이다)만 서버가 더 새로우면 바꾼다 — 열려 있으면 곧바로 다시 읽고(엔진 이어하기 결과가 붙는다), 아니면 자리표시자로(열 때 읽는다).
-  const syncServerList = useCallback(async (): Promise<void> => {
+  // 첫 목록이 온 뒤 '열 때 최신 로드' 를 한 번 더 판정하게 하는 표지 — 종전엔 목록 병합이 늘 새 배열을 만들어 그 판정이 다시 돌았다. 병합이 바뀐 것이
+  // 없으면 같은 배열을 돌려주므로(주기 읽기가 화면을 다시 그리지 않게) 첫 목록에서만 이 값을 올려 그 판정을 다시 돌린다 — 주기 읽기가 이 탭이 방금
+  // 받은 웹 대화를 서버 사본으로 바꾸지 않게(브라우저 사본에만 있는 칸) 첫 목록에서만이다.
+  const [listTick, setListTick] = useState(0);
+  const syncServerList = useCallback(async (first = false): Promise<void> => {
     if (!serverKind || !user) return;
     const epoch = accountEpochRef.current;
     let list: Awaited<ReturnType<typeof listServerConversations>>;
@@ -690,11 +694,12 @@ export function ChatProvider({
       return changed ? merged.sort((a, b) => b.updatedAt - a.updatedAt) : prev;
     });
     for (const sid of reread) refreshFromServer(sid);
+    if (first) setListTick((t) => t + 1);
   }, [serverKind, user, refreshFromServer]);
 
   useEffect(() => {
     if (!serverKind || !user) return;
-    void syncServerList();
+    void syncServerList(true);
     const tick = () => {
       if (document.visibilityState === 'visible') void syncServerList();
     };
@@ -717,8 +722,8 @@ export function ChatProvider({
     const serverTs = serverMetaRef.current.get(sid) ?? 0;
     const stale = conv.messages.length === 0 || serverTs > conv.updatedAt + 2000;
     if (stale && streamConvRef.current !== conv.id) refreshFromServer(sid);
-    // conversations 를 deps 에 넣으면 교체 직후 재실행되지만 stale 판정이 false 라 루프 없음.
-  }, [serverKind, activeId, conversations, refreshFromServer]);
+    // conversations 를 deps 에 넣으면 교체 직후 재실행되지만 stale 판정이 false 라 루프 없음. listTick — 첫 서버 목록이 온 뒤 한 번 더(위 syncServerList).
+  }, [serverKind, activeId, conversations, refreshFromServer, listTick]);
 
   // 브라우저 사본을 저장 한도(쿼터)로 줄여 둔 대화 — 열 때 서버 정본에서 줄인 칸(도구 날것·심의 발언·근거)만 되채운다. 이걸 안
   // 하면 새로고침 뒤 심의로 넘기기·이어하기·내보내기가 줄인 판(날것 대신 미리보기, 발언 45건, 근거 4건)으로 만들어진다.
@@ -1737,7 +1742,7 @@ export function ChatProvider({
         newConversation,
         selectConversation,
         openServerConversation,
-        refreshServerList: syncServerList,
+        refreshServerList: () => syncServerList(),
         deleteConversation,
         renameConversation,
         open,
