@@ -548,6 +548,68 @@ ol.md-list li.md-li-d2 {
   font-size: 0.8rem;
 }
 
+/* 진행 카드(docs/request-1125 WD-13) — 확인 뒤 건 잡 · 엔진 이어하기의 상태 · 링크 */
+.job-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.job-card {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-fg);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.84rem;
+}
+.job-card.is-end {
+  border-left-color: var(--border-strong);
+}
+.job-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+.job-card-head code {
+  color: var(--fg);
+}
+.job-card-k {
+  font-weight: 600;
+  color: var(--accent-fg);
+}
+.job-card-state {
+  margin-top: 0.25rem;
+  color: var(--fg);
+}
+.job-card-err {
+  margin-top: 0.25rem;
+  color: var(--fg-muted);
+}
+.job-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+.job-card-links a {
+  color: var(--accent-fg);
+}
+.job-card-btn {
+  padding: 0.12rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--accent-fg);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
 /* MCP Apps 패널(docs/request-1027 HP-42) — 머리는 포털이 그린다(앱이 그린 화면이라는 표지 · 닫기 · 다시 열기). iframe 안은 앱의 문서다 */
 .mcp-panels {
   display: flex;

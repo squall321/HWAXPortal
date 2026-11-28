@@ -1,5 +1,5 @@
-# MCP 로 연 심의(엔진 잡)를 포털로 — 끝난 잡을 주인의 대화로 당기기(WD-03)
-"""docs/request-1125 WD-03 의 포털 몫. 엔진 쪽은 HWAXAgentServer c27c13e 다.
+# MCP 로 연 심의(엔진 잡)를 포털로 — 끝난 잡을 주인의 대화로 당기기(WD-03) · 진행 카드 상태(WD-13)
+"""docs/request-1125 WD-03 · WD-13 의 포털 몫. 엔진 쪽은 HWAXAgentServer(c27c13e · 3c6a54d)다.
 
 - **당기기(WD-03)** — 엔진이 밀지 않고 포털이 읽는다(과제 인사이트 PG-9 · 심의 묶음 알림과 같은 까닭 — 어느 쪽이 내려가 있어도 다음 읽기에 따라잡는다).
   `GET /delib/conversations?since&limit` 를 공유 비밀(GATEWAY_SHARED_TOKEN)만 실어 부른다(사람 신원 머리를 실으면 엔진이 403). 커서는 대화 저장소 안의
@@ -8,6 +8,8 @@
   주인은 포털 계정(users 원장의 이메일)일 때만 쓴다(심의 묶음 알림과 같다). 대화 주인 키(sub)는 그 이메일로 낸 사람 PAT 의 sub(MCP 잡은 그 PAT 로
   열렸다), 없으면 이메일이다(SAML · 로컬 · mock 박스는 sub 가 이메일이다). 첫 당기기는 커서 0 이라 지난 MCP 심의도 다 들어온다 — 보름 전 심의를
   대화 목록 · 대화 검색에서 찾게(WD-08 의 '확인'). 대화 시각은 잡이 끝난 때다(오늘로 몰리지 않는다).
+- **진행 카드(WD-13)** — 엔진에 HTTP 창구가 없는 읽기라 그 사람의 챗 PAT 로 게이트웨이 도구를 부른다(deliberate_status — 엔진이 그 사람 기준으로
+  볼 수 있는 잡만 준다). 챗 중계는 SSE job_card 를 card_pointer 로 걸러 답 meta.job_cards 로 남긴다. MCP 쪽 나누기(mcp_pages.paged)로 나뉜 답은 join_pages 로 이어 원래 응답으로 만든다.
 """
 from __future__ import annotations
 
@@ -19,8 +21,14 @@ import time
 from urllib.parse import unquote
 
 import httpx
+from fastapi import APIRouter, Depends, Request
 
+from app.agent import upload as _upload
 from app.agent.subject import subject_of
+from app.auth.errors import AuthError
+from app.auth.provider import Principal
+from app.config import Settings, get_settings
+from app.deps import ensure, principal_pat_or_session
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +39,14 @@ PAGE_LIMIT = 20                         # 엔진 CONV_LIMIT_MAX(50) 안 — 항�
 PAGES_MAX = 5                           # 한 틱에 넘기는 쪽 — 남으면 다음 틱이 커서부터 잇는다
 TIMEOUT_S = 30.0
 REPEAT_EVERY = 60
+KICK_MIN_S = 5.0                        # 진행 조회가 끝난 잡을 보고 당기기를 앞당길 때의 최소 간격
 TITLE_MAX = 80
 EVIDENCE_MAX = 100
+READ_TIMEOUT_S = 60.0
+PARTS_MAX = 40                          # 쪽으로 나뉜 답을 받을 때의 상한(쪽 25,000자 — 백만 자)
 JOB_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 _JOB_ID = re.compile(JOB_ID_RE)
+_END = ("done", "error", "cancelled", "interrupted", "failed")
 _HTTP_WHY = {
     401: "공유 비밀(GATEWAY_SHARED_TOKEN)이 에이전트 서버의 것과 다르다(HTTP 401)",
     403: "에이전트 서버가 서비스 호출로 받지 않았다(HTTP 403)",
@@ -43,6 +55,68 @@ _HTTP_WHY = {
     422: "에이전트 서버가 물음의 꼴을 거절했다(HTTP 422)",
     503: "에이전트 서버에 공유 비밀이 없다(HTTP 503)",
 }
+
+
+# ── 쪽 잇기 — mcp_pages.paged 의 쪽들 → 원래 응답 ─────────────────────────────────────────────────────────────────
+class PageJoinError(ValueError):
+    pass
+
+
+def _merge(a, b, path: str, pieces: dict):
+    if isinstance(a, dict) and isinstance(b, dict):
+        out = dict(a)
+        for k, v in b.items():
+            p = f"{path}.{k}" if path else str(k)
+            out[k] = _merge(out[k], v, p, pieces) if k in out else v
+        return out
+    if isinstance(a, list) and isinstance(b, list):
+        pc = pieces.get(path)
+        if pc is None:
+            return b                            # 쪽마다 되풀이하는 칸(나뉜 목록은 두 쪽 모두 pieces 에 있다)
+        start = int(pc["from"])
+        if start == len(a):
+            return a + b
+        if start == len(a) - 1 and b:          # 앞 쪽의 끝 항목을 이 쪽이 이어 싣는다 — 한 항목이다
+            return a[:-1] + [_merge(a[-1], b[0], f"{path}[{start}]", pieces)] + b[1:]
+        raise PageJoinError(f"{path} 목록이 이어지지 않는다(받은 {len(a)}개 · 이 쪽 시작 {start})")
+    if isinstance(a, str) and isinstance(b, str):
+        pc = pieces.get(path)
+        if pc is None:
+            return b                            # 쪽마다 되풀이하는 칸
+        if int(pc["from"]) == len(a):
+            return a + b
+        raise PageJoinError(f"{path} 글이 이어지지 않는다(받은 {len(a)}자 · 이 쪽 시작 {pc['from']}) — 쪽을 받는 사이에 바뀌었다")
+    return b
+
+
+def join_pages(pages: list[dict]) -> dict:
+    """쪽들(1쪽부터 차례대로) → 원래 응답. 쪽 안내(page)는 뗀다. 한 쪽이면 그대로."""
+    acc: dict = {}
+    for pg in pages:
+        meta = pg.get("page") if isinstance(pg.get("page"), dict) else {}
+        pieces = {str(p.get("path")): p for p in (meta.get("pieces") or []) if isinstance(p, dict)}
+        acc = _merge(acc, {k: v for k, v in pg.items() if k != "page"}, "", pieces)
+    return acc
+
+
+async def gateway_read(settings: Settings, pat: str, tool: str, args: dict) -> dict:
+    """그 사람의 PAT 로 게이트웨이 도구를 부르고, 쪽으로 나뉘었으면 끝 쪽까지 받아 잇는다. 실패는 AuthError(502)."""
+    pages: list[dict] = []
+    part = 1
+    while True:
+        got = await _upload.mcp_call(settings.mcp_gateway_url, pat, tool, {**args, **({"part": part} if part > 1 else {})},
+                                     timeout=READ_TIMEOUT_S)
+        pages.append(got)
+        nxt = (got.get("page") or {}).get("next") if isinstance(got.get("page"), dict) else None
+        if not isinstance(nxt, dict):
+            break
+        part += 1
+        if part > PARTS_MAX:
+            raise AuthError(f"{tool}: 답이 {PARTS_MAX}쪽을 넘는다 — 받지 않았다", status_code=502)
+    try:
+        return join_pages(pages)
+    except PageJoinError as exc:
+        raise AuthError(f"{tool}: 쪽을 잇지 못했다 — {exc}", status_code=502) from exc
 
 
 # ── 당기기(WD-03) ────────────────────────────────────────────────────────────────────────────────────────────
@@ -225,6 +299,20 @@ async def _tick(app, settings, client) -> dict:
     return {**out, **total, "pages": pages, "since": since}
 
 
+async def kick(app, settings) -> None:
+    """진행 조회가 끝난 잡을 보았을 때 — 당기기를 앞당긴다(KICK_MIN_S 안에 돈 틱이 있거나 도는 중이면 하지 않는다). 손잡이가 0 이면 하지 않는다."""
+    if int(getattr(settings, "delib_conv_sync_s", 0) or 0) <= 0:
+        return
+    if time.monotonic() - float(_SYNC["at"] or 0) < KICK_MIN_S:
+        return
+    try:
+        out = await tick(app, settings)
+    except Exception:  # noqa: BLE001 — 조회를 막지 않는다
+        logger.warning("MCP 심의 대화 — 앞당긴 당기기가 실패했다", exc_info=True)
+        return
+    app.state.delib_conv_last = {**out, "at": time.time()}
+
+
 async def run(app, settings, every: float) -> None:
     last_err, fails = None, 0
     while True:
@@ -270,3 +358,84 @@ async def stop(task: asyncio.Task | None) -> None:
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
+
+
+# ── 창구 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+router = APIRouter(prefix="/agent/engine-delib", tags=["agent"])
+
+
+def _pat(request: Request, settings: Settings, principal: Principal) -> str:
+    from app.agent.routes import _chat_user_pat  # 늦게 — routes 가 크다(순환 아님)
+    pat = _chat_user_pat(request.app.state.keystore, settings, principal)
+    if not pat:
+        raise AuthError("사용자 자격증명을 만들지 못했습니다 — 다시 로그인한 뒤 시도하세요", status_code=401)
+    return pat
+
+
+def _job_id(v: str) -> str:
+    s = (v or "").strip()
+    if not _JOB_ID.match(s):
+        raise AuthError("잡 id 의 꼴이 아닙니다", status_code=422)
+    return s
+
+
+_LINK = re.compile(r"(?:https?://[^\s\"'<>\\]{1,490}|/(?!/)[^\s\"'<>\\]{0,498})")
+
+
+def card_pointer(data) -> dict | None:
+    """SSE job_card(에이전트 서버 _confirm_job_card — WD-13)의 한 사건 → 서버 사본(답 meta.job_cards)에 남길 꼴. 아는 칸만 · 길이 상한 안. 다시 묻기는
+    심의 잡의 deliberate_status 만 남긴다(다른 도구를 화면이 부르게 하지 않는다). 링크는 http(s) · 포털 안 경로만. 잡 id 가 없으면 None."""
+    if not isinstance(data, dict):
+        return None
+    ids = [str(x)[:128] for x in (data.get("job_ids") or []) if isinstance(x, (str, int)) and not isinstance(x, bool) and _JOB_ID.match(str(x))][:5]
+    if not ids:
+        return None
+    kind = "deliberation" if data.get("kind") == "deliberation" else "job"
+    prog = data.get("progress")
+    out = {"kind": kind, "job_ids": ids, "tool": str(data.get("tool") or "")[:120], "phase": "end" if data.get("phase") == "end" else "run",
+           "state": str(data.get("state") or "")[:40], "progress": prog if isinstance(prog, int) and not isinstance(prog, bool) and 0 <= prog <= 100 else None,
+           "detail": str(data.get("detail") or "")[:200]}
+    for k, cap in (("call", 80), ("app", 80), ("continued_from", 128)):
+        if isinstance(data.get(k), str) and data[k]:
+            out[k] = data[k][:cap]
+    link = data.get("link")
+    if isinstance(link, str) and _LINK.fullmatch(link.strip()):
+        out["link"] = link.strip()
+    sc = data.get("status_call")
+    if kind == "deliberation" and isinstance(sc, dict) and sc.get("tool") == "deliberate_status":
+        jid = (sc.get("args") or {}).get("job_id") if isinstance(sc.get("args"), dict) else None
+        if isinstance(jid, str) and jid in ids:
+            out["status_call"] = {"tool": "deliberate_status", "args": {"job_id": jid}}
+    return out
+
+
+def _status_view(d: dict) -> dict:
+    st = str(d.get("status") or "")
+    q = d.get("queue") if isinstance(d.get("queue"), dict) else None
+    return {"job_id": d.get("job_id"), "status": st, "phase": "end" if st in _END else "run",
+            "stage": d.get("stage"), "step": str(d.get("step") or d.get("last_step") or "")[:200],
+            "round": d.get("round"), "total_rounds": d.get("total_rounds"), "report_id": _rid(d.get("report_id")),
+            "error": str(d.get("error") or "")[:400] or None, "finishing": bool(d.get("finishing")),
+            **({"queue": {k: q.get(k) for k in ("position", "ahead", "length") if k in q}} if q else {})}
+
+
+@router.get("/status/{job_id}")
+async def job_status(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """진행 카드(WD-13)의 다시 묻기 — 그 사람의 PAT 로 deliberate_status(brief). 끝났으면 당기기를 앞당겨 그 사람의 대화에 들었는지(conversation_id)도 준다."""
+    ensure(principal, "feat:deliberation")
+    jid = _job_id(job_id)
+    d = await gateway_read(settings, _pat(request, settings, principal), "deliberate_status", {"job_id": jid, "brief": True})
+    out = _status_view({**d, "job_id": d.get("job_id") or jid})
+    if out["phase"] == "end":
+        store = request.app.state.conv_store
+        cid = await asyncio.to_thread(store.mcp_delib_conversation, principal.subject, jid)
+        if cid is None:
+            await kick(request.app, settings)
+            cid = await asyncio.to_thread(store.mcp_delib_conversation, principal.subject, jid)
+        out["conversation_id"] = cid
+    return out

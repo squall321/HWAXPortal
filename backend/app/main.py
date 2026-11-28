@@ -27,7 +27,7 @@ from app.agent import panel as agent_panel   # MCP Apps 패널 호스트(docs/re
 from app.agent import wda_deck as agent_deck  # 발표자료로 — RA 보고서를 WebDesignAgents 로(docs/wda-deck — 박스 스위치 WDA_DECK_ENABLED 기본 꺼짐)
 from app.agent import report_figures as agent_figures  # 도구 그림을 그 사람 명의로 RA 보고서에(docs/report-figures)
 from app.agent import risk_report as agent_risk_report  # 리스크 심사 종합 보고서 판을 그 사람 명의로 RA 초안으로(docs/risk-review-redesign — 리스크 앱의 스위치가 기본 꺼짐)
-from app.agent import mcp_delib as agent_mcp_delib  # MCP 로 연 심의를 잡 주인의 포털 대화로(docs/request-1125 WD-03)
+from app.agent import mcp_delib as agent_mcp_delib  # MCP 로 연 심의를 잡 주인의 포털 대화로 · 진행 카드 상태(docs/request-1125 WD-03 · WD-13)
 from app.agent import team_routes as agent_teams  # 전문가 팀 — 미리 만든 주 1 + 보조 4 조합(docs/expert-teams — 저장소는 절차 저장소의 연결을 같이 쓴다)
 from app.agent.audit import AuditLog
 from app.agent.conv_store import ConversationStore
@@ -339,6 +339,7 @@ app.include_router(agent_deck.router)
 app.include_router(agent_figures.router)
 app.include_router(agent_risk_report.router)
 app.include_router(agent_teams.router)
+app.include_router(agent_mcp_delib.router)
 app.include_router(notice_routes.router)
 app.include_router(interactions_routes.router)   # 꺼진 박스에서는 모든 창구가 404(contract §1)
 

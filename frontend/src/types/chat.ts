@@ -397,6 +397,25 @@ export interface Message {
   raReport?: { id: number; title: string };
   /** 이 알림을 남긴 발표자료 잡(서버 사본 meta.deck.job_id) — 같은 알림을 두 번 붙이지 않는 열쇠(docs/wda-deck). */
   deckJob?: string;
+  /** 진행 카드(SSE job_card · 서버 사본 meta.job_cards — docs/request-1125 WD-13) — 확인 카드로 건 잡 · 엔진 이어하기의 상태 · 링크. 심의 잡은 화면이
+   *  status_call(deliberate_status)로 다시 물어 끝나면 결과로 바꾼다. 영속됨(작다). */
+  jobCards?: JobCard[];
+}
+
+/** 진행 카드 — 에이전트 서버 _confirm_job_card · 포털 mcp_delib.card_pointer 의 꼴. */
+export interface JobCard {
+  kind: 'deliberation' | 'job';
+  job_ids: string[];
+  tool: string;
+  app?: string;
+  call?: string;
+  phase: 'run' | 'end';
+  state: string;
+  progress?: number | null;
+  detail?: string;
+  link?: string;
+  continued_from?: string;
+  status_call?: { tool: 'deliberate_status'; args: { job_id: string } };
 }
 
 /** 뷰어 카드 포인터 — 에이전트 서버가 도구 결과에서 집은 같은 출처 경로(docs/chat-embeds PLAN 1절 — 세 층이 같은 규칙으로 거른다). */

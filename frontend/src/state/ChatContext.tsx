@@ -52,6 +52,7 @@ import {
   saveDelibOpts,
   saveDraftPins,
   embedsFromMeta,
+  jobCardsFromMeta,
   type DraftPins,
 } from './chatStore';
 
@@ -1231,6 +1232,15 @@ export function ChatProvider({
         onUiResource: (e) => {
           const p = panelPointer(e);
           if (p) patch(cid, botId, (m) => ({ ...m, panels: [...(m.panels ?? []), p].slice(-8) }));
+        },
+        // 진행 카드(docs/request-1125 WD-13) — 확인 뒤 건 잡. 다시 거르고 이 답에 붙인다(같은 잡이면 새 판으로 바꾼다)
+        onJobCard: (e) => {
+          const got = jobCardsFromMeta(e);
+          if (!got) return;
+          patch(cid, botId, (m) => {
+            const keep = (m.jobCards ?? []).filter((c) => !got.some((g) => g.job_ids[0] === c.job_ids[0]));
+            return { ...m, jobCards: [...keep, ...got].slice(-8) };
+          });
         },
         // 뷰어 카드(docs/chat-embeds) — 에이전트 서버가 도구 결과에서 집은 같은 출처 화면. 다시 거르고, 이 탭에서 받은 것이라 연 채로 그린다
         onEmbeds: (e) => {

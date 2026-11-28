@@ -51,6 +51,7 @@ from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import docforge_delivery as _dfd
 from app.agent import onto_preview as _onto_preview
 from app.agent import embeds as _embeds
+from app.agent import mcp_delib as _mcp_delib
 from app.agent import pc_upload as _pc
 from app.agent import ra_post as _ra_post
 from app.agent import subject as _subject
@@ -3505,6 +3506,7 @@ async def chat(
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
         embeds: list[dict] = []      # 뷰어 카드(SSE embeds) 포인터(app · tool · url · 제목) — 같은 규칙으로 걸러 답 meta.embeds 로 남긴다(docs/chat-embeds CE-2)
+        job_cards: list[dict] = []   # 진행 카드(SSE job_card — 확인 뒤 건 잡, docs/request-1125 WD-13) — 아는 칸만 걸러 답 meta.job_cards 로 남긴다(새로고침 뒤에도 카드)
         # 턴 메타(SSE meta — 답한 모델 · 생각 · 자기검증, SSE confirm — 확인 카드) — 상호작용 기록을 켠 박스에서만 답 meta.turn 으로 남긴다
         # (docs/interaction-data PLAN S2 · IX-12). 꺼진 박스는 모으지도 남기지도 않는다 — 서버 사본이 바이트까지 종전 그대로다.
         turn_ix: dict = {}
@@ -3630,6 +3632,11 @@ async def chat(
                             elif evt == "embeds":
                                 # 뷰어 카드 — 바이트는 위 큐로 그대로 흘리고(화면이 다시 거른다) 서버 사본에는 규칙에 맞는 포인터만(docs/chat-embeds PLAN 1절)
                                 embeds[:] = _embeds.pointers(embeds + list(data.get("items") or []))
+                            elif evt == "job_card" and len(job_cards) < 8:
+                                # 진행 카드(WD-13) — 바이트는 그대로 흘리고(화면이 그린다) 서버 사본에는 아는 칸만(다시 묻기는 심의 잡의 deliberate_status 만)
+                                _jc = _mcp_delib.card_pointer(data)
+                                if _jc is not None:
+                                    job_cards.append(_jc)
                             elif evt == "routine" and isinstance(data.get("run_id"), str) and data["run_id"]:
                                 # 분석 루틴(R3-design 3.2 · 3.3) — 대화에는 포인터만 남긴다(정본은 포털 원장, 단계 · 보고서는 화면이 run_id 로 읽는다).
                                 # 실행 id 는 모든 프레임에, 루틴 id · 제목은 plan 에, 실행 상태는 plan · done 에 있다. 마지막 값이 이긴다.
@@ -3755,7 +3762,8 @@ async def chat(
                                 reply = cancelled["message"] = cancelled["message"] or "(심의를 멈췄다)"
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
-                                                         ("user_images", user_images), ("panels", panels), ("embeds", embeds)) if v}
+                                                         ("user_images", user_images), ("panels", panels), ("embeds", embeds),
+                                                         ("job_cards", job_cards)) if v}
                                 if outcome:     # 심의가 낸 보고서 번호 · 집계 — 새로고침 뒤에도 결과 카드와 '발표자료로' 단추가 선다
                                     _am["delib_outcome"] = outcome
                                 if ra_report:   # '/보고서' 가 만든 보고서 — 그 답 옆에 '발표자료로' 단추가 선다

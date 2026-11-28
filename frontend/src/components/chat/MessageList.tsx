@@ -11,6 +11,7 @@ import { AgentCatalogBlock } from './AgentCatalogBlock';
 import { ConfirmCard } from './ConfirmCard';
 import { McpAppPanels } from './McpAppPanel';
 import { EmbedCards } from './EmbedCard';
+import { JobCards } from './JobCard';
 import { confirmState, type ConfirmState } from './confirm';
 import { DelibView } from './DelibView';
 import { DeckNoticeTools } from './DeckNoticeTools';
@@ -184,6 +185,8 @@ function Row({ msg, card }: { msg: Message; card?: ConfirmState }) {
         {msg.panels && msg.panels.length > 0 && <McpAppPanels panels={msg.panels} />}
         {/* 뷰어 카드(docs/chat-embeds) — 도구가 준 같은 출처 화면을 격리 창으로. 이 탭이 받은 것은 연 채로, 기록에서 온 것은 접힌 채다. */}
         {msg.embeds && msg.embeds.length > 0 && <EmbedCards embeds={msg.embeds} live={Boolean(msg.embedsLive)} />}
+        {/* 진행 카드(docs/request-1125 WD-13) — 확인 뒤 건 잡 · 엔진 이어하기. 심의 잡은 진행을 다시 물어 끝나면 결과로 바꾼다. */}
+        {msg.jobCards && msg.jobCards.length > 0 && <JobCards cards={msg.jobCards} />}
         {/* 도구 카탈로그('/도구' 검색) — 사용자가 직접 선택·변경해 지정 도구로 확정하는 카드. */}
         {msg.toolCatalog && <ToolCatalogBlock catalog={msg.toolCatalog} />}
         {/* 전문가 카탈로그('/전문가' 검색) — 도구와 같은 대우. 여기서 바로 페르소나를 지정한다. */}
