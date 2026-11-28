@@ -20,7 +20,11 @@ set -uo pipefail   # -e 없음: 한 서비스 실패가 나머지 백업을 막�
 
 BACKUP_ROOT="${BACKUP_ROOT:-/data/backups}"
 RETAIN_DAYS="${RETAIN_DAYS:-7}"
-TS="$(date +%Y%m%d-%H%M%S)"
+# update-all §1b 가 뜬 것(HWAX_BACKUP_PRE=1)은 이름 끝에 -pre 를 단다 — 03:30 일일 백업의 7일 보관과 따로 가장 새 PRE_KEEP(기본 2)개만 남긴다
+# (docs/request-1125 SE-2 ④ — 배포 전 롤백 지점은 바로 앞 한두 번이면 되고, AIDataHub 하나가 11 GB 다).
+PRE_SUFFIX=""; [ "${HWAX_BACKUP_PRE:-0}" = 1 ] && PRE_SUFFIX="-pre"
+TS="$(date +%Y%m%d-%H%M%S)$PRE_SUFFIX"
+PRE_KEEP="${PRE_KEEP:-2}"; [[ "$PRE_KEEP" =~ ^[1-9][0-9]?$ ]] || PRE_KEEP=2
 SELF_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARENT="$(dirname "$SELF_REPO")"
 find_repo() { local n="$1"; for c in "$PARENT/$n" "$HOME/Projects/$n" "$HOME/claude/$n"; do [ -d "$c" ] && { printf '%s' "$c"; return; }; done; }
@@ -38,7 +42,7 @@ FAILED=0; SKIPPED=0
 . "$SELF_REPO/infra/scripts/lib/koorm-parked.sh"
 # HP-76 — 이번 실행에서 덤프를 못 뜬(인스턴스 멈춤 · 실패) 대상의 daily. 세대 정리가 그 대상의 마지막 정상 덤프를 지우지 않게 한다.
 HOLD_DIRS=" "
-KEEP_MIN="${KEEP_MIN:-3}"   # 대상마다 날짜와 상관없이 남기는 가장 새 덤프 수
+KEEP_MIN="${KEEP_MIN:-3}"   # 대상마다 날짜와 상관없이 남기는 가장 새 덤프 수(-pre 가 아닌 것 가운데)
 hold() { HOLD_DIRS="$HOLD_DIRS$1 "; }
 
 # 값이 없으면 반드시 비0 으로 끝나야 한다 — 안 그러면 호출부의 `|| echo 기본값` 폴백이
@@ -55,6 +59,7 @@ env_get() {
 BOX="${HWAX_BOX:-$(env_get "$SELF_REPO/infra/.env" HWAX_BOX 2>/dev/null || hostname -s)}"
 ROOT="$BACKUP_ROOT/hwax/$BOX"
 LOG_PATH="$ROOT/backup.log"
+for _sk in ${HWAX_BACKUP_SKIP:-}; do hold "$ROOT/$_sk/daily"; done
 
 # cron 설치(치환형 멱등) — 매일 03:30. `grep -qF "$SELF"` 로 '있으면 skip' 하던 종전 방식은 줄 내용
 # (로그 경로·보존)이 바뀌어도 dev·cae00 어디서도 영원히 갱신되지 않았다(사전점검). 기존 SELF 줄을 빼고 새 줄을 넣는다.
@@ -76,6 +81,11 @@ if [ "${1:-}" = "--install-cron" ]; then
 fi
 
 WANT="${*:-aidh signalforge mxwp heax kooremapper materialtwin portal gateway smarttwinmcp delib-runs paper-index expertagents secrets}"
+# HWAX_BACKUP_SKIP — 이번 실행에서 뺄 대상(공백 구분). update-all §1b 가 AIDataHub 를 따로 뒤에서 뜨는 동안 나머지를 뜰 때 쓴다(SE-2 ①).
+# 뺀 대상의 daily 는 이 실행이 정리하지 않는다 — 뒤에서 도는 쪽이 덤프를 쓰는 중이고 그쪽이 끝에서 정리한다.
+for _sk in ${HWAX_BACKUP_SKIP:-}; do
+  WANT=" $WANT "; WANT="${WANT// $_sk / }"; WANT="${WANT# }"; WANT="${WANT% }"
+done
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
 
 mkdir -p "$ROOT" || { echo "✗ $ROOT 생성 불가 — 경로/권한 확인"; exit 1; }
@@ -99,6 +109,14 @@ _uid="$(id -u)"
 [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -d "/run/user/$_uid" ] && export XDG_RUNTIME_DIR="/run/user/$_uid"
 [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "/run/user/$_uid/bus" ] && export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$_uid/bus"
 
+# 압축 — 여러 코어 gzip(lib/pgzip.py — 같은 .sql.gz 꼴이라 복원 · 대조 스크립트는 그대로, SE-2 ②). python3 이 없거나 HWAX_BACKUP_GZIP=gzip 이면 한 코어 gzip.
+_gz() {
+  if [ "${HWAX_BACKUP_GZIP:-}" != gzip ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_REPO/infra/scripts/lib/pgzip.py" ]; then
+    python3 "$SELF_REPO/infra/scripts/lib/pgzip.py"
+  else
+    gzip -c
+  fi
+}
 # apptainer 인스턴스 안에서 pg_dump 실행 → gzip → 로컬. (env 값은 각 서비스 .env 에서)
 # $7(선택) 비밀번호 — heax-pg 는 127.0.0.1 도 scram 이라 없으면 매일 '0바이트 실패' 다(다른 4개는 trust).
 pg_backup() {  # $1=서비스라벨 $2=인스턴스 $3=user $4=port $5=db $6=출력디렉토리 [$7=pw]
@@ -114,7 +132,7 @@ pg_backup() {  # $1=서비스라벨 $2=인스턴스 $3=user $4=port $5=db $6=출
   if [ "$_inst_up" = "0" ]; then
     bad "$label: 인스턴스 $inst 미동작 — skip"; hold "$dir"; return 1
   fi
-  if apptainer exec ${pw:+--env "PGPASSWORD=$pw"} "instance://$inst" pg_dump -h 127.0.0.1 -p "$port" -U "$user" -d "$db" 2>/dev/null | gzip -c > "$out"; then
+  if apptainer exec ${pw:+--env "PGPASSWORD=$pw"} "instance://$inst" pg_dump -h 127.0.0.1 -p "$port" -U "$user" -d "$db" 2>/dev/null | _gz > "$out"; then
     [ -s "$out" ] && { sha256sum "$out" | awk '{print $1}' > "$out.sha256"; ok "$label → $(basename "$out") ($(du -h "$out" | cut -f1))"; }  \
       || { bad "$label: 덤프 0바이트 — 실패"; rm -f "$out"; hold "$dir"; return 1; }
   else bad "$label: pg_dump 실패"; rm -f "$out"; hold "$dir"; return 1; fi
@@ -347,22 +365,36 @@ fi
 #    운영자가 손으로 둔 아카이브·무관 잔재(cluster_setup·dpkg.*)까지 지웠다(사전점검).
 #    예외: AIDH merge-from-drive.sh:46 이 update-all 마다 $BACKUP_ROOT/aidh/pre-merge-*.sql.gz(4.4G)를 계속 쓴다 — 그것만 같이 정리.
 #    조각 길(docs/aidh-parts-sync)은 전체 스냅숏 대신 덮을 줄의 앞 모습 폴더(pre-parts-<시각>)를 남긴다 — 같은 보관 일수로 지운다.
-hr "세대 정리 (${RETAIN_DAYS}일 초과 삭제 — $ROOT/*/daily + aidh pre-merge · pre-parts)"
+hr "세대 정리 (${RETAIN_DAYS}일 초과 삭제 · 배포 전 백업과 병합 전 덤프는 새 ${PRE_KEEP}개만 — $ROOT/*/daily + aidh pre-merge · pre-parts)"
 for d in "$ROOT"/*/daily; do
   [ -d "$d" ] || continue
   # HP-76 — 이번에 덤프를 못 뜬 대상은 정리하지 않는다(멈춰 둔 되돌림용 사본의 마지막 덤프가 사라지던 문제).
   case "$HOLD_DIRS" in *" $d "*) echo "  · 보존: $d — 이번 실행에서 덤프를 못 떠 정리하지 않는다"; continue ;; esac
-  # 날짜와 상관없이 가장 새 KEEP_MIN 개는 남긴다.
-  keep="$(ls -1t "$d"/*.sql.gz "$d"/*.tar.gz 2>/dev/null | head -n "$KEEP_MIN")"
+  # 날짜와 상관없이 가장 새 KEEP_MIN 개는 남긴다(update-all 이 뜬 -pre 는 세지 않는다).
+  keep="$(ls -1t "$d"/*.sql.gz "$d"/*.tar.gz 2>/dev/null | grep -vE -- '(-pre\.(sql|tar)\.gz|/pre-merge-[^/]*\.sql\.gz)$' | head -n "$KEEP_MIN")"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     printf '%s\n' "$keep" | grep -qxF -- "$f" && continue
     rm -f -- "$f" && echo "  삭제: $f"
-  done < <(find "$d" -maxdepth 1 -type f \( -name "*.sql.gz" -o -name "*.tar.gz" \) -mtime +"$RETAIN_DAYS" 2>/dev/null)
+  done < <(find "$d" -maxdepth 1 -type f \( -name "*.sql.gz" -o -name "*.tar.gz" \) ! -name "*-pre.sql.gz" ! -name "*-pre.tar.gz" ! -name "pre-merge-*" -mtime +"$RETAIN_DAYS" 2>/dev/null)
+  # update-all 이 뜬 -pre 는 날짜와 상관없이 가장 새 PRE_KEEP 개만(SE-2 ④)
+  while IFS= read -r f; do
+    [ -n "$f" ] && rm -f -- "$f" && echo "  삭제(배포 전 백업 — 새 ${PRE_KEEP}개 밖): $f"
+  done < <(ls -1t "$d"/*-pre.sql.gz "$d"/*-pre.tar.gz 2>/dev/null | tail -n +"$((PRE_KEEP + 1))")
+  # 병합 전 덤프 — 위 '편입' 이 $BACKUP_ROOT/aidh 의 pre-merge-* 도 *.sql.gz 로 함께 daily 로 옮긴다. 그 자리에서도 가장 새 PRE_KEEP 개만.
+  while IFS= read -r f; do
+    [ -n "$f" ] && rm -f -- "$f" && echo "  삭제(병합 전 덤프 — 새 ${PRE_KEEP}개 밖): $f"
+  done < <(ls -1t "$d"/pre-merge-*.sql.gz 2>/dev/null | tail -n +"$((PRE_KEEP + 1))")
   # 짝 파일이 없어진 sha256 만 지운다(남긴 덤프의 sha256 은 그대로).
   for s in "$d"/*.sha256; do [ -e "$s" ] && [ ! -e "${s%.sha256}" ] && rm -f -- "$s"; done
 done
 [ -d "$BACKUP_ROOT/aidh" ] && find "$BACKUP_ROOT/aidh" -maxdepth 1 -type f -name 'pre-merge-*.sql.gz' -mtime +"$RETAIN_DAYS" -print -delete 2>/dev/null | sed 's/^/  삭제: /' || true
+# 병합 전 덤프(update-all §3 의 AIDataHub 병합이 뜬다 — 하나가 약 11 GB)도 날짜와 상관없이 가장 새 PRE_KEEP 개만(SE-2 ④). sha256 짝도 함께 지운다.
+if [ -d "$BACKUP_ROOT/aidh" ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] && rm -f -- "$f" "$f.sha256" && echo "  삭제(병합 전 덤프 — 새 ${PRE_KEEP}개 밖): $f"
+  done < <(ls -1t "$BACKUP_ROOT/aidh"/pre-merge-*.sql.gz 2>/dev/null | tail -n +"$((PRE_KEEP + 1))")
+fi
 [ -d "$BACKUP_ROOT/aidh" ] && find "$BACKUP_ROOT/aidh" -mindepth 1 -maxdepth 1 -type d -name 'pre-parts-*' -mtime +"$RETAIN_DAYS" -print -exec rm -rf -- {} + 2>/dev/null | sed 's/^/  삭제: /' || true
 
 echo

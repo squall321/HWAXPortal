@@ -501,6 +501,25 @@ if want aidh; then
       git_update
       _cur="$(_fp_git; hwax_fp deploy/apptainer/.env)"     # 실제 설정은 deploy/apptainer/.env — api_server/.env 는 boot.sh 가 기동 때 다시 쓴다
       _start() { AIDH_ROOT_PATH=/ai-data-hub AIDH_BOOT_HEALTH_TIMEOUT="${AIDH_BOOT_HEALTH_TIMEOUT:-600}" ./boot.sh --force; }
+      # update-all §1b 가 AIDataHub 덤프를 뒤에서 뜨고 있으면(HWAX_AIDH_BACKUP_RC — docs/request-1125 SE-2 ①) 다시 띄우기 전에 끝나기를 기다린다 —
+      # boot.sh 가 alembic 이행을 돌리므로 이행 전 롤백 지점이 있어야 한다. 실패 · 시한(HWAX_AIDH_BACKUP_WAIT_S, 기본 3600초)이면 다시 띄우지 않는다.
+      # 재기동이 정해졌을 때만 기다린다(지문이 같으면 덤프와 상관없다). 묻기 줄은 아래 cycle 이 한 번만 적게 장부 파일을 비운다(SF 구역과 같은 꼴).
+      if [ -n "${HWAX_AIDH_BACKUP_RC:-}" ] && [ "${RESTART:-0}" != 1 ] \
+         && HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed aidh "$_cur" http://localhost:8001/ >/dev/null; then
+        _bw="${HWAX_AIDH_BACKUP_WAIT_S:-3600}"; [[ "$_bw" =~ ^[0-9]+$ ]] || _bw=3600
+        if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
+          echo "  · AIDataHub 사전 덤프(§1b — 뒤에서 도는 중)가 끝나기를 기다린 뒤 다시 띄운다(상한 ${_bw}초)"
+        fi
+        _t0="$(date +%s)"
+        while [ ! -f "$HWAX_AIDH_BACKUP_RC" ] && [ "$(( $(date +%s) - _t0 ))" -lt "$_bw" ]; do sleep 5; done
+        if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
+          echo "  ✗ AIDataHub 사전 덤프가 ${_bw}초 안에 끝나지 않았다 — 이행 전 롤백 지점이 없어 다시 띄우지 않았다(로그 ${HWAX_AIDH_BACKUP_LOG:-?})"
+          exit 1
+        elif [ "$(cat "$HWAX_AIDH_BACKUP_RC")" != 0 ]; then
+          echo "  ✗ AIDataHub 사전 덤프가 실패했다(rc $(cat "$HWAX_AIDH_BACKUP_RC")) — 이행 전 롤백 지점이 없어 다시 띄우지 않았다(로그 ${HWAX_AIDH_BACKUP_LOG:-?})"
+          exit 1
+        fi
+      fi
       # 정지 함수는 `:` — boot.sh --force 가 스스로 옛 uvicorn 을 죽이고 다시 띄운다(내려감 대기 없음). 정말 갈렸는지는 :8001 리스너 pid 로 본다.
       hwax_restart_cycle aidh "$_cur" : _start http://localhost:8001/ || exit 1
       true ) && ok "aidh up" || skip "aidh failed (see above)"

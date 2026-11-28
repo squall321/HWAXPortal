@@ -563,8 +563,21 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   # 그래서 signalforge·mxwp 백업이 22회 내내 실패하는 동안 화면엔 '✓ 백업 완료'만 보였다.
   # 성공하면 꼬리만, 실패하면 실패 줄을 전부 보여준다.
   BK_LOG="$(mktemp)"
+  # AIDataHub 덤프는 뒤에서 따로 뜬다(docs/request-1125 SE-2 ①) — 11 GB · 27 ~ 28분이 §1b 를 통째로 붙잡았다. 끝나기를 deploy-all 의 AIDataHub
+  # 재기동(boot.sh --force — alembic 이행이 거기서 돈다) 앞과 이 실행의 끝(_aidh_backup_finish)에서 기다린다. 실패하면 deploy-all 이 AIDataHub 를
+  # 다시 띄우지 않는다(이행 전 롤백 지점이 없다). 끄기 HWAX_AIDH_BACKUP_BG=0(종전대로 함께 뜬다). 뒤의 실행은 이 실행의 잠금 fd 를 물려받지 않는다
+  # (본문은 fd 를 닫고 돈다) · 출력은 파일로만 — 호출자를 붙들지 않는다.
+  _bk_skip=""
+  if [ "${HWAX_AIDH_BACKUP_BG:-1}" = 1 ] && [ -n "$(find_repo AIDataHub)" ]; then
+    _bkd="$(mktemp -d)"; HWAX_AIDH_BACKUP_RC="$_bkd/rc"; HWAX_AIDH_BACKUP_LOG="$_bkd/log"; export HWAX_AIDH_BACKUP_RC HWAX_AIDH_BACKUP_LOG
+    nohup env HWAX_BACKUP_PRE=1 bash -c '"$1" aidh > "$2" 2>&1; echo "$?" > "$3.tmp"; mv -f "$3.tmp" "$3"' _ \
+      "$SELF_REPO/infra/scripts/backup-local.sh" "$HWAX_AIDH_BACKUP_LOG" "$HWAX_AIDH_BACKUP_RC" </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    _bk_skip="aidh"
+    echo "  · AIDataHub 덤프는 뒤에서 뜬다(로그 $HWAX_AIDH_BACKUP_LOG) — AIDataHub 재기동 앞과 이 실행의 끝에서 기다린다"
+  fi
   # ○ 는 일부러 뜨지 않은 대상이다(멈춰 둔 KooRemapper 사본 — 실패 아님). 꼬리 넷에 들지 않아 따로 보인다 — 끝 요약에는 backup-local 이 장부로 넘긴다.
-  if "$SELF_REPO/infra/scripts/backup-local.sh" >"$BK_LOG" 2>&1; then
+  if HWAX_BACKUP_PRE=1 HWAX_BACKUP_SKIP="$_bk_skip" "$SELF_REPO/infra/scripts/backup-local.sh" >"$BK_LOG" 2>&1; then
     grep '○' "$BK_LOG" | sed 's/^/  /'
     tail -4 "$BK_LOG" | sed 's/^/  /'
   else
@@ -4088,6 +4101,21 @@ try:
 except Exception:
     pass
 PY
+fi
+
+# §1b 가 뒤에서 뜬 AIDataHub 덤프 — 끝나기를 기다려 결과를 센다(SE-2 ①). 실패는 종전 §1b 와 같은 비치명(⚠ — 배포는 이미 했다).
+if [ -n "${HWAX_AIDH_BACKUP_RC:-}" ]; then
+  _aidh_bk_wait="${HWAX_AIDH_BACKUP_WAIT_S:-3600}"; [[ "$_aidh_bk_wait" =~ ^[0-9]+$ ]] || _aidh_bk_wait=3600
+  _t0="$(date +%s)"
+  while [ ! -f "$HWAX_AIDH_BACKUP_RC" ] && [ "$(( $(date +%s) - _t0 ))" -lt "$_aidh_bk_wait" ]; do sleep 5; done
+  if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
+    bad "AIDataHub 사전 덤프가 ${_aidh_bk_wait}초 안에 끝나지 않았다 — 뒤에서 계속 돈다(로그 $HWAX_AIDH_BACKUP_LOG)"
+  elif [ "$(cat "$HWAX_AIDH_BACKUP_RC")" = 0 ]; then
+    ok "AIDataHub 사전 덤프 — $(grep -E '✓ aidh →' "$HWAX_AIDH_BACKUP_LOG" | head -1 | sed 's/^[[:space:]]*//')"
+  else
+    bad "AIDataHub 사전 덤프 실패(rc $(cat "$HWAX_AIDH_BACKUP_RC")) — 아래 줄(로그 $HWAX_AIDH_BACKUP_LOG)"
+    grep -E '✗' "$HWAX_AIDH_BACKUP_LOG" | sed 's/^/    /'
+  fi
 fi
 
 # ○ 옵션·설정이 없어 안 켠 기능은 성공·실패 어느 쪽 끝에서도 다시 말한다 — 조용히 지나가면 그 기능이
