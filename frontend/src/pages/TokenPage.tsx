@@ -11,7 +11,7 @@ import {
   type PatMeta,
   type ServicePatCreated,
 } from '../api/pat.api';
-import { fetchMyAccess, type MyAccess } from '../api/access.api';
+import { fetchHubView, fetchMyAccess, type HubView, type MyAccess } from '../api/access.api';
 import { fetchShareBox, type ShareBox } from '../api/interactions.api';
 import { useInteractionStatus } from '../lib/useInteractionStatus';
 import HubAppsPanel from '../components/HubAppsPanel';
@@ -184,6 +184,15 @@ export default function TokenPage() {
   const [share, setShare] = useState(false);
   const [shareAuto, setShareAuto] = useState(false);
   const [shareBox, setShareBox] = useState<ShareBox | null>(null);
+  // 설정 배치의 '목적 보기로 고정' 칸(기본 끔 — docs/mcp-modernize M3 PC 킷 목적 고르기)과 지금 저장된 개인 Claude 보기(null = 모름). 고정하면 연결 머리에
+  // portal 대신 purpose:<키>,… 를 단다 — 포털에서 고른 목적을 이 PC 등록에 굳힌다(기본은 포털 설정을 따른다 — C-41).
+  const [pinPurpose, setPinPurpose] = useState(false);
+  const [hubView, setHubView] = useState<HubView | null>(null);
+  const pinKeys =
+    hubView && hubView.mode === 'purpose' && hubView.purpose_supported
+      ? hubView.purposes.filter((k) => !hubView.unknown_purposes.includes(k))
+      : [];
+  const pinView = pinPurpose && pinKeys.length > 0 ? `purpose:${pinKeys.join(',')}` : null;
 
   // 인증서만 따로(10-20 사용자 요청) — 배치를 못 쓰는 PC · 손으로 설정하는 사람 몫이라 토큰을 발급하지 않아도 받는다.
   // 링크(<a download>)로 걸지 않고 받아서 PEM 인지 본 뒤 저장한다 — 실패를 화면에 말하고, 오류 응답이 .crt 이름으로 저장되지 않게.
@@ -231,6 +240,7 @@ export default function TokenPage() {
         created.fallback_proxy ?? null,
         offload,
         share ? (shareAuto ? 'auto' : 'command') : 'off',
+        pinView,
       );
       const blob = new Blob([bat], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
@@ -286,6 +296,10 @@ export default function TokenPage() {
       .catch(() => {});
     fetchShareBox()
       .then(setShareBox)
+      .catch(() => {});
+    // 못 읽으면(게이트웨이 불통) 목적 고정 칸이 꺼진 채로 보인다 — 배치는 포털 설정을 따르는 종전 꼴로 만든다
+    fetchHubView()
+      .then(setHubView)
       .catch(() => {});
   }, []);
 
@@ -385,7 +399,7 @@ export default function TokenPage() {
         {/* 개인 Claude 보기(전체 · 묶음 · 가벼운 — docs/request-1029 E-4)는 앱 끄기와 같은 탭 위에 둔다. 끄기를 바꾸면 보기의 영역 수를 다시 읽는다 */}
         {tab === 'apps' && (
           <>
-            <HubViewPanel rev={hubRev} />
+            <HubViewPanel rev={hubRev} onChange={setHubView} />
             <HubAppsPanel onChanged={() => setHubRev((n) => n + 1)} />
           </>
         )}
@@ -596,6 +610,30 @@ export default function TokenPage() {
                       </>
                     )}
                   </div>
+                  {/* 목적 보기로 고정(docs/mcp-modernize M3) — 기본은 포털 설정을 따른다(머리 portal). 고르면 지금 저장된 목적을 이 PC 등록의 머리에 굳힌다 */}
+                  <div className="tok-offload tok-pin">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={pinPurpose && pinKeys.length > 0}
+                        disabled={pinKeys.length === 0}
+                        onChange={(e) => setPinPurpose(e.target.checked)}
+                      />
+                      이 PC 의 개인 Claude 를 지금 고른 목적 보기로 고정
+                    </label>
+                    <span className={pinKeys.length > 0 ? 'tok-offload-box' : 'tok-offload-box is-off'}>
+                      {pinKeys.length > 0
+                        ? `고를 목적 ${pinKeys.length}개 — ${pinKeys.join(', ')}`
+                        : "먼저 '허브에 보일 앱' 탭의 개인 Claude 보기에서 목적을 골라 저장하세요."}
+                    </span>
+                    {pinPurpose && pinKeys.length > 0 && (
+                      <div className="tok-hint">
+                        연결 머리를 <code>X-HWAX-View: {pinView}</code> 로 답니다 — 이 PC 등록은 포털에서 보기를 바꿔도 이
+                        목적만 싣습니다. 포털 설정을 다시 따르게 하려면 칸을 끄고 받은 배치를 다시 실행한 뒤, 등록 설정에 남은 그
+                        머리를 <code>portal</code> 로 바꾸거나 지웁니다(CLI 로 등록한 PC 는 배치가 다시 등록해 저절로 바뀝니다).
+                      </div>
+                    )}
+                  </div>
                   <div className="tok-actions">
                     <button
                       type="button"
@@ -637,10 +675,13 @@ export default function TokenPage() {
                   <CertGuide token={created.token} open />
                 ) : (
                   <>
-                    <CopyBlock label="Claude Code (터미널)" text={SNIP.claudeCodeSnippet(created.token)} />
+                    <CopyBlock
+                      label="Claude Code (터미널)"
+                      text={SNIP.claudeCodeSnippet(created.token, pinView)}
+                    />
                     <CopyBlock
                       label="Claude Desktop (claude_desktop_config.json)"
-                      text={SNIP.claudeDesktopSnippet(created.token, null)}
+                      text={SNIP.claudeDesktopSnippet(created.token, null, pinView)}
                     />
                   </>
                 )}

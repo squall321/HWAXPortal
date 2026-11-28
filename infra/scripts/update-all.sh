@@ -158,6 +158,9 @@ export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=upda
 . "$SELF_REPO/infra/scripts/lib/review-drain.sh"
 # LLM 서버 풀(1i · §4 뒤 라우터 내리기 · §6) — LLM_UPSTREAMS 한 줄의 규칙(목록 검사·라우터 주소·사본 바꾸기)은 이 lib 한 곳에 있다.
 . "$SELF_REPO/infra/scripts/lib/llm-pool.sh"
+# 게이트웨이 전용 venv(MCP SDK 2.x — docs/mcp-modernize M4) — §4 의 update-sites 가 게이트웨이를 내리기 전에 맞추고(못 맞추면 내리지 않는다), §5 재프로비저닝 ·
+#   자동 복구도 게이트웨이를 다시 띄우기 전에 같은 판정을 지난다. 자식(update-sites)의 ✗ 사유는 장부 옆 파일로 넘어와 여기서 fail 로 끝 요약에 든다.
+. "$SELF_REPO/infra/scripts/lib/gateway-venv.sh"
 # 끝의 박스 훅(docs/core-link SRC-12) — infra/hooks/post-update.d/*.local.sh 를 끝맺음 뒤 · ○ 요약 앞에서 돌린다.
 . "$SELF_REPO/infra/scripts/lib/post-update-hooks.sh"
 # 멈춰 둔 KooRemapper 되돌림 사본(infra/.env 의 KOORM_LOCAL_PARKED) — §5 의 kr_ PAT 점검 · 내려간 백엔드 살리기가 그 스택을 재거나 띄우지 않는다.
@@ -1634,6 +1637,11 @@ case "$_us_rc" in
   0|3) ;;
   *) fail "update-sites 실패 — 갱신 안 된 서비스가 있다(옛 코드로 떠 있을 수 있다). 위 FAIL 줄과 리포의 git status 를 본다" ;;
 esac
+# 게이트웨이 전용 venv 가 서지 않아 update-sites 가 게이트웨이를 내리지 않았으면 그 까닭 · 사람 몫을 끝 요약의 ✗ 목록에 싣는다(위 한 줄은 '어느 서비스' 까지만
+# 말한다). 자식이 장부 옆 파일(lib/gateway-venv.sh 의 _hwax_gw_venv_note)에 남긴다 — 자식의 셸 변수는 부모가 못 본다.
+if command -v hwax_gw_venv_note_take >/dev/null 2>&1 && _gwv_note="$(hwax_gw_venv_note_take)"; then
+  fail "게이트웨이를 다시 띄우지 않았다(옛 프로세스가 돈다) — 전용 venv: $_gwv_note"
+fi
 # O2(docs/delib-ops) — 에이전트 서버가 이번에 다시 떴으면 재기동을 넘겨 다시 선 줄의 수를 찍는다(엔진 R2 — /health.delib_requeued). 다시 뜨지
 # 않았으면 그 수는 앞 기동의 것이라 찍지 않는다. 옛 엔진(칸 없음)이면 아무것도 찍지 않는다.
 if command -v hwax_agent_ident >/dev/null 2>&1; then
@@ -2359,6 +2367,14 @@ PY
   _reprov_deferred=""
   if [ -n "$MISSING" ] && _dbusy="$(hwax_delib_busy http://127.0.0.1:9009/health)"; then
     hwax_skip "게이트웨이 재프로비저닝 건너뜀" "심의 ${_dbusy% *}건 진행 중, ${_dbusy#* }건 대기 — 고칠 것($MISSING)은 게이트웨이·에이전트서버를 재기동해야 반영되는데 재기동하면 심의가 전부 끊긴다" "심의가 끝난 뒤 update-all 을 다시 돌린다 · 지금 강행하려면 AGENT_RESTART_FORCE=1 을 주고 재실행"
+    _reprov_deferred="$MISSING"; MISSING=""
+  fi
+  # 재프로비저닝은 게이트웨이 재기동까지가 한 벌이다 — 받은 게이트웨이 판이 SDK 2.x 를 고정하는데 전용 venv 가 서지 않으면 내린 게이트웨이를 다시 못
+  # 띄운다(§4 가 심의 때문에 재기동을 미뤘다가 그 사이 심의가 끝난 실행 등). provision 앞에서 맞추고(지어야 하면 짓는다), 못 하면 통째로 미룬다 —
+  # config 만 고치고 재기동을 빼면 떠 있는 프로세스와 파일이 갈린다(위 심의 미룸과 같은 까닭). 실패라 ✗ 다(○ 가 아니다).
+  if [ -n "$MISSING" ] && command -v hwax_gw_venv_ensure >/dev/null 2>&1 && ! hwax_gw_venv_ensure "${GW_DIR:-}"; then
+    _gwv_note="$(hwax_gw_venv_note_take)" || _gwv_note="위 ✗ 줄"
+    fail "게이트웨이 재프로비저닝을 이번 실행에서 하지 않았다($MISSING) — 게이트웨이 재기동이 한 벌인데 전용 venv 가 서지 않았다: $_gwv_note"
     _reprov_deferred="$MISSING"; MISSING=""
   fi
   if [ -n "$MISSING" ]; then
@@ -3559,6 +3575,14 @@ repair_mcp() {
       "심의가 끝난 뒤 update-all 을 다시 돌린다(지금 하려면 AGENT_RESTART_FORCE=1)"
     return 1
   fi
+  # 게이트웨이 재기동이 한 벌이다 — 받은 판이 SDK 2.x 를 고정하는데 전용 venv 가 서지 않으면 아래 kill 뒤 start.sh 가 띄우지 않아 게이트웨이가 통째로
+  # 내려간다(docs/mcp-modernize M4). 맞추고(지어야 하면 짓는다), 못 하면 아무것도 하지 않고 1 — ✗ 는 여기서 센다(○ 미룸이 아니라 사람 몫이다).
+  local _gwv_note
+  if command -v hwax_gw_venv_ensure >/dev/null 2>&1 && ! hwax_gw_venv_ensure "${GW_DIR:-}"; then
+    _gwv_note="$(hwax_gw_venv_note_take)" || _gwv_note="위 ✗ 줄"
+    fail "MCP 자동 복구(재프로비저닝 → 게이트웨이 재기동)를 하지 않았다 — 게이트웨이 전용 venv 가 서지 않았다: $_gwv_note"
+    return 1
+  fi
   echo "  · 자동 복구 시도 — 재프로비저닝 → 게이트웨이 재기동 → 재검증"
   # ⚠ 순서가 중요하다. --force 는 .bak 을 덮어쓰므로, 직전 config 에서 토큰을 건져 오는
   #   sync-provision-env 를 **먼저** 돌려야 한다. 반대로 하면 RAT/ODB 토큰을 못 건져
@@ -3599,8 +3623,9 @@ if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
       echo "      heax 등록 앱:              (HEAXHub) bash deploy/apptainer/redeploy-app.sh <slug> --rebuild"
       echo "      둘 다 소스가 bind-mount 라 재기동만으로 최신 코드가 물린다(빌드형은 --rebuild)."
     elif [ "$rc" = 1 ] && ! repair_mcp; then
-      # 심의가 돌아 복구를 미뤘다(○ 장부에 까닭) — 실패로 세지 않는다. 0성공 백엔드는 남아 있으니 경고로 보인다.
-      bad "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 자동 복구는 심의가 끝난 뒤로 미뤘다"
+      # 복구를 하지 않았다 — 심의가 돌아 미뤘거나(○ 장부에 까닭 — 실패로 세지 않는다) 게이트웨이 전용 venv 가 서지 않았다(repair_mcp 가 ✗ 로 이미 셌다).
+      # 0성공 백엔드는 남아 있으니 경고로 보인다.
+      bad "MCP 백엔드 중 호출이 전량 실패하는 것이 있다(위 ✗ 줄) — 자동 복구는 하지 않았다(위 ○ 줄 — 심의가 끝난 뒤로 미뤘다, 또는 ✗ 줄 — 게이트웨이 전용 venv)"
     elif [ "$rc" = 1 ]; then
       # 검출만 하고 끝내면 사람이 손으로 고칠 때까지 죽어 있다 — 위 repair_mcp 가 고쳤다(재프로비저닝 → 재기동).
       echo "  · 복구 후 재검증"

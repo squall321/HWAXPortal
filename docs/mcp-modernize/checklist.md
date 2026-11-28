@@ -50,7 +50,10 @@
 - [x] 게이트웨이 M3 — 목적 72(다앱 13 · 앱 59) · 덧씌우기 · list_tool_apps(by='purpose') · 앱 입구 · 검색 목적 층(기존 183쌍 나빠짐 0 · purpose@1 0.94 · HE app@1 0.66 → 0.89) · 보기 purpose: · prompts · skill:// 자원 · 채택 원장. master `20cc30f`(WDA 입구 읽기 format_list · 회의록 트리거 좁힘 · 목적 목록 기본 단계 뺌 3.7만 → 1.7만 자 · 리스크 입구 읽기) · dev 반영 · 올림(11-27, 사용자 「빨리 다」)
 - [x] 검색 작은 고침(M2 `c1ffe6e` — 나빠짐 0)
 - [x] 검색 목적 층 · `list_tool_apps(by='purpose')` · 앱 입구 `entry`(M3)
-- [x] 보기 `purpose:<key>` · prompts `purpose-<key>`(M3) — [ ] 포털 hub_view MODES · PC 킷 목적 고르기(화면)
+- [x] 보기 `purpose:<key>` · prompts `purpose-<key>`(M3)
+- [x] 포털 보기 목적(가지 `wt1127/mm-portal`, MM-10) — `hub_view.MODES` 에 purpose · `/auth/access/view` 의 purpose_options(`/tools-map` purposes 에서 화면 칸만 — list_tool_apps(by='purpose') 37K 자를 피한다) · 목적 키는 게이트웨이 표로 검증 · 화면 목적 고르기(여럿 · 거르기 · 관련 앱) · 브라우저 시험
+- [x] PC 킷 목적 고르기(MM-10) — 설정 배치의 '목적 보기로 고정' 칸(기본 끔 — 연결 머리 portal 대신 `purpose:<키>,…`) · 등록 명령 조각 같은 값
+  - [ ] 게이트웨이 시험 `test_E4_포털이_저장하는_보기_글을_게이트웨이가_같은_뜻으로_읽는다` 가 `MODES == (full, bundle, light)` 를 단언한다 — 포털 병합 뒤 붉어진다(게이트웨이 세션 몫, MM-10)
 - [x] 웹 챗 목적 예산 · 좌석 · 위임 · 루틴이 목적 표를 읽음 — 에이전트 서버 main `87bcd64`(모두 그림자 기본 · dev 그림자 측정: 입구 놓침 2/10 → 0 · 토큰 Qwen −55% · Claude −88 ~ 90%) · dev `.env` 16K 값 걷고 `CHAT_TOOL_PURPOSE=on`(백업 `.env.bak-20261127-mm`)
   - [ ] cae00 그림자 기간 뒤 on 으로 16문항 A/B · 좌석은 panel_read 후보(안 3)가 먼저 · 위임 목적 예산 켜기
 - [ ] 평가셋 — HE samples(app@1) · 목적 쌍(purpose@1) · 186쌍 사람 검토 · cae00 스냅숏 평가
@@ -59,8 +62,10 @@
 
 - [x] SKILL.md 를 resource `skill://hwax/<키>/SKILL.md` 로(M3)
 - [x] 게이트웨이 SDK 2.x 이행 — 가지 `wt1127/sdk2`(`40461b8` · `9020d95`, 저수준 Server · 두 세대 · 전용 venv Python 3.12 · 바퀴 꾸러미 tools/gateway-wheels · 시험 1,350) — **cae00 에 venv 를 먼저 지어야 해서 master 에 안 넣음**
-  - [ ] update-all 의 게이트웨이 venv 단계(포털 가지 짓는 중) → 꾸러미 Drive(사람) → 8차에 master
-  - [ ] Skills 확장(skills/list · get — SDK 2.3 에 모듈이 없어 직접) · Events 허브(poll · stream) — 가지 짓는 중
+- [x] update-all 의 게이트웨이 전용 venv 단계(가지 `wt1127/mm-portal`, MM-9) — 내리기 전에 판 대조 → Drive `tools/gateway-wheels/<열쇠>/` 받기 · sha256 · 판 대조(심의 기다림 앞) → install.sh(내리기 바로 앞), 못 하면 내리지 않고 ✗ · 사람 몫 · 끝 요약 · §5 재프로비저닝 · 자동 복구도 같은 판정, 창구 `infra/scripts/gateway-venv.sh`(check · ensure · push-cmd)
+  - [ ] 꾸러미 Drive 올리기 — 사람 몫(`./infra/scripts/gateway-venv.sh push-cmd --python <MQ-8 판> --arch <MQ-8 아키텍처>` 가 내는 두 줄)
+  - [x] Skills 확장(skills/list · get — 목적 72 · 워크플로 다섯) · Events 허브(poll · stream · 로컬 도구 events_poll — ste · SmartTwin 은 그 사람 자격으로 당겨 받기, StepForge 는 폴러) — 가지 `wt1127/sdk2` `29feeb0`(시험 1,364)
+  - [ ] 꾸러미 Drive 에 오른 뒤 8차에 sdk2 를 master 로
 - [ ] 게이트웨이 Events 확장(poll · stream) — 원천 준비됨: ste `list_job_events`(가지) · SmartTwin `job_changes`(main 058c601c) · StepForge `auto_changes` kind `stepforge.revision.changed`(가지 55f4c384)
 - [ ] 자동 파이프라인 감지를 이벤트로(지금의 묻기는 대비 길로 남김)
 - [ ] Tasks — SDK 구현을 지켜본다

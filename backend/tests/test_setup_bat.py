@@ -41,16 +41,17 @@ def gen(tmp_path_factory):
         "const { makeSnippets } = require('./setupBat.js');\n"
         "const pem = process.argv[3] === 'pem' ? '-----BEGIN CERTIFICATE-----\\nQUJD\\n-----END CERTIFICATE-----' : null;\n"
         "const s = makeSnippets(process.argv[2]);\n"
-        "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null)\n"
+        "const view = process.argv[9] || null;\n"
+        "process.stdout.write(process.argv[4] === 'desktop' ? s.claudeDesktopSnippet('" + TOKEN + "', process.argv[5] || null, view)\n"
         "  : process.argv[4] === 'guide' ? JSON.stringify(s.certGuide(process.argv[5] === 'notoken' ? null : '" + TOKEN + "'))\n"
-        "  : process.argv[4] === 'code' ? s.claudeCodeSnippet('" + TOKEN + "')\n"
+        "  : process.argv[4] === 'code' ? s.claudeCodeSnippet('" + TOKEN + "', view)\n"
         "  : s.buildSetupBat('" + TOKEN + "', '내 토큰', pem, process.argv[6] || null, process.argv[7] === 'offload',"
-        " process.argv[8] || 'off'));\n")
+        " process.argv[8] || 'off', view));\n")
 
-    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY, offload=False, share="off"):
+    def run(origin="https://hwax.example.net", pem=True, what="bat", cert="", proxy=PROXY, offload=False, share="off", view=""):
         # ⚠ text=True 는 universal newlines 로 CRLF 를 LF 로 바꾼다 — 배치의 줄끝 규약을 검사할 수 없다(실측).
         r = subprocess.run(["node", str(drv), origin, "pem" if pem else "nopem", what, cert, proxy,
-                            "offload" if offload else "plain", share],
+                            "offload" if offload else "plain", share, view],
                            capture_output=True, timeout=120, cwd=str(out))
         assert r.returncode == 0, r.stdout.decode("utf-8", "replace") + r.stderr.decode("utf-8", "replace")
         return r.stdout.decode("utf-8")
@@ -378,8 +379,9 @@ def test_pasted_desktop_snippet_does_not_hide_an_unexpanded_variable(gen):
     배치는 확장된 실제 경로를 쓰지만, 붙여넣는 조각은 사람이 바꿀 자리표시자여야 한다.
     10-20 부터 인증서가 드는 포털의 Desktop 조각은 '직접 설정' 안내 ⑤(certGuide)가 만든다 — 화면은 인증서 없는 조각만 직접 부른다."""
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
-    assert "claudeDesktopSnippet(created.token, null)" in page
-    assert re.search(r"claudeDesktopSnippet\(created\.token, (?!null\))", page) is None, "화면이 경로를 직접 넣으면 이 검사를 비껴간다"
+    # 셋째 인자는 목적 고정(docs/mcp-modernize M3 — 머리 값만 바꾼다). 경로 자리(둘째)는 늘 null 이다
+    assert "claudeDesktopSnippet(created.token, null, pinView)" in page
+    assert re.search(r"claudeDesktopSnippet\(created\.token, (?!null[,)])", page) is None, "화면이 경로를 직접 넣으면 이 검사를 비껴간다"
     desk = json.loads(gen(what="guide"))[4]
     assert desk["label"].startswith("⑤") and "%USERPROFILE%" not in desk["text"] and "<사용자>" in desk["text"]
     snip = gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-portal.crt")
@@ -439,7 +441,7 @@ def test_the_generator_has_no_hardcoded_address_and_the_page_passes_the_portal_v
     assert not found, "setupBat.ts 에 IPv4 주소 글자가 있다 — 사내 주소면 박스 설정(HWAX_FALLBACK_PROXY)에서 받는다"
     page = (FE / "src/pages/TokenPage.tsx").read_text(encoding="utf-8")
     assert re.search(r"buildSetupBat\(\s*created\.token,\s*created\.name,\s*pem,\s*created\.fallback_proxy \?\? null,\s*offload,"
-                     r"\s*share \? \(shareAuto \? 'auto' : 'command'\) : 'off',?\s*\)", page), (
+                     r"\s*share \? \(shareAuto \? 'auto' : 'command'\) : 'off',\s*pinView,?\s*\)", page), (
         "화면이 발급 응답의 사내 프록시(와 '서버 LLM 에 일 맡기기' 칸)를 배치에 넘긴다")
 
 
@@ -705,6 +707,60 @@ def test_claude_registrations_ask_for_the_portal_view_and_others_do_not(gen):
     for bat in (plain, pem):
         others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l or "HWAX_TOML" in l)]
         assert len(others) == 3 and not [l for l in others if HEADER_NAME in l], others
+
+
+# ── 목적 보기로 고정(docs/mcp-modernize M3 — PC 킷 목적 고르기) ─────────────────────────────────────────────────────────
+PIN = "purpose:drop-prep,report-write"
+
+
+def test_purpose_pin_puts_the_purpose_view_in_every_claude_header_and_nowhere_else(gen):
+    """칸을 켜면 portal 자리에 purpose:<키>,… 가 들어간다 — CLI(http · mcp-remote) · Code 직접 쓰기 · Desktop 셋 다. Gemini · Codex 는 종전대로 달지 않는다.
+    http 직접 쓰기는 사람이 이 화면에서 고른 것이라 남은 보기 머리(대소문자만 다른 것까지)를 걷고 단다 — portal 일 때의 '손으로 넣은 것은 둔다' 와 다르다."""
+    from app.access.hub_view import HEADER_NAME
+    plain = gen(pem=False, view=PIN)
+    assert _cli_add_line(plain).endswith(f' --header "Authorization: Bearer {TOKEN}" --header "{HEADER_NAME}: {PIN}"')
+    for ps in (_ccj_ps(_no_cli_block(plain)), _desk_ps(plain)):
+        assert ("foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + HEADER_NAME + "'})){[void]$h.Remove($k)};$h['" + HEADER_NAME + "']='" + PIN + "';"
+                in ps) and "='portal'" not in ps
+    pem = gen(pem=True, view=PIN)
+    assert _cli_add_line(pem).endswith(f' --header "Authorization:${{AUTH}}" --header "{HEADER_NAME}:{PIN}"')
+    for ps in (_ccj_ps(_no_cli_block(pem)), _desk_ps(pem)):
+        assert f"'--header','{HEADER_NAME}:{PIN}');" in ps
+    assert f"개인 Claude 보기: 목적 고정({PIN})" in plain, "돌리는 사람이 이 등록이 포털 설정을 따르지 않는다는 것을 본다"
+    assert json.loads(gen(what="desktop", view=PIN))["mcpServers"]["hwax"]["headers"][HEADER_NAME] == PIN
+    assert gen(what="code", view=PIN).endswith(f'--header "{HEADER_NAME}: {PIN}"')
+    for bat in (plain, pem):
+        others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l)]
+        assert len(others) == 2 and not [l for l in others if HEADER_NAME in l]
+
+
+@pytest.mark.parametrize("bad", ["", "bundle:cad", "light", "purpose:", "purpose:Drop!", "purpose:a b", "purpose:x'&calc"])
+def test_purpose_pin_falls_back_to_the_portal_view_and_the_batch_is_byte_identical(gen, bad):
+    """고정이 아니면(비었거나 꼴이 틀리면) portal 이다 — 출력이 칸을 켜기 전과 바이트까지 같다. 틀린 머리는 게이트웨이가 전체로 읽고, 값은 cmd echo ·
+    PowerShell 홑따옴표에 그대로 들어가므로 키 꼴(hub_view.AREA_RE) 밖의 글자는 받지 않는다."""
+    for pem in (False, True):
+        assert gen(pem=pem, view=bad) == gen(pem=pem)
+    assert gen(what="desktop", view=bad) == gen(what="desktop") and gen(what="code", view=bad) == gen(what="code")
+
+
+def test_purpose_pin_batch_keeps_the_batch_rules(gen):
+    def on(**kw):
+        return gen(view=PIN, **kw)
+    for t in (test_every_goto_has_a_label_and_labels_are_unique, test_batch_is_crlf_with_a_bom_and_a_sacrificial_first_line,
+              test_the_token_is_never_echoed_to_the_console, test_the_batch_has_no_multiline_paren_blocks,
+              test_multi_word_console_messages_escape_what_cmd_eats):
+        t(on)
+
+
+def test_token_page_pins_only_the_saved_purposes_and_only_when_asked():
+    """화면 — 칸은 기본 끔, 지금 저장된 목적 보기(목적 보기를 아는 게이트웨이 · 표에 있는 키)만 굳힌다. 등록 명령 조각도 같은 값을 쓴다."""
+    page = (ROOT / "frontend/src/pages/TokenPage.tsx").read_text(encoding="utf-8")
+    assert "const [pinPurpose, setPinPurpose] = useState(false);" in page
+    assert "hubView.mode === 'purpose' && hubView.purpose_supported" in page and "unknown_purposes.includes(k)" in page
+    assert "pinPurpose && pinKeys.length > 0 ? `purpose:${pinKeys.join(',')}` : null" in page
+    assert "pinView,\n      );" in page, "배치에 넘긴다"
+    assert "SNIP.claudeCodeSnippet(created.token, pinView)" in page and "SNIP.claudeDesktopSnippet(created.token, null, pinView)" in page
+    assert "<HubViewPanel rev={hubRev} onChange={setHubView} />" in page
 
 
 # ── 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4) ─────────────────────────────────────

@@ -321,6 +321,66 @@
   white-space: nowrap;
   cursor: pointer;
 }
+.hub-view-mode.is-off {
+  cursor: default;
+  opacity: 0.6;
+}
+/* 목적 고르기 — 70개 남짓이라 거르기 칸 + 높이를 둔 목록(좁은 화면에서도 한 줄씩, 가로로 넘치지 않는다) */
+.hub-view-purposes {
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.hub-view-filter {
+  width: 100%;
+  max-width: 420px;
+  margin-bottom: var(--sp-2);
+}
+.hub-view-plist {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+}
+.hub-view-purpose {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.hub-view-purpose:last-child {
+  border-bottom: 0;
+}
+.hub-view-purpose input {
+  margin-top: 3px;
+}
+.hub-view-purpose.is-off {
+  cursor: default;
+  opacity: 0.6;
+}
+.hub-view-pbody {
+  min-width: 0;
+}
+.hub-view-ptitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.hub-view-pkind {
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+}
+.hub-view-papps {
+  display: block;
+  color: var(--fg-muted);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
 .hub-view-notes {
   margin: 0 0 var(--sp-3);
   padding-left: var(--sp-5);

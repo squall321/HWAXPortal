@@ -243,6 +243,9 @@ LO='env NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost'
 
 - **SDK 2.x(2단계)** — 게이트웨이 · 에이전트 서버가 쓰는 에이전트 venv 를 Python 3.11 이상으로 다시 만든다(dev 는 지금 3.10). 이 박스에 3.11 이상이 있는지,
   꾸러미를 바깥에서 받을 수 있는지가 그 라운드의 길을 정한다(MQ-8 · MQ-9).
+  게이트웨이는 전용 venv(`HWAXMcpGateway/.venv`)로 옮긴다 — 그 판을 받는 update-all 은 게이트웨이를 내리기 **전에** venv 를 맞추고(없거나 판이 다르면 Drive
+  `tools/gateway-wheels/<열쇠>/` 바퀴 꾸러미로 짓는다), 못 맞추면 내리지 않고 ✗ · 사람 몫을 남긴다(옛 프로세스가 돈다 — context-notes MM-9). 받기 전에 이 박스에서
+  `./infra/scripts/gateway-venv.sh check` 로 무엇이 일어날지 읽기만으로 본다. 지을 파이썬을 따로 두려면 infra/.env 에 `GATEWAY_VENV_PYTHON=<경로>`(MQ-8 의 답).
 - **표지를 게이트웨이 판정으로 노출**(사용자 결정 MM-5) — 앱 표지 ∪ 확인된 읽기 목록을 클라이언트가 보는 `readOnlyHint` 로 싣는다. 그러면 박스 덧씌우기
   `read_tools.local.json` 의 `tools` 줄이 개인 Claude 에게 「읽기」 로 보인다. 확인되지 않은 줄이 있으면 그 전에 걷는다(MQ-10).
 - **목적 묶음** — 게이트웨이 `tool_purposes.json` + 박스 덧씌우기 `tool_purposes.local.json`(지금의 `search_tuning.local.json` · `core_vocab.local.json` 과 같은 꼴 —
