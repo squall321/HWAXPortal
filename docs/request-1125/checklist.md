@@ -79,6 +79,18 @@
 - [x] HP-57 감시 비켜서기 · HP-58 env-sync deploy/apptainer(알리기만) · SE-9 단계 시각 · HP-68 장애 안내 · HP-69 update-forges 프록시 · SYNCEFF-3 · HP-61
 - [x] HPO-2 · HPO-3(까닭 칸) card-entity-bind · HPO-1 · HPO-4 · HP-82(types) 어휘표 · HP-72 · HP-74 · HP-75 nginx · HP-59 리스크 조회 점검 · HP-60 ste 잡
 - [x] SE-2(① ② ④) 배포 전 백업 · SE-7(① ②) SignalForge 병합 · IR-01 · 02 · 07 · 08 DocForge 옵션 · IR-03 · 04 · 05 · 06 · WD-11 문서 붙이기
-- [ ] WD-05 — WD-03 포털 몫(엔진 창구 읽어 대화로)과 함께, 에이전트 서버 가지 `wt1128/r1125-as` 병합 뒤
+- [x] WD-05 — WD-03 포털 몫(엔진 창구 읽어 대화로)과 함께, 에이전트 서버 가지 `wt1128/r1125-as` 병합 뒤 → 아래 「WD 포털 몫」 절(R25-29)
 - [ ] HP-82 lookup FailureTrace 목록 꼴 — 게이트웨이 OL-6 뒤 · HPO-3 유도 규칙 — 23-U1 뒤 · SE-2 ③ — SYNCEFF-4 사용자 결정 · P-1 Result 머리 기본 — TS-6 과 부딪침(사용자 결정)
 - [ ] 가지 병합 · push(부른 쪽) → cae00 절차 [server-setup.md](server-setup.md) — 받기 전 게이트웨이 읽기 목록 한 줄(0 절)
+
+## WD 포털 몫 — 에이전트 서버 · 게이트웨이가 지은 창구 · 사건을 화면까지(가지 `wt1128/wd-portal`, R25-29)
+
+- [x] WD-03 — 엔진 `GET /delib/conversations` 당기기(공유 비밀 · 커서 · job_id 멱등 · 뿌리 잡으로 한 대화) · 사이드바 source=mcp 표지 · 거르기
+- [x] WD-04 — 사이드바를 새로 고침 없이(주기 · 화면이 다시 보일 때 목록 다시 읽기) · 심의 결정문에 좌석 · 결정문 활동을 되살려 앞 턴 근거로
+- [x] WD-05 — MCP 심의 대화의 '이어가기' 를 엔진 `POST /deliberate/continue` 로(새 웹 심의를 열지 않는다) · 진행 카드를 대화에 남긴다
+- [x] WD-06 — 확인 카드 맨 위 요약 · 바꾸기(save_report · job · rounds) · 승인 말에 `confirm_edit` · 포털 중계
+- [x] WD-13 — SSE `job_card` 그리기 · 서버 사본 meta.job_cards · 진행 조회(deliberate_status)로 끝나면 결과 링크
+- [x] WD-08 — 내 엔진 잡 목록(날짜 · 글 거르기 · 더 보기) · 결정문 전문 보기 · 「이 대화에 싣기」
+- [x] 업데이트 이력 · 화면 빌드 · 화면 시험
+- [ ] 포털 전체 회귀(조각마다 rc)
+- [ ] 가지 `wt1128/wd-portal` 병합 · push(부른 쪽) → cae00 절차 [server-setup.md](server-setup.md) 3 절
