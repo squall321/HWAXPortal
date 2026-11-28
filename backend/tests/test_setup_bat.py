@@ -22,6 +22,10 @@ TSC = FE / "node_modules/.bin/tsc"
 TOKEN = "hwax_pat_TESTTOKEN_abcd1234"
 # 포털이 PAT 발급 응답(fallback_proxy)으로 주는 사내 프록시 — 시험은 문서용 예약 대역(TEST-NET-2)만 쓴다
 PROXY = "http://198.51.100.20:8080"
+# 결과 손잡이 머리 — 배치 · 등록 명령이 Claude Code · Desktop 에 늘 단다(docs/request-1125 P-1 — 사용자 결정 11-28). 효과는 박스 스위치
+# GATEWAY_RESULT_REFS=1 일 때만이다(TS-6 · TS-7 — 기본 꺼짐).
+RESULT_HTTP = '--header "X-HWAX-Result: ref"'
+RESULT_REMOTE = "X-HWAX-Result:ref"
 
 pytestmark = pytest.mark.skipif(
     not TSC.exists() or not shutil.which("node"),
@@ -205,7 +209,7 @@ def test_the_cli_path_is_unchanged_and_skips_the_direct_write(gen):
         assert ls[b - 1] == "goto :desktop", "CLI 결과 분기는 :no_cli 로 흘러들지 않는다"
     assert _cli_add_line(gen(pem=False)) == (
         f'>>"%HWAX_CLI_CMD%" echo "%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax {url}'
-        f' --header "Authorization: Bearer {TOKEN}" --header "X-HWAX-View: portal"')
+        f' --header "Authorization: Bearer {TOKEN}" --header "X-HWAX-View: portal" --header "X-HWAX-Result: ref"')
 
 
 def test_no_cli_merge_backs_up_writes_a_temp_reparses_then_swaps(gen):
@@ -689,21 +693,22 @@ def test_claude_registrations_ask_for_the_portal_view_and_others_do_not(gen):
     from app.access.hub_view import HEADER_NAME, HEADER_PORTAL
     http_arg, remote = f'--header "{HEADER_NAME}: {HEADER_PORTAL}"', f"{HEADER_NAME}:{HEADER_PORTAL}"
     plain = gen(pem=False)
-    assert _cli_add_line(plain).endswith(f' --header "Authorization: Bearer {TOKEN}" {http_arg}')
+    assert _cli_add_line(plain).endswith(f' --header "Authorization: Bearer {TOKEN}" {http_arg} {RESULT_HTTP}')
     for ps in (_ccj_ps(_no_cli_block(plain)), _desk_ps(plain)):
         assert ("if(@($h.Keys | Where-Object {$_ -ieq '" + HEADER_NAME + "'}).Count -eq 0){$h['" + HEADER_NAME + "']='" + HEADER_PORTAL + "'};"
                 in ps), "http 항목 — 손으로 넣은 보기 머리(대소문자 무시)가 있으면 그대로 둔다"
     pem = gen(pem=True)
     cli = _cli_add_line(pem)
-    assert cli.endswith(f' --header "Authorization:${{AUTH}}" --header "{remote}"'), cli
+    assert cli.endswith(f' --header "Authorization:${{AUTH}}" --header "{remote}" --header "{RESULT_REMOTE}"'), cli
     for ps in (_ccj_ps(_no_cli_block(pem)), _desk_ps(pem)):
-        assert f"'--header','Authorization:${{AUTH}}','--header','{remote}');" in ps
+        assert f"'--header','Authorization:${{AUTH}}','--header','{remote}','--header','{RESULT_REMOTE}');" in ps
     assert json.loads(gen(what="desktop"))["mcpServers"]["hwax"]["headers"][HEADER_NAME] == HEADER_PORTAL
-    assert json.loads(gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-ca-bundle.pem"))["mcpServers"]["hwax"]["args"][-2:] == ["--header", remote]
-    assert gen(what="code").endswith(f' --header "Authorization: Bearer {TOKEN}" {http_arg}')
+    assert json.loads(gen(what="desktop", cert=r"C:\Users\<사용자>\.hwax\hwax-ca-bundle.pem"))["mcpServers"]["hwax"]["args"][-4:] == \
+        ["--header", remote, "--header", RESULT_REMOTE]
+    assert gen(what="code").endswith(f' --header "Authorization: Bearer {TOKEN}" {http_arg} {RESULT_HTTP}')
     guide = json.loads(gen(what="guide"))
-    assert guide[3]["label"].startswith("④") and guide[3]["text"].endswith(f'--header "{remote}"')
-    assert guide[4]["label"].startswith("⑤") and f'"{remote}"' in guide[4]["text"]
+    assert guide[3]["label"].startswith("④") and guide[3]["text"].endswith(f'--header "{remote}" --header "{RESULT_REMOTE}"')
+    assert guide[4]["label"].startswith("⑤") and f'"{remote}"' in guide[4]["text"] and f'"{RESULT_REMOTE}"' in guide[4]["text"]
     for bat in (plain, pem):
         others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l or "HWAX_TOML" in l)]
         assert len(others) == 3 and not [l for l in others if HEADER_NAME in l], others
@@ -718,17 +723,17 @@ def test_purpose_pin_puts_the_purpose_view_in_every_claude_header_and_nowhere_el
     http 직접 쓰기는 사람이 이 화면에서 고른 것이라 남은 보기 머리(대소문자만 다른 것까지)를 걷고 단다 — portal 일 때의 '손으로 넣은 것은 둔다' 와 다르다."""
     from app.access.hub_view import HEADER_NAME
     plain = gen(pem=False, view=PIN)
-    assert _cli_add_line(plain).endswith(f' --header "Authorization: Bearer {TOKEN}" --header "{HEADER_NAME}: {PIN}"')
+    assert _cli_add_line(plain).endswith(f' --header "Authorization: Bearer {TOKEN}" --header "{HEADER_NAME}: {PIN}" {RESULT_HTTP}')
     for ps in (_ccj_ps(_no_cli_block(plain)), _desk_ps(plain)):
         assert ("foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + HEADER_NAME + "'})){[void]$h.Remove($k)};$h['" + HEADER_NAME + "']='" + PIN + "';"
                 in ps) and "='portal'" not in ps
     pem = gen(pem=True, view=PIN)
-    assert _cli_add_line(pem).endswith(f' --header "Authorization:${{AUTH}}" --header "{HEADER_NAME}:{PIN}"')
+    assert _cli_add_line(pem).endswith(f' --header "Authorization:${{AUTH}}" --header "{HEADER_NAME}:{PIN}" --header "{RESULT_REMOTE}"')
     for ps in (_ccj_ps(_no_cli_block(pem)), _desk_ps(pem)):
-        assert f"'--header','{HEADER_NAME}:{PIN}');" in ps
+        assert f"'--header','{HEADER_NAME}:{PIN}','--header','{RESULT_REMOTE}');" in ps
     assert f"개인 Claude 보기: 목적 고정({PIN})" in plain, "돌리는 사람이 이 등록이 포털 설정을 따르지 않는다는 것을 본다"
     assert json.loads(gen(what="desktop", view=PIN))["mcpServers"]["hwax"]["headers"][HEADER_NAME] == PIN
-    assert gen(what="code", view=PIN).endswith(f'--header "{HEADER_NAME}: {PIN}"')
+    assert gen(what="code", view=PIN).endswith(f'--header "{HEADER_NAME}: {PIN}" {RESULT_HTTP}')
     for bat in (plain, pem):
         others = [l for l in _lines(bat) if "mcp-remote" in l and ("gemini mcp add" in l or "codex mcp add" in l)]
         assert len(others) == 2 and not [l for l in others if HEADER_NAME in l]
@@ -764,8 +769,8 @@ def test_token_page_pins_only_the_saved_purposes_and_only_when_asked():
 
 
 # ── 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4) ─────────────────────────────────────
-# 칸(기본 끔)을 켜면 ① Claude Code · Desktop 등록에 X-HWAX-Result: ref ② Claude Code 명령 /hwax-ask · /hwax-draft ③ 사용자 CLAUDE.md 의 표지 사이 규칙.
-# 끄고 다시 돌리면 셋을 걷는다 — 걷기는 걷을 것이 있을 때만 말한다(켠 적 없는 PC 의 화면은 종전과 같다).
+# 칸(기본 끔)을 켜면 ① Claude Code 명령 /hwax-ask · /hwax-draft ② 사용자 CLAUDE.md 의 표지 사이 규칙. 끄고 다시 돌리면 둘을 걷는다 — 걷기는 걷을 것이
+# 있을 때만 말한다(켠 적 없는 PC 의 화면은 종전과 같다). Claude Code · Desktop 등록의 X-HWAX-Result: ref 는 칸과 상관없이 늘 단다(P-1 — 11-28).
 RESULT_H = "X-HWAX-Result"
 _OFF_SETS = ("HWAX_OFF_ASK", "HWAX_OFF_DRAFT", "HWAX_OFF_RULES")
 
@@ -792,17 +797,19 @@ def test_offload_on_batch_keeps_the_batch_rules(gen):
         t(on)
 
 
-def test_offload_on_adds_the_result_header_next_to_the_view_header(gen):
-    """머리는 보기 머리 옆에 — CLI · Code 직접 · Desktop 셋 다. Gemini · Codex 는 '개인 Claude' 가 아니라 달지 않는다."""
+@pytest.mark.parametrize("offload", [False, True], ids=["칸_끔", "칸_켬"])
+def test_the_result_header_is_always_next_to_the_view_header(gen, offload):
+    """머리는 보기 머리 옆에 — CLI · Code 직접 · Desktop 셋 다, '서버 LLM 에 일 맡기기' 칸과 상관없이(P-1 — 사용자 결정 11-28, 종전엔 칸을 켤 때만).
+    Gemini · Codex 는 '개인 Claude' 가 아니라 달지 않는다."""
     view_http, view_remote = '--header "X-HWAX-View: portal"', "X-HWAX-View:portal"
-    plain = gen(pem=False, offload=True)
+    plain = gen(pem=False, offload=offload)
     assert _cli_add_line(plain).endswith(f' {view_http} --header "{RESULT_H}: ref"')
     for ps in (_ccj_ps(_no_cli_block(plain)), _desk_ps(plain)):
         rm = "foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + RESULT_H + "'})){[void]$h.Remove($k)};"
         assert rm + f"$h['{RESULT_H}']='ref';" in ps, "대소문자만 다른 옛 머리를 걷은 뒤 단다(사전이 대소문자를 가른다)"
         assert ps.index("$h['X-HWAX-View']") < ps.index(rm) < ps.index("$h['Authorization']")
     for origin in ("https://hwax.example.net", "http://hwax.example.net"):
-        bat = gen(origin=origin, pem=True, offload=True)
+        bat = gen(origin=origin, pem=True, offload=offload)
         cli = _cli_add_line(bat)
         assert cli.endswith(f' --header "{view_remote}" --header "{RESULT_H}:ref"'), cli
         for ps in (_ccj_ps(_no_cli_block(bat)), _desk_ps(bat)):
@@ -813,12 +820,24 @@ def test_offload_on_adds_the_result_header_next_to_the_view_header(gen):
         assert len(others) == 2 and not [l for l in others if RESULT_H in l]
 
 
-def test_offload_off_registers_nothing_new_and_strips_an_old_header(gen):
-    """끈 배치 — 머리 · 명령 · 규칙을 새로 넣지 않는다. http 항목은 남은 결과 머리를 걷고(stdio 는 인자를 통째로 다시 쓰므로 저절로 빠진다),
+def test_token_page_says_the_result_header_is_always_on_and_needs_the_box_switch():
+    """화면 — 결과 머리는 칸 밖에서 늘 말한다(P-1). 효과는 박스 스위치(GATEWAY_RESULT_REFS)가 켜졌을 때만이고 꺼져 있으면 아무 일도 없다는 것과 지금
+    이 박스의 상태(켜짐 · 꺼짐 · 모름)를 함께. 칸을 켰을 때의 안내에서는 머리를 뺐다(칸이 넣는 것은 명령 · 규칙 둘)."""
+    page = (ROOT / "frontend/src/pages/TokenPage.tsx").read_text(encoding="utf-8")
+    i = page.index("결과 손잡이 머리(docs/request-1125 P-1")
+    blk = page[i:page.index("</div>", i)]
+    assert "<code>X-HWAX-Result: ref</code> 머리를" in blk and "<code>GATEWAY_RESULT_REFS</code>" in blk and "꺼져 있으면 아무 일도 없습니다" in blk
+    assert "offloadBox?.result_refs === true" in blk and "offloadBox?.result_refs === false" in blk and "지금 이 박스: 모름." in blk
+    j = page.index("{offload && (")
+    assert j < i and "X-HWAX-Result" not in page[j:page.index("</div>", j)], "칸의 안내는 명령 · 규칙만"
+
+
+def test_offload_off_registers_no_commands_and_keeps_the_result_header(gen):
+    """끈 배치 — 명령 · 규칙을 새로 넣지 않는다. 결과 머리는 그대로 단다(P-1 — 칸과 상관없다 · http 항목은 대소문자만 다른 옛 머리를 걷고 단다),
     명령 · 규칙 걷기는 PowerShell 한 줄 + 실패 알림 한 줄뿐이다 — 머리 줄([5b])은 걷은 것이 있을 때만 PowerShell 이 찍는다."""
     for pem in (True, False):
         bat = gen(pem=pem)
-        assert f"{RESULT_H}:ref" not in bat and f"'{RESULT_H}']='ref'" not in bat and f'"{RESULT_H}: ref"' not in bat
+        assert (f'"{RESULT_H}:ref"' in bat) if pem else (f"'{RESULT_H}']='ref'" in bat and f'"{RESULT_H}: ref"' in bat)
         assert not [n for n in _OFF_SETS if n in bat], "글을 싣지 않는다"
         assert not [l for l in _lines(bat) if l.startswith("echo") and "[5b]" in l], "꺼진 배치는 머리 줄을 cmd 로 찍지 않는다"
         ls = _lines(bat)
@@ -829,7 +848,8 @@ def test_offload_off_registers_nothing_new_and_strips_an_old_header(gen):
         assert ls[i + 4:i + 6] == ["echo.", 'if not "%HWAX_DONE%"=="0" goto :ok'], "걷기 뒤는 종전 흐름 그대로"
         if not pem:
             for ps in (_ccj_ps(_no_cli_block(bat)), _desk_ps(bat)):
-                assert "foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + RESULT_H + "'})){[void]$h.Remove($k)};$h['Authorization']" in ps
+                assert ("foreach($k in @($h.Keys | Where-Object {$_ -ieq '" + RESULT_H + "'})){[void]$h.Remove($k)};$h['" + RESULT_H
+                        + "']='ref';$h['Authorization']" in ps)
 
 
 def test_offload_off_cleanup_speaks_only_when_it_removed_something(gen):

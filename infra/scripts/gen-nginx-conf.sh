@@ -267,11 +267,21 @@ _route_list() {  # $1=손잡이 이름 [$2=특수 낱말] → 공백으로 가�
 }
 # 업스트림 주소의 Host 를 보낼 라우트 — 기본 비움(끔, docs/request-1125 HP-72). 예 NGINX_UPSTREAM_HOST_ROUTES=failuretrace-mcp,mx-white-paper-mcp
 UPSTREAM_HOST_ROUTES="$(_route_list NGINX_UPSTREAM_HOST_ROUTES)"
-# 평문 서버에서는 루프백만 받을 라우트(TLS 로만 낸다) — 기본 비움(끔, HP-75). '*-mcp' 한 낱말은 이름이 -mcp 로 끝나는 라우트 전부다.
-# TLS 가 꺼진 박스(ENABLE_TLS 가 true 가 아님)에서는 버린다 — 켜면 그 라우트를 밖에서 아예 못 쓰게 된다.
-TLS_ONLY_ROUTES="$(_route_list NGINX_TLS_ONLY_ROUTES '*-mcp')"
+# 평문 서버에서는 루프백만 받을 라우트(TLS 로만 낸다, HP-75). '*-mcp' 한 낱말은 이름이 -mcp 로 끝나는 라우트 전부다. 기본은 '*-mcp' 다(사용자 결정
+# 11-28 — 개인 토큰이 평문으로 흐르지 않게). 비우거나 줄이 없으면 기본, 박스가 끄려면 'none'.
+# TLS 가 꺼진 박스(ENABLE_TLS 가 true 가 아님)에서는 버린다 — 켜면 그 라우트를 밖에서 아예 못 쓰게 된다. 박스가 적은 값이면 ⚠, 기본값이면 알리기만.
+TLS_ONLY_DEFAULT=0
+case "${NGINX_TLS_ONLY_ROUTES:-}" in
+  none) TLS_ONLY_ROUTES="" ;;
+  '')   TLS_ONLY_ROUTES='*-mcp'; TLS_ONLY_DEFAULT=1 ;;
+  *)    TLS_ONLY_ROUTES="$(_route_list NGINX_TLS_ONLY_ROUTES '*-mcp')" ;;
+esac
 if [ -n "$TLS_ONLY_ROUTES" ] && [ "${ENABLE_TLS:-false}" != "true" ]; then
-  echo "  ⚠ NGINX_TLS_ONLY_ROUTES 를 쓰지 않는다 — TLS 가 꺼진 박스다(ENABLE_TLS). 켜면 그 라우트를 밖에서 아예 못 쓴다" >&2
+  if [ "$TLS_ONLY_DEFAULT" = 1 ]; then
+    echo "  · 평문 막기(NGINX_TLS_ONLY_ROUTES 기본 *-mcp)는 쓰지 않는다 — TLS 가 꺼진 박스다(ENABLE_TLS)"
+  else
+    echo "  ⚠ NGINX_TLS_ONLY_ROUTES 를 쓰지 않는다 — TLS 가 꺼진 박스다(ENABLE_TLS). 켜면 그 라우트를 밖에서 아예 못 쓴다" >&2
+  fi
   TLS_ONLY_ROUTES=""
 fi
 _tls_only() {  # $1=id → 0 = 평문 서버에서 루프백만
@@ -327,6 +337,10 @@ for _r in $TLS_ONLY_ROUTES; do
   [ "$_r" = '*-mcp' ] && continue
   case "$_route_ids " in *" $_r "*) ;; *) echo "  ⚠ NGINX_TLS_ONLY_ROUTES 의 '$_r' 는 라우트에 없다 — 평문 막기가 아무 데도 붙지 않았다(routes.env · routes.local.env 의 키를 본다)" >&2 ;; esac
 done
+if [ -n "$TLS_ONLY_ROUTES" ]; then
+  _tls_n=0; for _r in $_route_ids; do _tls_only "$_r" && _tls_n=$((_tls_n + 1)); done
+  echo "  · 평문 서버(:${HTTP_PORT})에서 루프백만 받는 라우트 ${_tls_n}개 — 밖에서는 https 로만(NGINX_TLS_ONLY_ROUTES=${TLS_ONLY_ROUTES// /,}$([ "$TLS_ONLY_DEFAULT" = 1 ] && echo ' — 기본') · 끄기 none)"
+fi
 
 # 스트리밍 두 경로의 침묵 한도(proxy_read_timeout) — infra/.env 의 손잡이 둘. 템플릿(HTTP 서버)과 아래 TLS 사본은 같은 토큰을
 # 쓰고 값은 맨 끝의 sed 한 곳에서 들어간다. 종전엔 `1h` 리터럴이 두 파일에 따로 박혀 손으로 맞췄다.

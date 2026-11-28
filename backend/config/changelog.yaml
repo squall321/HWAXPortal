@@ -40,6 +40,19 @@ entries:
       - "새 창구 /agent/engine-delib — continue(세션 + CSRF · 엔진 POST /deliberate/continue 를 공유 비밀 + 신원 머리 셋으로), status/{job_id} · jobs · jobs/{job_id}/decision(그 사람의 챗 PAT 로 게이트웨이 deliberate_status · list · result, 쪽으로 나뉜 답을 이어 원문 그대로). 모두 feat:deliberation 입니다."
       - "챗 중계가 SSE job_card 를 넘기고 서버 사본의 답 meta.job_cards 에 아는 칸만 남깁니다(다시 묻기는 심의 잡의 deliberate_status 만 · 링크는 http(s) · 포털 안 경로만). 챗 요청에 confirm_edit(save_report · job · rounds — 모르는 칸은 422)를 받아 바꾼 칸만 에이전트 서버로 옮깁니다."
   - date: 2026-11-28
+    title: 개인 Claude 연결 — 설정 배치가 결과 손잡이 머리를 늘 답니다 · 가벼운 보기 설명
+    tag: 연결
+    items:
+      - "토큰 화면의 설정 배치 · 등록 명령이 Claude Code · Desktop 연결에 X-HWAX-Result: ref 머리를 늘 답니다(종전엔 '서버 LLM 에 일 맡기기' 칸을 켤 때만). 이 박스에서 결과 손잡이가 켜져 있을 때만 큰 도구 결과를 앞머리와 손잡이로 받고, 꺼져 있으면 아무 일도 없습니다 — 화면에 지금 이 박스의 상태가 보입니다. 그 칸은 이제 명령 /hwax-ask · /hwax-draft 와 CLAUDE.md 규칙만 넣습니다."
+      - "'허브에 보일 앱' 의 개인 Claude 보기 — '가벼운' 은 찾기 · 부르기 두 도구에 패널 도구 · verify_answer · list_tool_apps 를 더해 싣고(패널이 뜹니다), '목적' 은 그 목적 앱의 패널 도구도 싣는다고 적습니다(게이트웨이 새 판부터)."
+  - date: 2026-11-28
+    title: 기술 — 남은 결정 넷 반영 — nginx 평문 막기 기본 켬 · 배포 전 롤백 지점으로 일일 덤프 다시 쓰기
+    tag: 기술
+    items:
+      - "nginx 생성기 — TLS 를 켠 박스의 평문 포트에서 이름이 -mcp 로 끝나는 라우트는 이제 기본으로 루프백만 받습니다(NGINX_TLS_ONLY_ROUTES 기본 *-mcp · 끄기 none). http 8088 로 등록한 MCP 주소는 https 로 바꿉니다. 생성 줄에 붙은 라우트 수가 나옵니다. 라우트별 업스트림 Host 는 박스마다 목록이 달라 기본 끔 그대로입니다."
+      - "update-all §1b — 그날 03:30 일일 AIDataHub 덤프가 온전하고(sha256 짝) 받을 AIDataHub 판에 alembic 이관이 없으면 새 덤프(27 ~ 28분 · 11 GB)를 뜨지 않고 그것을 배포 전 롤백 지점으로 적습니다(백업 자리 aidh/predeploy-rollback.log). 이관이 있거나 덤프가 없 · 낡 · 깨졌거나 확인할 수 없으면 지금처럼 새로 뜨고 까닭을 남깁니다. 늘 새로 뜨려면 HWAX_PREDEPLOY_DUMP=fresh."
+      - "update-all 끝 요약의 'AIDataHub 사전 덤프' 줄이 덤프 파일 이름 없이 비어 찍히던 것을 고쳤습니다."
+  - date: 2026-11-28
     title: 문서를 붙일 때 그림 · 판독 수를 알리고, '이 대화에서 분석' 도 그림을 읽습니다
     tag: 챗
     items:

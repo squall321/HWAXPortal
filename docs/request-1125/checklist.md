@@ -94,3 +94,17 @@
 - [x] 업데이트 이력 · 화면 빌드 · 화면 시험
 - [x] 포털 전체 회귀(여섯 조각 · 조각마다 rc — 스크래치 wd-regression-summary.txt, 붉은 둘은 고친 뒤 다시 초록)
 - [ ] 가지 `wt1128/wd-portal` 병합 · push(부른 쪽) → cae00 절차 [server-setup.md](server-setup.md) 3 절
+
+- [ ] WD-05 — WD-03 포털 몫(엔진 창구 읽어 대화로)과 함께, 에이전트 서버 가지 `wt1128/r1125-as` 병합 뒤
+- [ ] HP-82 lookup FailureTrace 목록 꼴 — 게이트웨이 OL-6 뒤 · HPO-3 유도 규칙 — 23-U1 뒤(SE-2 ③ · P-1 은 사용자 결정 11-28 로 지음 — 아래 절)
+- [ ] 가지 병합 · push(부른 쪽) → cae00 절차 [server-setup.md](server-setup.md) — 받기 전 게이트웨이 읽기 목록 한 줄(0 절)
+
+## 남은 결정 넷(사용자 결정 11-28 「권장안으로」, 가지 `wt1128/dec4`, R25-30)
+
+- [x] HP-75 평문 막기 기본 켬(`*-mcp` · 끄기 none) · HP-72 권장 차례는 server-setup 에(기본 그대로)
+- [x] SE-2 ③ — 그날 일일 덤프 · 이관 없음이면 배포 전 롤백 지점으로 다시 쓰기(`HWAX_PREDEPLOY_DUMP=fresh` 로 늘 새로)
+- [x] P-1 — PC 킷 연결 설정에 `X-HWAX-Result: ref` 기본(효과는 박스 스위치 뒤)
+- [x] G-1 화면 문구(가벼운 · 목적 보기 설명) — 게이트웨이 G-1 과 같은 회차로
+- [x] 받은 편지함 2026-11-28 · server-setup · 업데이트 이력 · 화면 빌드 · 바뀐 갈래 시험
+- [x] 포털 전체 회귀(조각마다 rc) — 여섯 조각 모두 rc 0 · 6,251 passed · 27 skipped(11-28 16:38 KST)
+- [ ] 가지 `wt1128/dec4` 병합 · push(부른 쪽)

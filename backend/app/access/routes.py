@@ -212,8 +212,9 @@ async def set_hub_app(key: str, body: HubAppIn, request: Request,
 
 
 # ── 개인 Claude 보기(docs/request-1029 E-4 — 사용자 결정 10-31) ──────────────────────────────────────────
-# 전체(지금 그대로) · 묶음(고른 영역 + 정본 읽기 도구 + 허브 자체 도구, 형제 허브 사본은 뺀다) · 가벼운(search_tools · invoke_tool 둘) · 목적(고른
-# 목적들의 단계 도구 + 허브 자체 도구 — docs/mcp-modernize M3, 게이트웨이 손잡이 GATEWAY_PURPOSE_VIEW). 게이트웨이가
+# 전체(지금 그대로) · 묶음(고른 영역 + 정본 읽기 도구 + 허브 자체 도구, 형제 허브 사본은 뺀다) · 가벼운(search_tools · invoke_tool + 패널 도구 ·
+# verify_answer · list_tool_apps — docs/request-1125 G-1) · 목적(고른 목적들의 단계 도구 + 그 목적 앱의 패널 도구 + 허브 자체 도구 — docs/mcp-modernize
+# M3, 게이트웨이 손잡이 GATEWAY_PURPOSE_VIEW). 게이트웨이가
 # **개인 PAT 의 tools/list 에만** 얹는다 — 검색 · 부르기 · 이름 · 권한은 그대로다(선호이지 권한이 아니다). 끄기와 같은 길(권한 응답 · 같은 면제 ·
 # 같은 캐시 깨기)이고, 연결 머리 X-HWAX-View 가 이 설정을 덮는다(리포 .mcp.json 은 늘 full — 리포 파이프라인은 늘 전체 목록으로 돈다).
 # ⚠ 게이트웨이는 이 설정을 머리 `X-HWAX-View: portal` 로 청한 연결에만 얹는다 — 이 화면의 등록 배치 · 명령이 Claude Code · Desktop 에 단다. 머리 없는

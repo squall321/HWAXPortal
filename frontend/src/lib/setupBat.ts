@@ -16,7 +16,8 @@ export interface CertStep {
 
 export interface Snippets {
   // proxy — 포털이 PAT 발급 응답(fallback_proxy)으로 준 사내 프록시. 비면 npm 레지스트리 폴백 없이 직결만 본다.
-  // offload — 토큰 화면의 '서버 LLM 에 일 맡기기' 칸(기본 끔, docs/token-saving/offload-v2.md 3-4). 끄면 전에 넣은 것을 걷는다.
+  // offload — 토큰 화면의 '서버 LLM 에 일 맡기기' 칸(기본 끔, docs/token-saving/offload-v2.md 3-4) — Claude Code 명령 둘 · CLAUDE.md 규칙. 끄면 전에 넣은 것을 걷는다.
+  //   결과 손잡이 머리(X-HWAX-Result: ref)는 이 칸과 상관없이 늘 단다(사용자 결정 11-28 — docs/request-1125 P-1).
   // share — '내 Claude 대화를 포털에 공유' 칸(기본 off, docs/interaction-data contract §5) — command(/hwax-share) · auto(+ SessionEnd 훅). off 면 걷는다.
   buildSetupBat: (
     token: string,
@@ -91,8 +92,10 @@ export function makeSnippets(origin: string): Snippets {
     view && VIEW_PIN_RE.test(view) ? view : VIEW_PORTAL;
   const viewArg = (v: string) => ` --header "${VIEW_NAME}: ${v}"`;
   const viewArgRemote = (v: string) => ` --header "${VIEW_NAME}:${v}"`;
-  // 서버 LLM 에 일 맡기기(토큰 절감 2판 E — docs/token-saving/offload-v2.md 3-4) — 설정 배치의 선택 칸(기본 끔)을 켜면 보기 머리 옆에 결과 손잡이
-  // 머리를 단다. 게이트웨이는 박스 스위치(GATEWAY_RESULT_REFS)와 이 머리가 둘 다 있는 연결에만 큰 결과를 머리 + ref 로 준다(1판 TS-3).
+  // 결과 손잡이 머리(토큰 절감 2판 B — docs/token-saving/offload-v2.md 3-2) — Claude Code · Desktop 등록에 보기 머리 옆에 **늘** 단다(사용자 결정 11-28 —
+  // docs/request-1125 P-1, 종전엔 '서버 LLM 에 일 맡기기' 칸을 켤 때만). 게이트웨이는 박스 스위치(GATEWAY_RESULT_REFS=1 — 기본 꺼짐, TS-6 · TS-7)와 이 머리가
+  // 둘 다 있는 연결에만 큰 결과를 머리 + ref 로 준다(1판 TS-3). 스위치가 꺼진 박스에서는 아무 일도 없다 — 결과 · 목록이 머리 없는 연결과 바이트까지 같다.
+  // Gemini · Codex 는 보기 머리처럼 달지 않는다('개인 Claude' 가 아니다).
   const RESULT_NAME = 'X-HWAX-Result';
   const RESULT_REF = 'ref';
   const RESULT_ARG = ` --header "${RESULT_NAME}: ${RESULT_REF}"`;
@@ -450,9 +453,8 @@ export function makeSnippets(origin: string): Snippets {
    * 토큰(AUTH)과 우리가 정하는 칸(명령 · 주소)만 바꾸고 손으로 넣은 env 는 남긴다. NO_PROXY · NODE_EXTRA_CA_CERTS 를 이미 적어 뒀으면 그 값을
    * 쓰되, 예전 배치가 넣은 포털 인증서 경로만 회사 인증서 묶음으로 바꾼다. 토큰 · 경로는 환경변수로만 받는다(HWAX_AUTH · HWAX_CERT ·
    * HWAX_NOPROXY) — 명령줄에 실으면 프로세스 목록에 남는다. withType 은 Claude Code 항목(`type: stdio`)이고 Desktop 항목에는 없다.
-   * offload(서버 LLM 에 일 맡기기 칸)를 켜면 결과 손잡이 머리를 단다. 끄면 stdio 는 인자를 통째로 다시 쓰므로 저절로 빠지고, http 는 남은
-   * 머리를 걷는다(칸을 켰다 끈 PC — 손으로 남긴 다른 머리는 그대로). */
-  function psMergeHwax(pem: boolean, withType: boolean, offload: boolean, vv: string = VIEW_PORTAL): string {
+   * 결과 손잡이 머리는 늘 단다(P-1) — stdio 는 인자를 통째로 다시 쓰고, http 는 대소문자만 다른 옛 머리를 걷은 뒤 단다(손으로 남긴 다른 머리는 그대로). */
+  function psMergeHwax(pem: boolean, withType: boolean, vv: string = VIEW_PORTAL): string {
     const copy = (src: string, dst: string) => `foreach($k in @(${src}.Keys)){${dst}[$k]=${src}[$k]};`;
     const head = [
       "$o=$null;if($m.ContainsKey('hwax')){$o=$m['hwax']};",
@@ -464,7 +466,7 @@ export function makeSnippets(origin: string): Snippets {
         withType ? "$e['type']='stdio';" : "if($e.ContainsKey('type')){[void]$e.Remove('type')};",
         "$e['command']='npx';",
         // [object[]] — 배열을 PowerShell 이 감싼 채로 넣으면 JavaScriptSerializer 가 배열이 아니라 객체로 쓴다. 맨 .NET 배열로 못 박는다.
-        `$e['args']=[object[]]@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}','--header','${VIEW_NAME}:${vv}'${offload ? `,'--header','${RESULT_NAME}:${RESULT_REF}'` : ''});`,
+        `$e['args']=[object[]]@('-y','mcp-remote','${MCP_URL}',${ALLOW_HTTP_ARR}'--header','Authorization:$\{AUTH}','--header','${VIEW_NAME}:${vv}','--header','${RESULT_NAME}:${RESULT_REF}');`,
         "foreach($k in @('url','headers')){if($e.ContainsKey($k)){[void]$e.Remove($k)}};",
         `$v=${PS_DICT};if($e.ContainsKey('env') -and ($e['env'] -is [System.Collections.IDictionary])){${copy("$e['env']", '$v')}};`,
         "$v['AUTH']=$env:HWAX_AUTH;",
@@ -485,15 +487,14 @@ export function makeSnippets(origin: string): Snippets {
       vv === VIEW_PORTAL
         ? `if(@($h.Keys | Where-Object {$_ -ieq '${VIEW_NAME}'}).Count -eq 0){$h['${VIEW_NAME}']='${VIEW_PORTAL}'};`
         : `foreach($k in @($h.Keys | Where-Object {$_ -ieq '${VIEW_NAME}'})){[void]$h.Remove($k)};$h['${VIEW_NAME}']='${vv}';`,
-      // 결과 손잡이 머리 — 대소문자만 다른 것까지 먼저 걷고(사전이 대소문자를 가른다 — 둘이 겹쳐 남지 않게), 칸이 켜졌을 때만 다시 단다.
-      `foreach($k in @($h.Keys | Where-Object {$_ -ieq '${RESULT_NAME}'})){[void]$h.Remove($k)};`,
-      offload ? `$h['${RESULT_NAME}']='${RESULT_REF}';` : '',
+      // 결과 손잡이 머리 — 대소문자만 다른 것까지 먼저 걷고(사전이 대소문자를 가른다 — 둘이 겹쳐 남지 않게) 단다.
+      `foreach($k in @($h.Keys | Where-Object {$_ -ieq '${RESULT_NAME}'})){[void]$h.Remove($k)};$h['${RESULT_NAME}']='${RESULT_REF}';`,
       "$h['Authorization']=$env:HWAX_AUTH;$e['headers']=$h;$m['hwax']=$e;",
     ].join('');
   }
 
   function claudeCodeSnippet(token: string, view?: string | null): string {
-    return `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"${viewArg(viewValue(view))}`;
+    return `claude mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"${viewArg(viewValue(view))}${RESULT_ARG}`;
   }
 
   // 자체서명 인증서를 쓰는 동안의 등록 명령.
@@ -507,7 +508,7 @@ export function makeSnippets(origin: string): Snippets {
       `  -e AUTH="Bearer ${token}" ^`,
       `  -e NODE_EXTRA_CA_CERTS=${certPath} ^`,
       `  -e NO_PROXY=${NOPROXY} ^`,
-      `  -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:\${AUTH}"${viewArgRemote(viewValue(view))}`,
+      `  -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:\${AUTH}"${viewArgRemote(viewValue(view))}${RESULT_ARG_REMOTE}`,
     ].join('\n');
   }
 
@@ -805,7 +806,7 @@ export function makeSnippets(origin: string): Snippets {
       `if(-not ($j -is [System.Collections.IDictionary])){$j=${PS_DICT}};`,
       `if(-not $j.ContainsKey('mcpServers') -or -not ($j['mcpServers'] -is [System.Collections.IDictionary])){$j['mcpServers']=${PS_DICT}};`,
       "$m=$j['mcpServers'];",
-      psMergeHwax(!!pem, true, offload, vv),
+      psMergeHwax(!!pem, true, vv),
       "$n=$j.Count;$s='write';",
       '[System.IO.File]::WriteAllText($t, $js.Serialize($j), $u);',
       "$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));",
@@ -864,8 +865,8 @@ export function makeSnippets(origin: string): Snippets {
         '"%%HWAX_CLAUDE%%" mcp remove hwax -s local >nul 2>nul',
         '"%%HWAX_CLAUDE%%" mcp remove hwax -s user >nul 2>nul',
         pem
-          ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${caFile} -e NO_PROXY=${NOPROXY} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"${viewArgRemote(vv)}${offload ? RESULT_ARG_REMOTE : ''}`
-          : `"%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"${viewArg(vv)}${offload ? RESULT_ARG : ''}`,
+          ? `"%%HWAX_CLAUDE%%" mcp add -s user hwax -e AUTH="Bearer ${token}" -e NODE_EXTRA_CA_CERTS=${caFile} -e NO_PROXY=${NOPROXY} -- npx -y mcp-remote ${MCP_URL}${ALLOW_HTTP} --header "Authorization:${'${AUTH}'}"${viewArgRemote(vv)}${RESULT_ARG_REMOTE}`
+          : `"%%HWAX_CLAUDE%%" mcp add -s user --transport http hwax ${MCP_URL} --header "Authorization: Bearer ${token}"${viewArg(vv)}${RESULT_ARG}`,
         'if errorlevel 1 exit /b 2',
         '"%%HWAX_CLAUDE%%" mcp get hwax >nul 2>nul',
         'if errorlevel 1 exit /b 1',
@@ -951,7 +952,7 @@ export function makeSnippets(origin: string): Snippets {
       `if(-not ($j -is [System.Collections.IDictionary])){$j=${PS_DICT}};`,
       `if(-not $j.ContainsKey('mcpServers') -or -not ($j['mcpServers'] -is [System.Collections.IDictionary])){$j['mcpServers']=${PS_DICT}};`,
       "$m=$j['mcpServers'];",
-      psMergeHwax(!!pem, false, offload, vv),
+      psMergeHwax(!!pem, false, vv),
       "$n=$j.Count;$t=$c+'.hwax-tmp';$s='write';[System.IO.File]::WriteAllText($t,$js.Serialize($j),$u);",
       `$s='verify';$r=$js.DeserializeObject([System.IO.File]::ReadAllText($t,$u));if($r.Count -ne $n -or ${deskAuth} -cne $env:HWAX_AUTH){throw 'mismatch'};`,
       "$s='replace';[System.IO.File]::Copy($t,$c,$true);Remove-Item -LiteralPath $t -Force -EA SilentlyContinue;Write-Host '            등록 완료'",
@@ -1266,11 +1267,11 @@ export function makeSnippets(origin: string): Snippets {
   // ${AUTH} 치환은 mcp-remote 가 자기 환경변수로 수행한다(토큰이 프로세스 인자에 안 남는다).
   function desktopServerEntry(token: string, certPath: string | null, vv: string = VIEW_PORTAL): object {
     if (!certPath) {
-      return { type: 'http', url: MCP_URL, headers: { Authorization: `Bearer ${token}`, [VIEW_NAME]: vv } };
+      return { type: 'http', url: MCP_URL, headers: { Authorization: `Bearer ${token}`, [VIEW_NAME]: vv, [RESULT_NAME]: RESULT_REF } };
     }
     return {
       command: 'npx',
-      args: ['-y', 'mcp-remote', MCP_URL, ...(IS_PLAINTEXT ? ['--allow-http'] : []), '--header', 'Authorization:${AUTH}', '--header', `${VIEW_NAME}:${vv}`],
+      args: ['-y', 'mcp-remote', MCP_URL, ...(IS_PLAINTEXT ? ['--allow-http'] : []), '--header', 'Authorization:${AUTH}', '--header', `${VIEW_NAME}:${vv}`, '--header', `${RESULT_NAME}:${RESULT_REF}`],
       env: { AUTH: `Bearer ${token}`, NODE_EXTRA_CA_CERTS: certPath, NO_PROXY: NOPROXY },
     };
   }

@@ -2,7 +2,9 @@
 """왜 — §1b 가 28분 남짓 걸렸고 그중 AIDataHub 덤프가 27 ~ 28분이었다(11 GB). 03:30 일일 백업 2시간 뒤 같은 DB 를 다시 떴고 WAL 은 51 kB 였다.
 ① AIDataHub 덤프를 뒤에서 뜨고 deploy-all 의 AIDataHub 재기동(alembic 이행) 앞과 update-all 끝에서 기다린다 — 실패하면 다시 띄우지 않는다.
 ② 압축을 여러 코어로 — 같은 .sql.gz 꼴(lib/pgzip.py)이라 복원 · 대조 스크립트는 그대로다.
-④ update-all 이 뜬 것(-pre)과 AIDataHub 병합 전 덤프는 7일 보관과 따로 가장 새 둘만 남긴다. ③(03:30 덤프를 롤백 지점으로 쓸지)은 사용자 결정 — 짓지 않았다.
+④ update-all 이 뜬 것(-pre)과 AIDataHub 병합 전 덤프는 7일 보관과 따로 가장 새 둘만 남긴다.
+③ 사용자 결정 11-28 — 그날 일일 덤프가 온전하고(sha256 짝이 맞고) 받을 AIDataHub 판에 alembic 이관이 없으면 새로 뜨지 않고 그것을 롤백 지점으로 적는다.
+   이관이 있거나 일일 덤프가 없 · 낡 · 깨졌거나 볼 수 없으면(모름) 새로 뜬다. 판정은 lib/predeploy-dump.sh — 끝 코드는 늘 0(set -e 아래 상태 반환 함정).
 
 백업 스크립트는 10-27 하네스(가짜 apptainer · 임시 트리 — test_request_1027_backup)로 그대로 돌린다.
 """
@@ -137,3 +139,222 @@ def test_update_all_1b_가_AIDataHub_를_뒤에서_뜨고_나머지는_빼고_�
     end = UA[UA.index("# §1b 가 뒤에서 뜬 AIDataHub 덤프 — 끝나기를 기다려"):UA.index("# ○ 옵션·설정이 없어 안 켠 기능은")]
     assert "HWAX_AIDH_BACKUP_WAIT_S" in end and 'bad "AIDataHub 사전 덤프 실패' in end, "끝에서 기다려 결과를 센다(비치명)"
     assert UA.index("# §1b 가 뒤에서 뜬 AIDataHub 덤프") < UA.rindex("hwax_skip_summary\n")
+
+
+# ── ③ 그날 일일 덤프를 배포 전 롤백 지점으로 다시 쓴다(사용자 결정 11-28 · SYNCEFF-4) ─────────────────────────────────────────────────
+LIB = ROOT / "infra/scripts/lib/predeploy-dump.sh"
+_GENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+         "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+
+
+def _git(cwd: Path, *a: str) -> str:
+    r = subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True, timeout=60, env={"PATH": os.environ["PATH"], **_GENV})
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def _today() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y%m%d")      # 시험은 TZ=UTC 로 돌린다 — 함수의 date 와 같은 날
+
+
+@pytest.fixture()
+def pd(tmp_path):
+    """받을 판(origin)과 그것을 받은 AIDataHub 리포 · 비어 있는 일일 덤프 폴더."""
+    origin = tmp_path / "origin.git"; _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    repo = tmp_path / "AIDataHub"; _git(tmp_path, "clone", "-q", str(origin), str(repo))
+    (repo / "api_server/alembic/versions").mkdir(parents=True)
+    (repo / "api_server/alembic/versions/0001_a.py").write_text("revision = '0001'\n")
+    (repo / "README").write_text("x\n")
+    _git(repo, "add", "-A"); _git(repo, "commit", "-qm", "a"); _git(repo, "push", "-q", "origin", "HEAD:main")
+    daily = tmp_path / "backups/hwax/t/aidh/daily"; daily.mkdir(parents=True)
+    return {"tmp": tmp_path, "origin": origin, "repo": repo, "daily": daily}
+
+
+def _push_upstream(pd, rel: str, body: str = "x\n") -> None:
+    """다른 곳에서 origin 에 한 커밋 올린다 — 이 리포의 HEAD 는 그대로(이번에 '받을' 판)."""
+    other = pd["tmp"] / "other"
+    if not other.exists():
+        _git(pd["tmp"], "clone", "-q", str(pd["origin"]), str(other))
+    (other / rel).parent.mkdir(parents=True, exist_ok=True)
+    (other / rel).write_text(body)
+    _git(other, "add", "-A"); _git(other, "commit", "-qm", rel); _git(other, "push", "-q", "origin", "HEAD:main")
+
+
+def _dump(pd, stamp: str, body: bytes = b"dump", sha: str | None = "ok") -> Path:
+    f = pd["daily"] / f"aidh-t-{stamp}.sql.gz"; f.write_bytes(body)
+    if sha == "ok":
+        import hashlib
+        (pd["daily"] / (f.name + ".sha256")).write_text(hashlib.sha256(body).hexdigest() + "\n")
+    elif sha is not None:
+        (pd["daily"] / (f.name + ".sha256")).write_text(sha)
+    return f
+
+
+def _decide(pd, knob: str = "", strict: bool = False) -> list[str]:
+    body = (("set -euo pipefail\n" if strict else "") + f'. "{LIB}"\n'
+            f'v="$(hwax_predeploy_dump_decide "{pd["repo"]}" "{pd["daily"]}" t "{knob}")"\nprintf "%s\\n" "$v"\necho AFTER\n')
+    r = subprocess.run(["bash", "-c", body], capture_output=True, text=True, timeout=120,
+                       env={"PATH": os.environ["PATH"], "TZ": "UTC", "HOME": str(pd["tmp"]), **_GENV})
+    assert r.returncode == 0 and r.stdout.endswith("AFTER\n"), r.stdout + r.stderr
+    lines = r.stdout.splitlines()
+    assert len(lines) == 2, lines
+    return lines[0].split("\t")
+
+
+def test_SE2_3_그날_덤프가_온전하고_이관이_없으면_다시_쓴다(pd):
+    _dump(pd, f"{_today()}-033001")
+    old = _dump(pd, "20200101-033001")                       # 옛 일일 덤프 · 그날의 -pre · 병합 전 덤프는 고르지 않는다
+    (pd["daily"] / f"aidh-t-{_today()}-090000-pre.sql.gz").write_bytes(b"p")
+    (pd["daily"] / "pre-merge-20991231.sql.gz").write_bytes(b"m")
+    _push_upstream(pd, "README", "y\n")                       # 받을 판이 앞섰어도 이관 파일이 아니면 다시 쓴다
+    v = _decide(pd)
+    t = _today()
+    assert v[0] == "reuse" and v[1] == str(pd["daily"] / f"aidh-t-{t}-033001.sql.gz"), v
+    assert v[2] == f"{t[:4]}-{t[4:6]}-{t[6:]} 03:30:01" and "이관 없음" in v[3] and "origin/main" in v[3], v
+    assert old.exists()
+
+
+@pytest.mark.parametrize("case", ["이관_새_파일", "이관_고친_파일"])
+def test_SE2_3_받을_판에_이관이_있으면_새로_뜬다(pd, case):
+    _dump(pd, f"{_today()}-033001")
+    if case == "이관_새_파일":
+        _push_upstream(pd, "api_server/alembic/versions/0002_b.py")
+    else:
+        _push_upstream(pd, "api_server/alembic/versions/0001_a.py", "revision = '0001'\n# changed\n")
+    v = _decide(pd)
+    assert v[:2] == ["fresh", "migration"] and ("0002_b.py" if case == "이관_새_파일" else "0001_a.py") in v[2], v
+
+
+def test_SE2_3_일일_덤프가_없거나_낡았으면_새로_뜬다(pd):
+    (pd["daily"] / f"aidh-t-{_today()}-090000-pre.sql.gz").write_bytes(b"p")    # 이 실행이 뜬 -pre 는 일일 덤프가 아니다
+    assert _decide(pd)[:2] == ["fresh", "none"]
+    _dump(pd, "20200101-033001")
+    v = _decide(pd)
+    assert v[:2] == ["fresh", "stale"] and "2020-01-01" in v[2], v
+    _dump(pd, f"{_today()}-033001", sha=None)
+    v = _decide(pd)
+    assert v[:2] == ["fresh", "nosha"] and "아직 뜨는 중이거나" in v[2], v
+
+
+@pytest.mark.parametrize("case", ["다른_해시", "꼴이_아님", "영바이트"])
+def test_SE2_3_깨진_일일_덤프는_쓰지_않는다(pd, case):
+    if case == "다른_해시":
+        _dump(pd, f"{_today()}-033001", sha="0" * 64 + "\n")
+    elif case == "꼴이_아님":
+        _dump(pd, f"{_today()}-033001", sha="not-a-hash\n")
+    else:
+        _dump(pd, f"{_today()}-033001", body=b"")
+    v = _decide(pd)
+    assert v[:2] == ["fresh", "broken"], v
+
+
+@pytest.mark.parametrize("knob,word", [("fresh", "늘 새로 뜬다"), ("always", "모른다")])
+def test_SE2_3_손잡이로_늘_새로_뜬다(pd, knob, word):
+    _dump(pd, f"{_today()}-033001")
+    v = _decide(pd, knob=knob)
+    assert v[:2] == ["fresh", "knob"] and word in v[2], v
+    assert _decide(pd, knob="auto")[0] == "reuse", "auto 는 빈 값과 같다"
+
+
+def test_SE2_3_볼_수_없으면_모름이고_새로_뜬다(pd):
+    """fetch 가 실패하거나 가지 위에 있지 않으면 이관이 있는지 모른다 — 없음으로 읽지 않는다."""
+    _dump(pd, f"{_today()}-033001")
+    shutil.rmtree(pd["origin"])
+    v = _decide(pd)
+    assert v[:2] == ["fresh", "unknown"] and "git fetch 실패" in v[2], v
+    _git(pd["repo"], "checkout", "-q", "--detach")
+    v = _decide(pd)
+    assert v[:2] == ["fresh", "unknown"] and "가지를 모른다" in v[2], v
+
+
+@pytest.mark.parametrize("case", ["reuse", "migration", "none", "knob"])
+def test_SE2_3_판정은_set_e_아래서도_끝_코드_0(pd, case):
+    """판정을 끝 코드로 주면 `x="$(f)"` 가 set -e 아래서 조용히 끝난다 — 어느 갈래든 다음 줄(AFTER)까지 간다."""
+    if case != "none":
+        _dump(pd, f"{_today()}-033001")
+    if case == "migration":
+        _push_upstream(pd, "api_server/alembic/versions/0002_b.py")
+    v = _decide(pd, knob="fresh" if case == "knob" else "", strict=True)
+    assert v[0] == ("reuse" if case == "reuse" else "fresh"), v
+
+
+# update-all §1b 의 판정 블록을 떼어 진짜 lib · 임시 리포로 돌린다
+def _pd_block() -> str:
+    a = UA.index('  _aidh_reused=""\n')
+    return UA[a:UA.index('  if [ -z "$_bk_skip" ] && [ "${HWAX_AIDH_BACKUP_BG:-1}" = 1 ]', a)]
+
+
+def _run_block(pd, infra_env: str = "", **env) -> tuple[str, Path]:
+    self_repo = pd["tmp"] / "HWAXPortal"
+    (self_repo / "infra/scripts/lib").mkdir(parents=True, exist_ok=True)
+    shutil.copy2(LIB, self_repo / "infra/scripts/lib/predeploy-dump.sh")
+    (self_repo / "infra/.env").write_text(infra_env)
+    body = ("set -uo pipefail\n"
+            f'SELF_REPO="{self_repo}"\nfind_repo() {{ printf %s "{pd["repo"]}"; }}\n'
+            "ok() { printf '  OK %s\\n' \"$*\"; }\nbad() { printf '  BAD %s\\n' \"$*\"; }\n"
+            "hwax_skip() { printf '  SKIP %s — %s | %s\\n' \"$1\" \"$2\" \"$3\"; }\n"
+            '_bk_skip=""\n' + _pd_block() + 'echo "SKIP=[$_bk_skip] REUSED=[$_aidh_reused]"\n')
+    r = subprocess.run(["bash", "-c", body], capture_output=True, text=True, timeout=120,
+                       env={"PATH": os.environ["PATH"], "TZ": "UTC", "HOME": str(pd["tmp"]), "HWAX_BOX": "t",
+                            "BACKUP_ROOT": str(pd["tmp"] / "backups"), **_GENV, **env})
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r.stdout, pd["daily"].parent / "predeploy-rollback.log"
+
+
+def test_update_all_1b_는_다시_쓸_때_새로_뜨지_않고_적는다(pd):
+    f = _dump(pd, f"{_today()}-033001")
+    out, rec = _run_block(pd)
+    assert f"OK AIDataHub 배포 전 롤백 지점 — 일일 덤프 재사용 — {f.name} · " in out, out
+    assert "SKIP=[aidh]" in out and f"REUSED=[{f.name} · " in out, "뒤에서 뜨지도 · 앞에서 뜨지도 않는다(backup-local 에서 뺀다)"
+    line = rec.read_text(encoding="utf-8").splitlines()
+    assert len(line) == 1 and f"\t일일 덤프 재사용\t{f}\t덤프 시각 " in line[0], line
+    _run_block(pd)
+    assert len(rec.read_text(encoding="utf-8").splitlines()) == 2, "실행마다 한 줄씩 덧붙인다"
+
+
+def test_update_all_1b_는_이관이_있으면_지금처럼_새로_뜬다(pd):
+    _dump(pd, f"{_today()}-033001")
+    _push_upstream(pd, "api_server/alembic/versions/0002_b.py")
+    out, rec = _run_block(pd)
+    assert "· AIDataHub 배포 전 덤프를 새로 뜬다 — 받을 AIDataHub 판에 이관 파일 1개(0002_b.py)" in out and "SKIP=[]" in out, out
+    assert not rec.exists()
+
+
+@pytest.mark.parametrize("where", ["env", "infra_env"])
+def test_update_all_1b_손잡이는_안_켠_것으로_남는다(pd, where):
+    _dump(pd, f"{_today()}-033001")
+    if where == "env":
+        out, _rec = _run_block(pd, HWAX_PREDEPLOY_DUMP="fresh")
+    else:
+        out, _rec = _run_block(pd, infra_env="HWAX_PREDEPLOY_DUMP=fresh  # 늘 새로\n")
+    assert "SKIP AIDataHub 일일 덤프 재사용 — HWAX_PREDEPLOY_DUMP=fresh — 늘 새로 뜬다 | " in out and "SKIP=[]" in out, out
+
+
+def test_update_all_1b_는_깨진_일일_덤프를_경고로_센다(pd):
+    _dump(pd, f"{_today()}-033001", sha="0" * 64)
+    out, _rec = _run_block(pd)
+    assert "BAD AIDataHub 일일 덤프를 다시 쓰지 않는다 — " in out and "SKIP=[]" in out, out
+
+
+def _end_block() -> str:
+    a = UA.index("# §1b 가 뒤에서 뜬 AIDataHub 덤프 — 끝나기를 기다려")
+    return UA[a:UA.index("# ○ 옵션·설정이 없어 안 켠 기능은", a)]
+
+
+@pytest.mark.parametrize("case", ["뜬_덤프", "다시_씀"])
+def test_update_all_끝_요약이_롤백_지점_파일을_말한다(tmp_path, case):
+    """뜬 덤프는 backup-local 의 색 글자 줄에서 파일을 읽는다(종전엔 '✓ aidh →' 로 찾아 늘 비었다) · 다시 쓴 것은 그 파일을."""
+    pre = "ok() { printf 'OK %s\\n' \"$*\"; }\nbad() { printf 'BAD %s\\n' \"$*\"; }\n"
+    env = {"PATH": os.environ["PATH"]}
+    if case == "뜬_덤프":
+        (tmp_path / "rc").write_text("0\n")
+        (tmp_path / "log").write_text("\n── AIDataHub ──\n  \033[1;32m✓\033[0m aidh → aidh-t-20261128-140000-pre.sql.gz (11G)\n")
+        env.update(HWAX_AIDH_BACKUP_RC=str(tmp_path / "rc"), HWAX_AIDH_BACKUP_LOG=str(tmp_path / "log"))
+    else:
+        pre += '_aidh_reused="aidh-t-20261128-033001.sql.gz · 2026-11-28 03:30:01"\n'
+    r = subprocess.run(["bash", "-c", "set -uo pipefail\n" + pre + _end_block()], capture_output=True, text=True, timeout=30, env=env)
+    assert r.returncode == 0, r.stderr
+    want = ("OK AIDataHub 사전 덤프 — aidh-t-20261128-140000-pre.sql.gz (11G)" if case == "뜬_덤프"
+            else "OK AIDataHub 배포 전 롤백 지점 — 일일 덤프 재사용 — aidh-t-20261128-033001.sql.gz · 2026-11-28 03:30:01")
+    assert want in r.stdout, r.stdout
