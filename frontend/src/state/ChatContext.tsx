@@ -38,6 +38,7 @@ import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import { panelPointer } from '../components/chat/panels';
 import { UI_HOST_TOKEN } from '../lib/mcpApps';
+import { continueEngineJob } from '../api/engineDelib.api';
 import { claudePick } from '../components/chat/claudePick';
 import {
   decisionAsOf,
@@ -126,6 +127,9 @@ interface ChatContextValue {
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 후속 심의를 스티어링. roster 를 주면 그 명단으로
    *  간다(사람이 좌석을 직접 고름 — 재심사가 좌석을 더 얹지 않는다). 없으면 같은 전문가 + 재심사. */
   continueDeliberation: (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => void;
+  /** MCP 로 연 심의(엔진 잡 — prior.mcpJob)를 엔진 이어하기로 잇는다(docs/request-1125 WD-05) — 새 웹 심의를 열지 않는다. 포털이 대화에 남긴 진행
+   *  카드 한 줄을 이 화면에도 붙인다. 거절 · 실패면 그 글을 돌려준다(성공은 null). */
+  continueEngine: (prior: DelibData, opinion: string, opts?: { rounds?: number; keepSeats?: boolean }) => Promise<string | null>;
   // 심의로 넘기기(핸드오프) — 챗에서 정리한 실데이터(도구결과)를 원천 근거로 실어 현재 대화에서 심의를 연다.
   // 브리프(P3)가 확정한 질문·좌석·템플릿을 받는다. 미지정이면 화두는 첫 발화, 좌석은 심의 자동발굴.
   startHandoff: (opts?: {
@@ -1276,12 +1280,43 @@ export function ChatProvider({
     [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages, setArmedRoutine, searchSources],
   );
 
+  // 엔진 이어하기(WD-05) — 포털이 엔진 POST /deliberate/continue 를 그 사람의 신원으로 부르고 대화에 진행 카드 한 줄을 남긴다. 같은 줄을 이 화면에도 붙인다
+  // (서버 사본과 같은 글 · 카드). 엔진의 다음 잡이 끝나면 포털 당기기가 같은 대화에 좌석 발언 · 결정문을 붙이고, 진행 카드가 목록을 다시 읽어 보인다.
+  const continueEngine = useCallback(
+    async (prior: DelibData, opinion: string, opts?: { rounds?: number; keepSeats?: boolean }): Promise<string | null> => {
+      const conv = conversations.find((c) => c.id === activeId);
+      const sid = conv?.serverId;
+      const jobId = prior.mcpJob?.jobId;
+      if (!conv || !sid || !jobId) return '서버 대화에 들인 엔진 심의가 아니어서 엔진으로 이을 수 없습니다';
+      try {
+        const r = await continueEngineJob({
+          conversation_id: sid, previous_job_id: jobId, human_note: opinion.trim(),
+          ...(opts?.rounds ? { rounds: opts.rounds } : {}),
+          ...(opts?.keepSeats === false ? { keep_seats: false } : {}),
+        });
+        const now = Date.now();
+        const cards = jobCardsFromMeta([r.card]);
+        const msg: Message = { id: newId(), role: 'assistant', text: r.text, ts: now, ...(cards ? { jobCards: cards } : {}) };
+        setConversations((prev) => prev.map((c) => (c.id !== conv.id ? c : { ...c, updatedAt: now, messages: [...c.messages, msg] })));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [conversations, activeId],
+  );
+
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
   // 이어받아 그 의견 방향으로 다시 토론하게 한다. 원 화두는 활성 대화의 첫 사용자 발화에서 취한다.
   const continueDeliberation = useCallback(
     (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => {
       const note = opinion.trim();
       if (!note || streaming) return;
+      // MCP 로 연 심의(엔진 잡)는 새 웹 심의를 열지 않고 엔진으로 잇는다(WD-05 — 화면의 이어가기 칸은 continueEngine 을 바로 부른다)
+      if (prior.mcpJob) {
+        void continueEngine(prior, note);
+        return;
+      }
       const conv = conversations.find((c) => c.id === activeId);
       const firstUser = conv?.messages.find((m) => m.role === 'user');
       const topic = (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
@@ -1339,7 +1374,7 @@ export function ChatProvider({
         as_of: decisionAsOf(prior.decision),
       });
     },
-    [conversations, activeId, streaming, sendMessage],
+    [conversations, activeId, streaming, sendMessage, continueEngine],
   );
 
   // 심의로 넘기기(핸드오프) — 챗 워크스페이스에서 정리한 실데이터(도구결과)를 원천 근거로 실어
@@ -1657,6 +1692,7 @@ export function ChatProvider({
         setInput,
         sendMessage,
         continueDeliberation,
+        continueEngine,
         startHandoff,
         retryLast,
         delibOpts,

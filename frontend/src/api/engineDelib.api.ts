@@ -30,3 +30,29 @@ export async function fetchEngineJobStatus(jobId: string): Promise<EngineJobStat
   if (!r.ok) throw new Error(await failText(r, `진행을 묻지 못했습니다(HTTP ${r.status})`));
   return (await r.json()) as EngineJobStatus;
 }
+
+/** 포털 POST /agent/engine-delib/continue 의 답(docs/request-1125 WD-05) — 엔진이 세운 다음 잡과 대화에 남긴 진행 카드 한 줄. */
+export interface EngineContinueResult {
+  job_id: string;
+  status: string;
+  card: unknown;
+  text: string;
+  saved: boolean;
+}
+
+/** MCP 심의 대화의 '이어가기' — 새 웹 심의를 열지 않고 엔진이 같은 잡 계보로 잇는다. 세션 + CSRF(apiFetch 가 싣는다). 거절은 던진다(글). */
+export async function continueEngineJob(body: {
+  conversation_id: string;
+  previous_job_id: string;
+  human_note: string;
+  rounds?: number;
+  keep_seats?: boolean;
+}): Promise<EngineContinueResult> {
+  const r = await apiFetch('/agent/engine-delib/continue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await failText(r, `엔진에 이어하기를 맡기지 못했습니다(HTTP ${r.status})`));
+  return (await r.json()) as EngineContinueResult;
+}

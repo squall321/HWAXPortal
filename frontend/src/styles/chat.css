@@ -548,6 +548,16 @@ ol.md-list li.md-li-d2 {
   font-size: 0.8rem;
 }
 
+/* 엔진 이어가기의 손잡이 줄(docs/request-1125 WD-05) — 라운드 · 같은 좌석으로 */
+.dv-continue-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
 /* 진행 카드(docs/request-1125 WD-13) — 확인 뒤 건 잡 · 엔진 이어하기의 상태 · 링크 */
 .job-cards {
   display: flex;

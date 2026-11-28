@@ -334,6 +334,80 @@ function OutcomeCards({ d }: { d: DelibData }) {
 /** 심의 메시지의 본문 렌더 — msg.delib 이 있으면 MessageList 가 TextBlock 대신 이걸 쓴다. */
 // 이어하기(사람 개입 스티어링) — 끝난 심의에 의견을 넣어 같은 전문가로 후속 심의를 유도한다.
 function ContinueBar({ d }: { d: DelibData }) {
+  // MCP 로 연 심의(엔진 잡) — 새 웹 심의를 열지 않고 엔진이 같은 잡 계보로 잇는다(docs/request-1125 WD-05)
+  if (d.mcpJob) return <EngineContinueBar d={d} />;
+  return <WebContinueBar d={d} />;
+}
+
+// 엔진 심의의 이어가기 — 좌석 조정 대신 '같은 좌석으로'(엔진 keep_seats) · 라운드만 고른다. 앞 회차의 손잡이 · 기준일 · 보고서 이어붙이기는 엔진이 잇는다
+// (_CONT_CARRY). 끊긴 잡(interrupted)은 결정문이 없어도 이을 수 있다 — 엔진이 남은 라운드만 돈다.
+const ENGINE_ROUNDS = [0, 2, 3, 4, 5, 6, 7, 8];
+function EngineContinueBar({ d }: { d: DelibData }) {
+  const { continueEngine } = useChat();
+  const [note, setNote] = useState('');
+  const [rounds, setRounds] = useState(0);
+  const [keepSeats, setKeepSeats] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ text: string; bad: boolean } | null>(null);
+  const cut = d.mcpJob?.status === 'interrupted';
+  if (!d.decision && !cut) return null;
+  const submit = async () => {
+    if (busy || !note.trim()) return;
+    setBusy(true);
+    setSaid(null);
+    const err = await continueEngine(d, note, { rounds, keepSeats });
+    setBusy(false);
+    if (err) setSaid({ text: err, bad: true });
+    else {
+      setNote('');
+      setSaid({ text: '엔진에 맡겼습니다 — 아래 진행 카드가 끝나면 이 대화에 좌석 발언과 결정문이 붙습니다', bad: false });
+    }
+  };
+  return (
+    <section className="dv-continue">
+      <div className="dv-continue-head">
+        <IconChat className="ico" width={14} height={14} /> 의견을 넣어 이어가기 — MCP 로 연 심의라 엔진이 같은 잡 계보로 잇습니다
+        {cut ? '(끊긴 잡 — 남은 라운드만)' : ''}
+      </div>
+      <div className="dv-continue-asof">
+        앞 잡 <code>{d.mcpJob?.jobId}</code> 의 손잡이 · 기준일 · 보고서 이어붙이기는 엔진이 그대로 잇습니다(심의 옵션 패널의 값은 쓰지 않습니다).
+      </div>
+      <div className="dv-continue-row">
+        <textarea
+          className="dv-continue-input"
+          placeholder="예: 낙하 성능을 최우선으로 좁혀라 / A안은 비용 근거로 기각"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          disabled={busy}
+        />
+        <button type="button" className="dv-continue-btn" onClick={() => void submit()} disabled={!note.trim() || busy} aria-busy={busy}>
+          {busy ? '맡기는 중…' : '이어가기'}
+        </button>
+      </div>
+      <div className="dv-continue-opts">
+        <label>
+          라운드{' '}
+          <select value={rounds} onChange={(e) => setRounds(Number(e.target.value))} disabled={busy}>
+            {ENGINE_ROUNDS.map((n) => (
+              <option key={n} value={n}>{n === 0 ? '기본' : n}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <input type="checkbox" checked={keepSeats} onChange={(e) => setKeepSeats(e.target.checked)} disabled={busy} /> 같은 좌석으로
+        </label>
+      </div>
+      {said && (
+        <div className={`dv-stop-said${said.bad ? ' is-bad' : ''}`} role="status">
+          {said.text}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WebContinueBar({ d }: { d: DelibData }) {
   const { continueDeliberation, streaming, delibOpts } = useChat();
   const [note, setNote] = useState('');
   // 좌석 조정 — 한 회차를 돌고 명단을 사람이 고른다(요청 3번 '토론이 잘 안 되면 한 번 돌고 로스터 선택').

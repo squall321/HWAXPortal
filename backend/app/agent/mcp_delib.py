@@ -1,5 +1,5 @@
-# MCP 로 연 심의(엔진 잡)를 포털로 — 끝난 잡을 주인의 대화로 당기기(WD-03) · 진행 카드 상태(WD-13)
-"""docs/request-1125 WD-03 · WD-13 의 포털 몫. 엔진 쪽은 HWAXAgentServer(c27c13e · 3c6a54d)다.
+# MCP 로 연 심의(엔진 잡)를 포털로 — 끝난 잡을 주인의 대화로 당기기(WD-03) · 웹 이어하기를 엔진 이어하기로(WD-05) · 진행 카드 상태(WD-13)
+"""docs/request-1125 WD-03 · WD-05 · WD-13 의 포털 몫. 엔진 쪽은 HWAXAgentServer(c27c13e · f955eff · 3c6a54d)다.
 
 - **당기기(WD-03)** — 엔진이 밀지 않고 포털이 읽는다(과제 인사이트 PG-9 · 심의 묶음 알림과 같은 까닭 — 어느 쪽이 내려가 있어도 다음 읽기에 따라잡는다).
   `GET /delib/conversations?since&limit` 를 공유 비밀(GATEWAY_SHARED_TOKEN)만 실어 부른다(사람 신원 머리를 실으면 엔진이 403). 커서는 대화 저장소 안의
@@ -8,6 +8,10 @@
   주인은 포털 계정(users 원장의 이메일)일 때만 쓴다(심의 묶음 알림과 같다). 대화 주인 키(sub)는 그 이메일로 낸 사람 PAT 의 sub(MCP 잡은 그 PAT 로
   열렸다), 없으면 이메일이다(SAML · 로컬 · mock 박스는 sub 가 이메일이다). 첫 당기기는 커서 0 이라 지난 MCP 심의도 다 들어온다 — 보름 전 심의를
   대화 목록 · 대화 검색에서 찾게(WD-08 의 '확인'). 대화 시각은 잡이 끝난 때다(오늘로 몰리지 않는다).
+- **이어하기(WD-05)** — 대화에 들인 잡이면 엔진 `POST /deliberate/continue` 를 공유 비밀 + 그 사람의 신원 머리(게이트웨이가 MCP 호출에 싣는 것과
+  같은 셋 — x-hwax-user · x-hwax-groups · x-hwax-affiliation)로 부른다. 새 웹 심의를 열지 않는다 — 같은 잡 계보의 다음 잡이 서고(_CONT_CARRY
+  손잡이 · 보고서 이어붙이기가 엔진에서 그대로), 끝나면 당기기가 같은 대화에 붙인다. 대화에는 진행 카드 한 줄을 남긴다(새로고침 뒤에도 카드).
+  세션 + CSRF 만 받는다(사람이 화면에서 누른 것).
 - **진행 카드(WD-13)** — 엔진에 HTTP 창구가 없는 읽기라 그 사람의 챗 PAT 로 게이트웨이 도구를 부른다(deliberate_status — 엔진이 그 사람 기준으로
   볼 수 있는 잡만 준다). 챗 중계는 SSE job_card 를 card_pointer 로 걸러 답 meta.job_cards 로 남긴다. MCP 쪽 나누기(mcp_pages.paged)로 나뉜 답은 join_pages 로 이어 원래 응답으로 만든다.
 """
@@ -18,17 +22,19 @@ import contextlib
 import logging
 import re
 import time
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import httpx
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from app.agent import upload as _upload
 from app.agent.subject import subject_of
 from app.auth.errors import AuthError
 from app.auth.provider import Principal
 from app.config import Settings, get_settings
-from app.deps import ensure, principal_pat_or_session
+from app.deps import ensure, get_current_principal, principal_pat_or_session, require_csrf
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +48,7 @@ REPEAT_EVERY = 60
 KICK_MIN_S = 5.0                        # 진행 조회가 끝난 잡을 보고 당기기를 앞당길 때의 최소 간격
 TITLE_MAX = 80
 EVIDENCE_MAX = 100
+CONTINUE_TIMEOUT_S = 90.0               # 엔진 이어하기 — 주제 다시 풀기 · 근거 참조 풀기가 그 안에서 돈다
 READ_TIMEOUT_S = 60.0
 PARTS_MAX = 40                          # 쪽으로 나뉜 답을 받을 때의 상한(쪽 25,000자 — 백만 자)
 JOB_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
@@ -379,6 +386,18 @@ def _job_id(v: str) -> str:
     return s
 
 
+def card_of(summary: dict, *, tool: str, continued_from: str | None = None) -> dict | None:
+    """엔진이 돌려준 잡 요약 → 진행 카드(에이전트 서버 SSE job_card 와 같은 꼴 — kind · job_ids · phase · state · status_call)."""
+    jid = summary.get("job_id")
+    if not isinstance(jid, str) or not _JOB_ID.match(jid):
+        return None
+    st = str(summary.get("status") or "")
+    return card_pointer({"tool": tool, "kind": "deliberation", "job_ids": [jid], "phase": "end" if st in _END else "run", "state": st,
+                         "detail": str(summary.get("step") or summary.get("stage") or ""),
+                         "status_call": {"tool": "deliberate_status", "args": {"job_id": jid}},
+                         **({"continued_from": continued_from} if continued_from else {})})
+
+
 _LINK = re.compile(r"(?:https?://[^\s\"'<>\\]{1,490}|/(?!/)[^\s\"'<>\\]{0,498})")
 
 
@@ -407,6 +426,86 @@ def card_pointer(data) -> dict | None:
         if isinstance(jid, str) and jid in ids:
             out["status_call"] = {"tool": "deliberate_status", "args": {"job_id": jid}}
     return out
+
+
+class ContinueIn(BaseModel):
+    conversation_id: str = Field(min_length=1, max_length=64)
+    previous_job_id: str = Field(min_length=1, max_length=128, pattern=JOB_ID_RE)
+    human_note: str = Field(default="", max_length=20000)
+    rounds: int | None = Field(default=None, ge=0, le=8)
+    keep_seats: bool = True
+
+
+def _identity_headers(request: Request, principal: Principal, tok: str) -> dict:
+    """게이트웨이가 MCP 호출에 싣는 것과 같은 신원 머리(HWAXMcpGateway _call_with_identity) — 브라우저가 보낸 값이 아니라 검증된 세션의 것."""
+    from app.agent.wiki_send import known_affiliation
+    hdr = {"Authorization": f"Bearer {tok}", "x-hwax-user": quote((principal.email or "").strip().lower(), safe="@."),
+           "x-hwax-groups": quote(",".join(principal.groups), safe=",:")}
+    aff = known_affiliation(request)
+    if aff:
+        hdr["x-hwax-affiliation"] = quote(aff, safe="")
+    return hdr
+
+
+@router.post("/continue")
+async def continue_job(
+    request: Request,
+    body: ContinueIn,
+    principal: Principal = Depends(get_current_principal),
+    _csrf: None = Depends(require_csrf),
+    settings: Settings = Depends(get_settings),
+) -> JSONResponse:
+    """대화에 들인 MCP 심의를 엔진 이어하기로(WD-05). 그 대화의 주인이고 그 잡이 그 대화에 들어 있어야 한다. 엔진의 거절은 code · message 로 넘긴다."""
+    ensure(principal, "feat:deliberation")
+    if body.rounds not in (None, 0) and body.rounds < 2:
+        raise AuthError("라운드는 0(기본) 또는 2~8 이다", status_code=422)
+    if not principal.email:
+        raise AuthError("이메일이 없는 계정은 엔진 심의를 이을 수 없습니다 — 엔진 잡은 사람을 이메일로 가린다", status_code=400)
+    store = request.app.state.conv_store
+    jobs = await asyncio.to_thread(store.mcp_delib_jobs_in, body.conversation_id, principal.subject)
+    if body.previous_job_id not in jobs:
+        raise AuthError("이 대화에 들인 엔진 심의가 아닙니다 — MCP 로 연 심의 대화에서만 엔진으로 잇습니다", status_code=409)
+    tok, base = settings.gateway_shared_token, (settings.agent_server_url or "").rstrip("/")
+    if not (tok and base):
+        raise AuthError("에이전트 서버 주소 · 공유 비밀(GATEWAY_SHARED_TOKEN)이 없어 엔진에 이어하기를 맡기지 못합니다", status_code=503)
+    payload: dict = {"previous_job_id": body.previous_job_id, "human_note": body.human_note, "keep_seats": body.keep_seats}
+    if body.rounds:
+        payload["rounds"] = body.rounds
+    audit = request.app.state.agent_audit
+    try:
+        r = await request.app.state.agent_client.post(f"{base}/deliberate/continue", json=payload, timeout=CONTINUE_TIMEOUT_S,
+                                                      headers=_identity_headers(request, principal, tok))
+    except httpx.HTTPError as exc:
+        audit.record(principal=principal.subject, event="engine_delib_continue", status="error",
+                     meta={"conversation": body.conversation_id, "previous": body.previous_job_id, "error": type(exc).__name__})
+        raise AuthError(f"에이전트 서버에 닿지 못했습니다({type(exc).__name__}) — 잠시 뒤 다시 누르세요", status_code=502) from exc
+    try:
+        data = r.json()
+    except ValueError:
+        data = None
+    if r.status_code != 200 or not isinstance(data, dict):
+        code = (data or {}).get("code") if isinstance(data, dict) else None
+        msg = ((data or {}).get("message") or (data or {}).get("error")) if isinstance(data, dict) else None
+        if r.status_code in (404, 405) and code is None:
+            code, msg = "agent_outdated", "에이전트 서버에 엔진 이어하기 창구가 없습니다 — WD-05(f955eff) 전의 판입니다"
+        audit.record(principal=principal.subject, event="engine_delib_continue", status="rejected",
+                     meta={"conversation": body.conversation_id, "previous": body.previous_job_id, "upstream": r.status_code,
+                           **({"code": str(code)[:60]} if code else {})})
+        status = r.status_code if 400 <= r.status_code < 500 else 502
+        return JSONResponse(status_code=status, content={"code": str(code or f"agent_{r.status_code}"),
+                                                         "message": str(msg or f"에이전트 서버 답이 HTTP {r.status_code} 이다")[:600]})
+    card = card_of(data, tool="deliberate_continue", continued_from=body.previous_job_id)
+    if card is None:
+        return JSONResponse(status_code=502, content={"code": "agent_shape", "message": "에이전트 서버 답에 잡 id 가 없다"})
+    note = str(data.get("note") or "").strip()
+    text = (f"엔진에 이어하기를 맡겼습니다 — 잡 `{card['job_ids'][0]}`(앞 잡 `{body.previous_job_id}`). 끝나면 이 대화에 좌석 발언과 결정문이 "
+            "붙습니다." + (f"\n\n{note[:1000]}" if note else ""))
+    ok = await asyncio.to_thread(store.append, conversation_id=body.conversation_id, owner_sub=principal.subject, role="assistant",
+                                 content=text, meta={"job_cards": [card]})
+    audit.record(principal=principal.subject, event="engine_delib_continue",
+                 meta={"conversation": body.conversation_id, "previous": body.previous_job_id, "job": card["job_ids"][0],
+                       "saved": bool(ok)})
+    return JSONResponse({"job_id": card["job_ids"][0], "status": card["state"], "card": card, "text": text, "saved": bool(ok)})
 
 
 def _status_view(d: dict) -> dict:
