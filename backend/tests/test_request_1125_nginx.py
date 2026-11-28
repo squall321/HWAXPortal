@@ -4,6 +4,7 @@ HP-72  loc_block 이 모든 location 에 Host $host 를 박아, 루프백에 묶
        Host 를 421 로 거절했다. 박스가 Host 만 바꾸는 nginx 중계를 따로 띄웠고 그것이 죽으면 네 경로가 같이 끊긴다. 손잡이로 고른 라우트만 $proxy_host.
 HP-74  앱 MCP 는 '/mcp/' 에 '/mcp' 로 307 을 내는데 Location 이 포털 접두를 몰라 포털 루트로 샜고, 셋은 http:// 로 내려갔다. 접두를 아는 308.
 HP-75  *-mcp 가 평문 8088 에서도 답해, http 주소를 등록한 MCP 클라이언트의 개인 토큰이 사내망에 평문으로 흘렀다. 고른 라우트는 평문 서버에서 루프백만.
+       기본은 '*-mcp'(사용자 결정 11-28 — 기본 켬), 박스가 끄는 값은 'none'.
 
 생성기를 임시 리포에서 실제로 돌린다(test_request_1123_nginx 와 같은 하네스). 띄운 nginx 시험은 nginx SIF 가 있는 박스에서만 돈다.
 """
@@ -49,13 +50,17 @@ def test_HP72_기본은_받은_Host_고른_라우트만_업스트림_Host(tmp_pa
     assert "NGINX_UPSTREAM_HOST_ROUTES 의 'nope-mcp' 는 라우트에 없다" in out
 
 
+LOOPBACK = "            allow 127.0.0.1;\n            allow ::1;\n            deny all;\n"
+
+
 @pytest.mark.parametrize("tls", [False, True], ids=["http", "tls"])
 def test_HP74_mcp_라우트의_끝_슬래시는_접두를_아는_308(tmp_path, tls):
     _repo, conf, _out = _generate(tmp_path, tls=tls)
-    for srv in _servers(conf):
+    for i, srv in enumerate(_servers(conf)):
         if "location /kooremapper-mcp/" not in srv:
             continue
-        assert "        location = /kooremapper-mcp/mcp/ {\n            return 308 /kooremapper-mcp/mcp;\n        }\n" in srv
+        lb = LOOPBACK if tls and i == 0 else ""     # TLS 박스의 평문 서버는 기본(HP-75 — 11-28 사용자 결정)으로 루프백만
+        assert f"        location = /kooremapper-mcp/mcp/ {{\n{lb}            return 308 /kooremapper-mcp/mcp;\n        }}\n" in srv
         assert "location = /failuretrace/mcp/" not in srv and "location = /report-archive/mcp/" not in srv, "-mcp 라우트만"
 
 
@@ -70,11 +75,15 @@ def test_HP74_길이_있는_업스트림은_건드리지_않는다(tmp_path):
     assert "location = /y-mcp/mcp/" in conf, "맨 호스트는 생성기가 '/' 를 붙여 루트를 가리킨다"
 
 
-def test_HP75_평문_서버에서만_루프백으로_좁힌다(tmp_path):
-    _repo, conf, _out = _generate(tmp_path, tls=True, infra_env="NGINX_TLS_ONLY_ROUTES=*-mcp\n")
+@pytest.mark.parametrize("env", ["", "NGINX_TLS_ONLY_ROUTES=\n", "NGINX_TLS_ONLY_ROUTES=*-mcp\n"], ids=["기본", "빈값", "적음"])
+def test_HP75_평문_서버에서만_루프백으로_좁힌다(tmp_path, env):
+    """기본이 '*-mcp' 다(사용자 결정 11-28) — 줄이 없거나 비어도 -mcp 라우트는 평문 서버에서 루프백만. 몇 개에 붙었는지 한 줄로 알린다."""
+    _repo, conf, out = _generate(tmp_path, tls=True, infra_env=env)
     plain, tls_srv = _servers(conf)
     blk = _loc(plain, "kooremapper-mcp")
-    assert blk.startswith("            allow 127.0.0.1;\n            allow ::1;\n            deny all;\n"), blk
+    assert blk.startswith(LOOPBACK), blk
+    assert re.search(r"평문 서버\(:8088\)에서 루프백만 받는 라우트 1개 — 밖에서는 https 로만\(NGINX_TLS_ONLY_ROUTES=\*-mcp"
+                     + (" — 기본" if "*-mcp" not in env else r" ·"), out), out
     assert "deny all" not in _loc(tls_srv, "kooremapper-mcp"), "TLS 서버는 그대로"
     assert "deny all" not in _loc(plain, "failuretrace"), "-mcp 가 아닌 라우트는 그대로"
     assert re.search(r"location = /kooremapper-mcp/mcp/ \{\n            allow 127.0.0.1;\n            allow ::1;\n            deny all;\n"
@@ -87,6 +96,16 @@ def test_HP75_평문_서버에서만_루프백으로_좁힌다(tmp_path):
 def test_HP75_TLS_가_꺼진_박스에서는_쓰지_않는다(tmp_path):
     _repo, conf, out = _generate(tmp_path, tls=False, infra_env="NGINX_TLS_ONLY_ROUTES=*-mcp\n")
     assert "deny all" not in conf and "NGINX_TLS_ONLY_ROUTES 를 쓰지 않는다 — TLS 가 꺼진 박스다" in out
+    # 기본값이면 ⚠ 가 아니라 알리기만 — TLS 를 안 켠 박스(dev)가 생성할 때마다 경고를 받지 않게
+    _repo, conf, out = _generate(tmp_path / "d", tls=False)
+    assert "deny all" not in conf and "⚠ NGINX_TLS_ONLY_ROUTES" not in out
+    assert "· 평문 막기(NGINX_TLS_ONLY_ROUTES 기본 *-mcp)는 쓰지 않는다 — TLS 가 꺼진 박스다(ENABLE_TLS)" in out, out
+
+
+def test_HP75_none_이면_끈다(tmp_path):
+    """박스가 끄는 값은 'none' — 평문 서버도 종전처럼 받고, 알림 줄 · 이름 꼴 경고가 없다."""
+    _repo, conf, out = _generate(tmp_path, tls=True, infra_env="NGINX_TLS_ONLY_ROUTES=none\n")
+    assert "deny all" not in conf and "루프백만 받는 라우트" not in out and "NGINX_TLS_ONLY_ROUTES 의" not in out, out
 
 
 def test_예시_파일이_두_손잡이를_주석으로_선언한다():
@@ -125,7 +144,7 @@ def test_띄운_nginx_가_업스트림_Host_와_308_과_평문_막기를_지킨�
     up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Up)
     threading.Thread(target=up.serve_forever, daemon=True).start()
     upport = up.server_address[1]
-    repo, _conf, _out = _generate(tmp_path, tls=True, infra_env="NGINX_UPSTREAM_HOST_ROUTES=a-mcp\nNGINX_TLS_ONLY_ROUTES=*-mcp\n")
+    repo, _conf, _out = _generate(tmp_path, tls=True, infra_env="NGINX_UPSTREAM_HOST_ROUTES=a-mcp\n")   # 평문 막기는 기본(11-28)
     (repo / "backend/config/routes.local.env").write_text(f"a-mcp=http://127.0.0.1:{upport}/\nb-mcp=http://127.0.0.1:{upport}/\n")
     (repo / "infra/.env").write_text((repo / "infra/.env").read_text().replace(
         "HTTP_PORT=8088\n", f"HTTP_PORT={ports[0]}\nHTTPS_PORT={ports[1]}\n"))
