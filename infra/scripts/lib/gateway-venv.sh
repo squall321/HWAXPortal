@@ -37,8 +37,10 @@ HWAX_GW_VENV_WHY=""
 
 _hwax_gw_venv_envv() {   # <키> — 환경이 먼저, 없으면 포털 infra/.env 의 마지막 줄(따옴표 · 끝 공백을 벗긴다)
   local v="${!1:-}"
-  if [ -z "$v" ] && [ -f "$_HWAX_GW_VENV_PORTAL/infra/.env" ]; then
-    v="$(sed -n "s/^$1=//p" "$_HWAX_GW_VENV_PORTAL/infra/.env" 2>/dev/null | tail -1 | tr -d "\"'" | sed 's/[[:space:]]*#.*$//; s/[[:space:]]*$//')"
+  # 읽을 박스 파일 — 시험은 HWAX_GW_VENV_ENVFILE 로 비운 자리를 준다(본 체크아웃의 infra/.env 가 시험에 새면 「Drive 원격 없음」 같은 갈래를 못 잰다)
+  local f="${HWAX_GW_VENV_ENVFILE:-$_HWAX_GW_VENV_PORTAL/infra/.env}"
+  if [ -z "$v" ] && [ -f "$f" ]; then
+    v="$(sed -n "s/^$1=//p" "$f" 2>/dev/null | tail -1 | tr -d "\"'" | sed 's/[[:space:]]*#.*$//; s/[[:space:]]*$//')"
   fi
   printf '%s' "$v"
 }

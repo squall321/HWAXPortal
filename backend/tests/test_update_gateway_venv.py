@@ -86,7 +86,8 @@ for n in "$@"; do v="$(awk -v n="$n" '$1 == n {{ print $2 }}' "{self.vers}" 2>/d
     def env(self, **kw) -> dict:
         return {"PATH": f"{self.bin}:{os.environ['PATH']}", "HOME": str(self.tmp), "HWAX_GW_DIR": str(self.gw),
                 "HWAX_DRIVE_REMOTE": "fake:HWAXPortal/images", "GATEWAY_VENV_PYTHON": str(self.py),
-                "HWAX_GW_VENV_NOTE": str(self.tmp / "note"), **kw}
+                "HWAX_GW_VENV_NOTE": str(self.tmp / "note"),
+                "HWAX_GW_VENV_ENVFILE": str(self.tmp / "no-infra.env"), **kw}   # 본 체크아웃의 infra/.env 가 새지 않게
 
     def bundle(self, key: str | None = None, pyv: str = "3.12", arch: str = ARCH, lock: list[str] | None = None, bad_sha: bool = False) -> Path:
         d = self.drive / "HWAXPortal/tools/gateway-wheels" / (key or _key(pyv))
