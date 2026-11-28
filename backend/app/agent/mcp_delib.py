@@ -1,5 +1,5 @@
-# MCP 로 연 심의(엔진 잡)를 포털로 — 끝난 잡을 주인의 대화로 당기기(WD-03) · 웹 이어하기를 엔진 이어하기로(WD-05) · 진행 카드 상태(WD-13)
-"""docs/request-1125 WD-03 · WD-05 · WD-13 의 포털 몫. 엔진 쪽은 HWAXAgentServer(c27c13e · f955eff · 3c6a54d)다.
+# MCP 로 연 심의(엔진 잡)를 포털로 — 끝난 잡을 주인의 대화로 당기기(WD-03) · 웹 이어하기를 엔진 이어하기로(WD-05) · 진행 카드 상태(WD-13) · 내 엔진 잡 목록 · 결정문(WD-08)
+"""docs/request-1125 WD-03 · WD-05 · WD-08 · WD-13 의 포털 몫. 엔진 쪽은 HWAXAgentServer(c27c13e · f955eff · b1007bf · 3c6a54d)다.
 
 - **당기기(WD-03)** — 엔진이 밀지 않고 포털이 읽는다(과제 인사이트 PG-9 · 심의 묶음 알림과 같은 까닭 — 어느 쪽이 내려가 있어도 다음 읽기에 따라잡는다).
   `GET /delib/conversations?since&limit` 를 공유 비밀(GATEWAY_SHARED_TOKEN)만 실어 부른다(사람 신원 머리를 실으면 엔진이 403). 커서는 대화 저장소 안의
@@ -12,8 +12,10 @@
   같은 셋 — x-hwax-user · x-hwax-groups · x-hwax-affiliation)로 부른다. 새 웹 심의를 열지 않는다 — 같은 잡 계보의 다음 잡이 서고(_CONT_CARRY
   손잡이 · 보고서 이어붙이기가 엔진에서 그대로), 끝나면 당기기가 같은 대화에 붙인다. 대화에는 진행 카드 한 줄을 남긴다(새로고침 뒤에도 카드).
   세션 + CSRF 만 받는다(사람이 화면에서 누른 것).
-- **진행 카드(WD-13)** — 엔진에 HTTP 창구가 없는 읽기라 그 사람의 챗 PAT 로 게이트웨이 도구를 부른다(deliberate_status — 엔진이 그 사람 기준으로
-  볼 수 있는 잡만 준다). 챗 중계는 SSE job_card 를 card_pointer 로 걸러 답 meta.job_cards 로 남긴다. MCP 쪽 나누기(mcp_pages.paged)로 나뉜 답은 join_pages 로 이어 원래 응답으로 만든다.
+- **진행 · 목록 · 결정문(WD-13 · WD-08)** — 엔진에 HTTP 창구가 없는 읽기라 그 사람의 챗 PAT 로 게이트웨이 도구를 부른다(deliberate_status · list ·
+  result — 엔진이 그 사람 기준으로 볼 수 있는 잡만 준다). 챗 중계는 SSE job_card 를 card_pointer 로 걸러 답 meta.job_cards 로 남긴다. MCP 쪽
+  나누기(mcp_pages.paged)로 나뉜 답은 join_pages 로 이어 원래 응답으로 만든다. 목록의 '더 보기' 는 가장 옛 행의 시작 시각(잡 id 의 시각)을 until 로
+  다시 묻는다(엔진 deliberate_list 는 limit 100 까지 · 쪽 번호가 없다).
 """
 from __future__ import annotations
 
@@ -51,8 +53,11 @@ EVIDENCE_MAX = 100
 CONTINUE_TIMEOUT_S = 90.0               # 엔진 이어하기 — 주제 다시 풀기 · 근거 참조 풀기가 그 안에서 돈다
 READ_TIMEOUT_S = 60.0
 PARTS_MAX = 40                          # 쪽으로 나뉜 답을 받을 때의 상한(쪽 25,000자 — 백만 자)
+LIST_LIMIT_MAX = 100                    # 엔진 deliberate_list 의 limit 상한
 JOB_ID_RE = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
 _JOB_ID = re.compile(JOB_ID_RE)
+# 엔진 잡 id 의 시각(delib_jobs — <종류>-YYYYMMDD-HHMMSS-<6자>, 엔진 박스의 현지 시각) — 목록의 '더 보기' 가 until 로 쓴다
+_ID_TIME = re.compile(r"-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-[0-9a-f]{6}$")
 _END = ("done", "error", "cancelled", "interrupted", "failed")
 _HTTP_WHY = {
     401: "공유 비밀(GATEWAY_SHARED_TOKEN)이 에이전트 서버의 것과 다르다(HTTP 401)",
@@ -538,3 +543,84 @@ async def job_status(
             cid = await asyncio.to_thread(store.mcp_delib_conversation, principal.subject, jid)
         out["conversation_id"] = cid
     return out
+
+
+def _created(job_id: str) -> str | None:
+    """잡 id 의 시각 → 'YYYY-MM-DDTHH:MM:SS'(엔진 박스 현지 시각 — 엔진 since · until 이 같은 시각으로 읽는다)."""
+    m = _ID_TIME.search(job_id or "")
+    return f"{m[1]}-{m[2]}-{m[3]}T{m[4]}:{m[5]}:{m[6]}" if m else None
+
+
+_DATE_RE = r"^(\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?)?$"
+
+
+@router.get("/jobs")
+async def my_jobs(
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+    since: str = "",
+    until: str = "",
+    query: str = "",
+    job: str = "",
+    scope: str = "mine",
+    limit: int = 50,
+) -> dict:
+    """내 엔진 잡 목록(WD-08) — 엔진 deliberate_list(since · until · query) 그대로, 그 사람이 볼 수 있는 잡만(엔진이 가린다 — 제 잡 · 같은 소속 잡 ·
+    관리자는 전부). scope=mine(기본)이면 제 잡(mine)만, all 이면 볼 수 있는 잡 모두. 종류(job)와 scope 는 받은 행에서 거른다. 잘렸으면
+    next_until(가장 옛 행의 시작 시각)로 '더 보기' — 그 시각보다 앞에 시작한 잡을 다시 묻는다."""
+    ensure(principal, "feat:deliberation")
+    for name, v in (("since", since), ("until", until)):
+        if not re.match(_DATE_RE, v.strip()):
+            raise AuthError(f"{name} 는 YYYY-MM-DD 날짜(또는 YYYY-MM-DDTHH:MM:SS)다", status_code=422)
+    lim = max(1, min(LIST_LIMIT_MAX, int(limit or 50)))
+    args: dict = {"limit": lim}
+    for k, v in (("since", since.strip()), ("until", until.strip()), ("query", " ".join(query.split())[:200])):
+        if v:
+            args[k] = v
+    d = await gateway_read(settings, _pat(request, settings, principal), "deliberate_list", args)
+    store = request.app.state.conv_store
+    rows = [r for r in (d.get("jobs") or []) if isinstance(r, dict) and isinstance(r.get("job_id"), str)]
+
+    def _links() -> dict:
+        return {r["job_id"]: store.mcp_delib_conversation(principal.subject, r["job_id"]) for r in rows}
+    links = await asyncio.to_thread(_links)
+    out_rows = []
+    for r in rows:
+        if (job and str(r.get("job") or "") != job) or (scope != "all" and not r.get("mine")):
+            continue
+        q = str(r.get("question") or "")
+        out_rows.append({"job_id": r["job_id"], "job": r.get("job"), "label": r.get("label"), "status": r.get("status"),
+                         "question": q[:400], "question_chars": len(q), "chair_template": r.get("chair_template"),
+                         "round": r.get("round"), "total_rounds": r.get("total_rounds"), "report_id": _rid(r.get("report_id")),
+                         "mine": bool(r.get("mine")), "owner": str(r.get("owner") or "")[:200], "created": _created(r["job_id"]),
+                         "error": str(r.get("error") or "")[:200] or None, "conversation_id": links.get(r["job_id"])})
+    more = bool(d.get("truncated"))
+    oldest = next((_created(r["job_id"]) for r in reversed(rows) if _created(r["job_id"])), None)
+    win = d.get("window") if isinstance(d.get("window"), dict) else None
+    return {"jobs": out_rows, "more": more, "next_until": oldest if more else None,
+            **({"window": {"complete": bool(win.get("complete"))}} if win else {}),
+            **({"filter": d["filter"]} if isinstance(d.get("filter"), dict) else {})}
+
+
+_DECISION_FIELDS = ["decision", "question", "job", "label", "chair_template", "report_id", "plain", "error"]
+
+
+@router.get("/jobs/{job_id}/decision")
+async def job_decision(
+    job_id: str,
+    request: Request,
+    principal: Principal = Depends(principal_pat_or_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """결정문 전문(WD-08) — deliberate_result 에서 고른 칸만(fields) 받고, 쪽으로 나뉘었으면 끝 쪽까지 이어 원문 그대로 준다(자르지 않는다)."""
+    ensure(principal, "feat:deliberation")
+    jid = _job_id(job_id)
+    d = await gateway_read(settings, _pat(request, settings, principal), "deliberate_result", {"job_id": jid, "fields": _DECISION_FIELDS})
+    store = request.app.state.conv_store
+    cid = await asyncio.to_thread(store.mcp_delib_conversation, principal.subject, jid)
+    dec = d.get("decision")
+    return {"job_id": d.get("job_id") or jid, "status": d.get("status"), "job": d.get("job"), "label": d.get("label"),
+            "question": str(d.get("question") or ""), "decision": dec if isinstance(dec, str) else "",
+            "plain": d.get("plain") if isinstance(d.get("plain"), str) else None, "report_id": _rid(d.get("report_id")),
+            "error": str(d.get("error") or "")[:400] or None, "note": str(d.get("note") or "")[:400] or None, "conversation_id": cid}

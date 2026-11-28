@@ -1,8 +1,10 @@
 // 대화 이력 사이드바 — 시간대별 그룹핑(오늘/어제/…), 새 대화·이름변경·2단계 삭제, 접기 토글
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useCan } from '../../auth/useCan';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
+import { EngineJobsPanel } from './EngineJobsPanel';
 import { IconCheck, IconPanel, IconPencil, IconPlus, IconTrash, IconUser } from './icons';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -159,6 +161,8 @@ export function ChatSidebar({
   const { pathname } = useLocation();
   const [query, setQuery] = useState('');
   const [src, setSrc] = useState<SrcFilter>(loadSrc);
+  const can = useCan();
+  const [jobsOpen, setJobsOpen] = useState(false);
   const mcpCount = useMemo(() => conversations.filter((c) => c.source === 'mcp').length, [conversations]);
   // MCP 대화가 없으면 거르기 줄을 내지 않고 거르지도 않는다(고른 값이 남아 목록이 비어 보이지 않게)
   const srcOn: SrcFilter = mcpCount ? src : 'all';
@@ -235,6 +239,15 @@ export function ChatSidebar({
             tabIndex={open ? 0 : -1}
           />
         </div>
+
+        {/* 내 엔진 심의 잡(docs/request-1125 WD-08) — 날짜 · 글로 찾고 결정문 전문 · 이 대화에 싣기 · 들인 대화 열기 */}
+        {can('feat:deliberation') && (
+          <button type="button" className="cx-chip sb-engine" onClick={() => setJobsOpen(true)} tabIndex={open ? 0 : -1}
+            title="개인 Claude(MCP) · 챗 확인 카드로 연 엔진 심의를 날짜 · 글로 찾습니다">
+            엔진 심의 잡 찾기
+          </button>
+        )}
+        {jobsOpen && <EngineJobsPanel onClose={() => setJobsOpen(false)} />}
 
         {mcpCount > 0 && (
           <div className="sb-src" role="group" aria-label="대화 출처">

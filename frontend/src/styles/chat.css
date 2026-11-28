@@ -2767,6 +2767,25 @@ body.dock-open .page-wide {
 
 /* ── 전문가 팀(docs/expert-teams) — 빠른 선택기의 카드 · 줄을 그대로 쓰고 칸 몇 개만 더한다 ───────────────────────────── */
 .tm-card { width: min(560px, 100%); }
+/* 엔진 심의 잡(docs/request-1125 WD-08) — 날짜 · 종류 · 글 거르기 · 결정문 전문 · 이 대화에 싣기 */
+.ejp { width: min(820px, 100%); max-height: min(86vh, 900px); overflow-y: auto; }
+.ejp-note { margin: 0 0 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.ejp-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.8rem; font-size: 0.8rem; color: var(--muted); }
+.ejp-filter input[type='search'] { flex: 1 1 12rem; min-width: 10rem; }
+.ejp-err { margin-top: 0.5rem; font-size: 0.8rem; color: var(--fg); }
+.ejp-empty { margin-top: 0.75rem; font-size: 0.82rem; color: var(--muted); }
+.ejp-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.ejp-row { padding: 0.5rem 0.65rem; border: 1px solid var(--border); border-radius: 8px; }
+.ejp-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.76rem; color: var(--muted); }
+.ejp-kind { font-weight: 600; color: var(--fg); }
+.ejp-st { padding: 0 0.35rem; border: 1px solid var(--border); border-radius: 5px; }
+.ejp-st.st-done { color: var(--accent-fg); border-color: var(--accent-soft); }
+.ejp-id { margin-left: auto; font-size: 0.72rem; }
+.ejp-q { margin-top: 0.25rem; font-size: 0.84rem; color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ejp-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.35rem; }
+.ejp-decision { margin-top: 0.45rem; padding: 0.5rem 0.65rem; border-top: 1px solid var(--border); font-size: 0.84rem; max-height: 50vh; overflow-y: auto; }
+.ejp-more { margin-top: 0.6rem; }
+.sb-engine { margin: 0 0.7rem 0.35rem; width: calc(100% - 1.4rem); }
 .tm-note { margin-top: 0; }
 .tm-err { margin: 0.25rem 0; }
 .tm-item { display: flex; flex-direction: column; gap: 0.25rem; }
