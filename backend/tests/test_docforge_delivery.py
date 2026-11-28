@@ -130,7 +130,8 @@ async def test_맡기기는_호스트_경로를_넘기고_맡긴_사람을_기�
     out = await R._dispatch_inner(req, body, KIM, s)
     assert out["stage"] == "dispatched" and out["job_id"] == "j_abc123"
     ((tool, args),) = calls
-    assert tool == "docforge_convert" and args == {"path": "/host/staging/kim/s1/a.pptx", "parser": "auto", "vlm": True}
+    assert tool == "docforge_convert" and args == {"path": "/host/staging/kim/s1/a.pptx", "parser": "auto", "vlm": True,
+                                                   "snapshot_page": True, "llm": True}
     assert D.load_job(s, "j_abc123", KIM.subject)["filename"] == "a.pptx"
     with pytest.raises(D.DeliveryError) as e:
         D.load_job(s, "j_abc123", LEE.subject)
@@ -374,14 +375,22 @@ def _wire_chat(monkeypatch, tmp_path, replies: dict):
 
 
 @pytest.mark.anyio
-async def test_DocForge_가_보이면_이_대화에서_분석은_DocForge_에_맡긴다_그림_판독은_끄고(monkeypatch, tmp_path):
+async def test_DocForge_가_보이면_이_대화에서_분석은_DocForge_에_맡긴다_판독_쪽_그림_판단은_박스_설정(monkeypatch, tmp_path):
     s = _settings(tmp_path)
     R, req, calls = _wire_chat(monkeypatch, tmp_path, {"docforge_convert": {"job_id": "j_chat01", "status": "queued"}})
     out = await R._dispatch_inner(req, R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="chat"), KIM_DF, s)
     assert out == {"stage": "dispatched", "destination": "chat", "via": "docforge", "job_id": "j_chat01"}
     ((tool, args),) = calls
-    assert tool == "docforge_convert" and args["vlm"] is False and args["path"] == "/host/staging/kim/s1/a.pptx"
+    # 종전엔 그림 판독을 꺼 그림에만 답이 있는 물음이 '안 보임' 이었다(docs/request-1125 IR-01 · IR-02 · IR-07) — 기본 켬, 박스에서 끈다(IR-08)
+    assert tool == "docforge_convert" and args["path"] == "/host/staging/kim/s1/a.pptx"
+    assert (args["vlm"], args["snapshot_page"], args["llm"]) == (True, True, True)
     assert D.load_job(s, "j_chat01", KIM.subject)["purpose"] == "chat"
+    assert req.app.state.agent_audit.rows[-1]["meta"]["vlm"] is True, "감사 줄 · 잡 옵션에 vlm=true(IR-01 의 확인)"
+    calls.clear()
+    off = s.model_copy(update={"docforge_chat_vlm": False, "docforge_chat_snapshot_page": False, "docforge_chat_llm": False})
+    await R._dispatch_inner(req, R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="chat"), KIM_DF, off)
+    ((_t, args),) = calls
+    assert (args["vlm"], args["snapshot_page"], args["llm"]) == (False, False, False), "infra/.env 한 줄로 끈다(IR-08)"
 
 
 @pytest.mark.anyio
@@ -487,3 +496,83 @@ def test_잡_기록은_스테이징_청소에서_빠지고_보존_기한_뒤에_
     assert not box.exists(), "6시간 지난 업로드 상자는 지운다"
     assert D._file(s, "j_keep001").exists(), "7일 안의 잡 기록을 지웠다 — 창을 닫은 잡을 다시 열 수 없다"
     assert not D._file(s, "j_gone001").exists()
+
+
+
+# ── docs/request-1125 — 정밀 변환 설정(IR-08) · 잠긴 문서(WD-11) · AI 데이터 허브 판독(IR-04) · 차트 · 노트 수(IR-06) ─────────────────────────
+@pytest.mark.anyio
+async def test_정밀_변환의_판독은_화면_칸과_박스_설정이_둘_다_켜졌을_때만(monkeypatch, tmp_path):
+    s = _settings(tmp_path)
+    R, req, calls = _wire(monkeypatch, tmp_path, {"docforge_convert": {"job_id": "j_abc123", "status": "queued"}})
+    off = s.model_copy(update={"docforge_precise_vlm": False, "docforge_precise_llm": False})
+    await R._dispatch_inner(req, R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="reportarchive_precise"), KIM, off)
+    await R._dispatch_inner(req, R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="reportarchive_precise", vlm=False), KIM, s)
+    assert [(a["vlm"], a["snapshot_page"], a["llm"]) for _t, a in calls] == [(False, True, False), (False, True, True)]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("head", [bytes((0x3C, 0x23, 0x23, 0x20, 0x4E, 0x41, 0x53, 0x43, 0x41)) + b" rest", b"\xd0\xcf\x11\xe0 rest"])
+async def test_잠긴_문서는_이_대화에서_분석이_변환하지_않고_DRM_을_말한다(monkeypatch, tmp_path, head):
+    """잠긴 PPT 를 넣으면 성공 메시지와 함께 260자만 읽었다고 알렸다(WD-11)."""
+    R, req, calls = _wire_chat(monkeypatch, tmp_path, {"docforge_convert": {"job_id": "x"}, "convert_file": RECORD})
+    (tmp_path / "staging/kim/s1/a.pptx").write_bytes(head)
+    out = await R._dispatch_inner(req, R.UploadDispatchReq(staging_id="s1", filename="a.pptx", destination="chat"), KIM_DF, _settings(tmp_path))
+    assert out["stage"] == "failed" and out["drm"] is True and "DRM" in out["error"] and "PC 의 PowerPoint" in out["error"]
+    assert calls == [], "변환기를 부르지 않는다"
+
+
+def test_잠김_판정은_화면의_DRM_머리와_같은_바이트다():
+    import re as _re
+    from app.agent import upload as U
+    ts = (Path(__file__).resolve().parents[2] / "frontend/src/components/chat/docAttach.ts").read_text(encoding="utf-8")
+    m = _re.search(r"const DRM_HEAD = \[([^\]]+)\]", ts)
+    assert m and bytes(int(x, 16) for x in m.group(1).split(",")) == U.DRM_HEAD
+    assert "b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0" in ts and U.OLE_HEAD == bytes((0xD0, 0xCF, 0x11, 0xE0))
+
+
+def test_잠김은_OOXML_만_본다_구형_ppt_의_OLE_는_정상(tmp_path):
+    from app.agent import upload as U
+    old = tmp_path / "old.ppt"; old.write_bytes(b"\xd0\xcf\x11\xe0 x")
+    pdf = tmp_path / "a.pdf"; pdf.write_bytes(b"%PDF-1.7")
+    ok = tmp_path / "a.pptx"; ok.write_bytes(b"PK\x03\x04")
+    assert U.office_lock(old) is None and U.office_lock(pdf) is None and U.office_lock(ok) is None
+
+
+def test_차트_노트_그림_수는_zip_목록에서(tmp_path):
+    import zipfile
+    from app.agent import upload as U
+    f = tmp_path / "d.pptx"
+    with zipfile.ZipFile(f, "w") as z:
+        for n in ("ppt/slides/slide1.xml", "ppt/charts/chart1.xml", "ppt/charts/chart2.xml", "ppt/charts/_rels/chart1.xml.rels",
+                  "ppt/notesSlides/notesSlide1.xml", "ppt/media/image1.png", "ppt/media/image2.emf"):
+            z.writestr(n, "x")
+    assert U.doc_features(f) == {"charts": 2, "notes": 1, "pictures": 2}
+    bad = tmp_path / "e.pptx"; bad.write_bytes(b"\xd0\xcf\x11\xe0")
+    assert U.doc_features(bad) == {} and U.doc_features(tmp_path / "없음.pdf") == {}
+
+
+def test_AI_데이터_허브가_판독한_그림은_모델_판독으로_싣는다():
+    """AIDataHub IR-31 판(AIDH_VLM_* 를 켠 박스)은 그림 칸에 reading 을 싣는다 — 판독 없는 그림만 '옮기지 않았다'(IR-04)."""
+    from app.agent import upload as U
+    rec = {"meta": {"source_format": "pptx", "title": "t"},
+           "figures": [{"id": "f1", "number": 1, "caption": "막대", "reading": {"summary": "막대 4개 — B 가 82 로 가장 높다"}},
+                       {"id": "f2", "number": 2, "caption": "사진"}],
+           "sections": [{"title": "s", "blocks": [{"type": "figure", "ref": "f1"}, {"type": "figure", "ref": "f2"}]}]}
+    md = U.record_markdown(rec, "a.pptx")
+    assert "[그림 1] 막대\n> 모델 판독: 막대 4개 — B 가 82 로 가장 높다" in md
+    assert "[그림 2] 사진 — 그림 내용은 글로 옮기지 않았다" in md and md.count("옮기지 않았다") == 1
+
+
+def test_DocForge_옵션_손잡이는_start_sh_가_값이_있을_때만_넘기고_예시에_있다():
+    """infra/.env 값만 바꾸고 포털 재기동으로 대화 분석의 판독을 끄고 켠다(IR-08) — 컨테이너로 가는 길은 start.sh 의 --env 다."""
+    root = Path(__file__).resolve().parents[2]
+    start = (root / "infra/scripts/start.sh").read_text(encoding="utf-8")
+    keys = ("DOCFORGE_CHAT_VLM", "DOCFORGE_CHAT_SNAPSHOT_PAGE", "DOCFORGE_CHAT_LLM",
+            "DOCFORGE_PRECISE_VLM", "DOCFORGE_PRECISE_SNAPSHOT_PAGE", "DOCFORGE_PRECISE_LLM")
+    loop = start.split("DF_ENVS=()", 1)[1].split("done", 1)[0]
+    assert all(k in loop for k in keys) and '[ -n "${!k:-}" ] && DF_ENVS+=' in loop
+    assert '${DF_ENVS[@]+"${DF_ENVS[@]}"}' in start.split('"$APPTAINER" instance start', 1)[1].split('"$PORTAL_SIF"', 1)[0]
+    ex = (root / "infra/.env.example").read_text(encoding="utf-8")
+    assert all(f"# {k}=true" in ex for k in keys)
+    from app.config import Settings
+    assert {f"docforge_{k.split('DOCFORGE_', 1)[1].lower()}" for k in keys} <= set(Settings.model_fields)

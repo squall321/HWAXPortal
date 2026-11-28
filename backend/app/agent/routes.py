@@ -1811,6 +1811,15 @@ async def upload_file(
     # 프론트가 "보낼 곳이 없다" 를 띄운다. 조용히 아무 데나 보내지 않는다.
     out["destinations"] = _upload.allowed_destinations(settings, principal.groups, meta["ext"],
                                                        await _upload.gateway_tool_names(settings))
+    # 문서면 잠김(DRM · OLE — WD-11)과 차트 · 노트 · 그림 수(IR-06)를 함께 — 화면이 고르기 전에 길을 가린다(docs/request-1125). 수만 · zip 목록만 읽는다.
+    _p = Path(meta["path"])
+    lock = await asyncio.to_thread(_upload.office_lock, _p)
+    if lock:
+        out["locked"] = lock
+    else:
+        feats = await asyncio.to_thread(_upload.doc_features, _p)
+        if feats:
+            out["doc_features"] = feats
     return out
 
 
@@ -1892,6 +1901,14 @@ class UploadDispatchReq(BaseModel):
     stage: str = Field(default="", max_length=40)          # 개발단계 — 선행|DV|PV|양산
     # reportarchive_precise 전용 — 그림을 VLM 으로 판독해 '모델 판독' 블록을 단다(목적지 이름이 '그림 판독' 을 말한다 — 기본 켬).
     vlm: bool = True
+
+
+def _docforge_opts(settings: Settings, path: str, *, vlm: bool = True) -> dict:
+    """DocForge docforge_convert 의 옵션 셋 — 길(chat · precise)마다 박스 설정(docs/request-1125 IR-08). 정밀 변환의 판독은 화면 칸(vlm)과 설정이
+    둘 다 켜졌을 때만. 감사 줄에도 이 값을 그대로 싣는다(잡 옵션을 줄에서 본다 — IR-01 의 확인)."""
+    return {"vlm": bool(getattr(settings, f"docforge_{path}_vlm")) and vlm,
+            "snapshot_page": bool(getattr(settings, f"docforge_{path}_snapshot_page")),
+            "llm": bool(getattr(settings, f"docforge_{path}_llm"))}
 
 
 @router.get("/upload/destinations/stepforge/projects")
@@ -2266,7 +2283,7 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
                 src = _upload.host_path(settings, zp)
         try:
             out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_convert",
-                                         {"path": src, "parser": "auto", "vlm": bool(body.vlm)})
+                                         {"path": src, "parser": "auto", **_docforge_opts(settings, "precise", vlm=bool(body.vlm))})
         finally:
             if bundle_box is not None:                 # DocForge 는 맡을 때 입력을 제 잡 폴더로 옮겨 둔다(링크 또는 복사)
                 shutil.rmtree(bundle_box, ignore_errors=True)
@@ -2278,18 +2295,29 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
                       filename=body.filename)
         audit.record(principal=principal.subject, event="upload_dispatch",
                      meta={"destination": "reportarchive_precise", "filename": body.filename, "job_id": job_id,
-                           "vlm": bool(body.vlm), "slides": len(slides)})
+                           **_docforge_opts(settings, "precise", vlm=bool(body.vlm)), "slides": len(slides)})
         return {"stage": "dispatched", "destination": "reportarchive_precise", "job_id": job_id,
                 "next": "GET /agent/upload/destinations/docforge/jobs/{job_id} 로 진행을 보고, 끝나면 POST …/deliver"}
 
+    if body.destination == "chat":
+        # DRM 으로 잠긴 문서 — 서버는 암호화된 바이트만 본다. 종전엔 변환기가 그 바이트에서 몇백 자를 건져 '붙였다' 고 했다(docs/request-1125
+        # WD-11 — 260자). 머리 바이트(화면 docAttach.ts DRM_HEAD · OLE 와 같은 판정)로 막고 PC 도우미 길을 알린다.
+        lock = await asyncio.to_thread(_upload.office_lock, path)
+        if lock:
+            audit.record(principal=principal.subject, event="upload_dispatch", status="refused",
+                         meta={"destination": "chat", "filename": body.filename, "lock": lock})
+            return {"stage": "failed", "drm": True, "error": _upload.DRM_REFUSAL}
+
     if body.destination == "chat" and "plat:docforge" in (principal.groups or []):
         # ── 이 대화에서 분석 — DocForge(DF-D19) ─────────────────────────
-        # DocForge 가 보이는 사람은 DocForge 로 읽는다 — 차트 값(원본 캐시) · SmartArt · 수식 · 발표자 노트 · 병합 표까지 원문에서. 그림 판독은
-        # 하지 않는다(대화에서 바로 묻는 길이라 빨라야 한다 · stcx Qwen 을 챗과 나눠 쓴다). 잡이라 화면이 진행을 보다가 끝나면 …/document 로
-        # 글을 받아 문서 칩으로 붙인다. DocForge 가 맡지 않으면(게이트웨이에 없음 · 거절) 아래 지금 길로 간다.
+        # DocForge 가 보이는 사람은 DocForge 로 읽는다 — 차트 값(원본 캐시) · SmartArt · 수식 · 발표자 노트 · 병합 표까지 원문에서. 그림 판독 · 쪽 그림 ·
+        # 판단은 박스 설정을 따른다(기본 켬 — docs/request-1125 IR-01 · IR-02 · IR-07 · IR-08: 종전엔 그림 판독을 꺼 그림에만 답이 있는 물음 여섯이
+        # 모두 '안 보임' 이었다 — 판독 켬 잡은 그림 5장 + 둘째 판독 약 12초, 판독 캐시가 있어 같은 덱은 다시 붙이면 거의 바로 끝난다). 챗 모델이 바쁜
+        # 날은 infra/.env 의 DOCFORGE_CHAT_VLM=false 로 끈다. 잡이라 화면이 진행을 보다가 끝나면 …/document 로 글을 받아 문서 칩으로 붙인다.
+        # DocForge 가 맡지 않으면(게이트웨이에 없음 · 거절) 아래 지금 길로 간다.
         try:
             out = await _upload.mcp_call(settings.mcp_gateway_url, pat, "docforge_convert",
-                                         {"path": _upload.host_path(settings, path), "parser": "auto", "vlm": False})
+                                         {"path": _upload.host_path(settings, path), "parser": "auto", **_docforge_opts(settings, "chat")})
         except AuthError as exc:
             out = {"ok": False, "error": exc.message}
         job_id = str(out.get("job_id") or "").strip() if isinstance(out, dict) else ""
@@ -2297,7 +2325,8 @@ async def _dispatch_inner(request, body, principal, settings) -> dict:
             _dfd.save_job(settings, job_id, owner_sub=principal.subject, owner_email=principal.email or principal.subject,
                           filename=body.filename, purpose="chat")
             audit.record(principal=principal.subject, event="upload_dispatch",
-                         meta={"destination": "chat", "via": "docforge", "filename": body.filename, "job_id": job_id})
+                         meta={"destination": "chat", "via": "docforge", "filename": body.filename, "job_id": job_id,
+                               **_docforge_opts(settings, "chat")})
             return {"stage": "dispatched", "destination": "chat", "via": "docforge", "job_id": job_id}
         logger.info("이 대화에서 분석 — DocForge 가 맡지 않아 AI 데이터 허브 변환기로 간다(%s)", str(out.get("error") or "잡 번호 없음")[:120])
 

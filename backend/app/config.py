@@ -337,6 +337,16 @@ class Settings(BaseSettings):
     # 정밀 변환 잡 기록(맡긴 사람)을 두는 날 수 — DocForge 잡 보존 기한(기본 7일)과 같게. 스테이징 청소(6시간)에서 빠지고, 그 안에는 창을 닫아
     # 넣지 못한 잡을 입력창 위 '끝나지 않은 정밀 변환' 에서 다시 열어 넣는다(DocForge E15).
     docforge_job_days: int = 7
+    # DocForge 에 넘기는 옵션 셋 — 길(이 대화에서 분석 · 정밀 변환)마다 박스에서 끄고 켠다(docs/request-1125 IR-08). 챗 모델이 바쁜 날 운영 쪽이
+    # 재배포 없이 infra/.env 한 줄 + 포털 재기동으로 대화 분석의 판독을 끈다. vlm = 그림 판독(IR-01) · snapshot_page = 쪽 그림(IR-02 — DocForge 가
+    # 판독할 쪽 그림을 스스로도 그리고, 겹치면 한 번만 그린다 R25-9) · llm = 그림 바로 아래 글이 설명인가 같은 판단(IR-07 — JSON 스키마 · 캐시).
+    # 정밀 변환의 판독은 화면 칸(vlm)과 이 값이 둘 다 켜졌을 때만 켠다.
+    docforge_chat_vlm: bool = True
+    docforge_chat_snapshot_page: bool = True
+    docforge_chat_llm: bool = True
+    docforge_precise_vlm: bool = True
+    docforge_precise_snapshot_page: bool = True
+    docforge_precise_llm: bool = True
     # 발표자료로(docs/wda-deck) — 포털이 만든 RA 보고서를 그 사람 명의로 읽어 WebDesignAgents 로 PPT · PDF. 박스 스위치는 기본 꺼짐 — WDA 의 주인 기능
     # (요청 W-1 ~ W-6)이 배치된 박스에서 사람이 켠다. 켜도 WDA /api/health 의 features 에 owner 가 있어야 단추가 보인다(사용자 결정 11-01 U-1).
     wda_deck_enabled: bool = False
