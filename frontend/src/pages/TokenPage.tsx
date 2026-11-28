@@ -561,16 +561,27 @@ export default function TokenPage() {
                     })()}
                     {offload && (
                       <div className="tok-hint">
-                        배치가 ① Claude Code · Desktop 등록에 <code>X-HWAX-Result: ref</code> 머리를
-                        달고 ② Claude Code 명령 <code>/hwax-ask</code>(조사를 서버에 맡기기) ·{' '}
+                        배치가 ① Claude Code 명령 <code>/hwax-ask</code>(조사를 서버에 맡기기) ·{' '}
                         <code>/hwax-draft</code>(긴 글을 서버가 쓰기)를{' '}
-                        <code>%USERPROFILE%\.claude\commands</code> 에 두고 ③{' '}
+                        <code>%USERPROFILE%\.claude\commands</code> 에 두고 ②{' '}
                         <code>%USERPROFILE%\.claude\CLAUDE.md</code> 의 표지 두 줄 사이에 규칙
                         묶음을 넣습니다(<code>CLAUDE_CONFIG_DIR</code> 이 있으면 그 아래). 칸을 끄고
-                        받은 배치를 다시 실행하면 셋을 걷습니다 — CLAUDE.md 는 표지 사이 밖을
+                        받은 배치를 다시 실행하면 둘을 걷습니다 — CLAUDE.md 는 표지 사이 밖을
                         건드리지 않습니다.
                       </div>
                     )}
+                    {/* 결과 손잡이 머리(docs/request-1125 P-1 — 사용자 결정 11-28) — 칸과 상관없이 배치 · 등록 명령이 늘 단다. 박스 스위치가 꺼져 있으면 아무 일도 없다 */}
+                    <div className="tok-hint">
+                      배치 · 등록 명령은 Claude Code · Desktop 연결에 <code>X-HWAX-Result: ref</code> 머리를
+                      늘 답니다. 이 박스의 결과 손잡이(<code>GATEWAY_RESULT_REFS</code>)가 켜져 있을 때만 큰
+                      도구 결과를 앞머리와 손잡이(ref)로 받고, 꺼져 있으면 아무 일도 없습니다(결과는 원문
+                      그대로).{' '}
+                      {offloadBox?.result_refs === true
+                        ? '지금 이 박스: 켜짐.'
+                        : offloadBox?.result_refs === false
+                          ? '지금 이 박스: 꺼짐 — 머리만 있고 아무 일도 없습니다.'
+                          : '지금 이 박스: 모름.'}
+                    </div>
                   </div>
                   {/* 내 Claude 대화를 포털에 공유(docs/interaction-data contract §5 — 사람이 스스로 보낸다, IX-3). 박스가 꺼져 있어도 칸은 보이고 그 사실을 옆에 말한다 */}
                   <div className="tok-offload tok-share">

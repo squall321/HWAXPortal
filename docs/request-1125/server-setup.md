@@ -25,6 +25,7 @@
 | IR-03 · 04 · 05 · 06 · WD-11 | 그림 있는 덱을 붙이면 칩 · 완료 문구에 '그림 N · 판독 M' (판독 0 이면 안내) · DocForge 권한 없는 계정도 같은 문구 · 새 대화에서 칩이 비었다 · 차트 · 노트 있는 덱의 고르기 화면에 정밀 변환 '권함' · 잠긴 PPT 는 DRM 안내 |
 | HP-60 | ste 잡이 도는 동안 `infra/scripts/deploy-ste.sh` 를 바로 부르면 rc 1 · 까닭 한 줄, `--force` 면 진행. update-all 은 '실행 중 ste 잡 N개 — 이번에는 바꾸지 않는다'(○) |
 | HP-75 | conf 생성 줄 '평문 서버(:8088)에서 루프백만 받는 라우트 N개 — … 기본'(TLS 박스). 사내망 주소의 `http://…:8088/<id>-mcp/mcp` 403 · https 200 · 이 박스 루프백 8088 은 200 |
+| P-1 | 토큰 화면에서 새로 받은 설정 배치 · 등록 명령의 hwax 연결에 `X-HWAX-Result: ref`(칸과 상관없이 — 보기 머리는 `portal` 그대로). 게이트웨이 `GATEWAY_RESULT_REFS` 가 꺼진 박스에서는 결과가 종전과 같다 |
 | HP-57 | `touch infra/.state/maintenance` 동안 `~/.local/state/hwax/watchdog.log` 에 down/up 줄이 없고 지우면 다시 돈다. update-collab 한 번 도는 동안도 없다 |
 
 ## 2. 사람이 정하는 걸음
