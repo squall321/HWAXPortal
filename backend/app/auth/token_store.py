@@ -174,6 +174,19 @@ class TokenStore:
             for r in rows
         ]
 
+    def sub_for_email(self, email: str) -> str | None:
+        """그 이메일로 낸 사람 PAT 가운데 가장 새것의 sub — 서비스 PAT(system:)는 보지 않는다. 없으면 None.
+        포털이 사람 없이 그 사람의 대화에 쓸 때(엔진 잡을 주인의 대화로 — app/agent/mcp_delib.py) 주인 키를 찾는다. MCP 잡은 그 사람의
+        PAT 로 열렸으니 원장에 그 PAT 의 sub 가 있다."""
+        e = (email or "").strip().lower()
+        if "@" not in e:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT sub FROM pat WHERE lower(email) = ? AND sub NOT LIKE ? ORDER BY created DESC LIMIT 1",
+                (e, SERVICE_SUB_PREFIX + "%")).fetchone()
+        return row[0] if row else None
+
     def service_pats(self) -> list[dict]:
         """서비스 PAT(`/auth/pat/service`)의 메타 — 토큰 자체는 절대 아님. 관리자 전용.
 

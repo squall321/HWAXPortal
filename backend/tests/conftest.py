@@ -48,6 +48,8 @@ os.environ.setdefault("INSIGHT_SYNC_S", "0")
 # 심의 묶음 끝남 알림(docs/request-1117 contracts §7) — 시험이 포털을 띄울 때마다(lifespan) 백그라운드 당기기가 이 박스에 떠 있는 에이전트 서버를
 # backend/.env 의 공유 비밀로 부르지 않게 끈다. 당기기를 보는 시험은 tick 에 Settings · 가짜 엔진을 직접 준다(tests/test_notice_poller.py).
 os.environ.setdefault("DELIB_BATCH_NOTICE_S", "0")
+# MCP 심의 대화 당기기(docs/request-1125 WD-03) — 같은 까닭으로 끈다. 당기기를 보는 시험은 tick 에 Settings · 가짜 엔진을 직접 준다(tests/test_mcp_delib.py).
+os.environ.setdefault("DELIB_CONV_SYNC_S", "0")
 # 이용 통계의 날마다 접기(docs/ops-dashboard M2) — 시험이 포털을 띄울 때마다(lifespan) 백그라운드 접기가 이 박스에 떠 있는 게이트웨이 · 에이전트 서버를
 # backend/.env 의 공유 비밀로 부르거나 이 박스의 정문 로그(infra/data/nginx-access.log)를 읽지 않게 끈다. 접기를 보는 시험은 run_once 에 Settings · HTTP
 # 대역을 직접 준다(tests/test_usage_fold.py). 접는 표는 감사 원장 파일 안이라 위 AGENT_AUDIT_LOG_PATH 격리가 그대로 덮는다(새 경로 설정이 없다).
