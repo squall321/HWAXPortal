@@ -942,7 +942,7 @@
       ],
       "key_tools": ["deliberate_jobs", "deliberate_start", "deliberate_status", "deliberate_result", "deliberate_transcript", "deliberate_continue", "deliberate_list"],
       "writes": ["deliberate_start", "deliberate_continue", "deliberate_batch_start"],
-      "confirm": ["deliberate_cancel", "deliberate_batch_stop"],
+      "confirm": ["deliberate_cancel", "deliberate_batch_stop", "deliberate_save_report"],
       "unlisted_writes": {
         "tools": ["deliberate_batch_status"],
         "why": "주인이 부르면 그때의 그룹을 묶음 원장에 고쳐 적는 부수 기록 — 상태를 보려고 부르는 도구라 확인 카드를 세우지 않는다(MCP 현대화 M2 · 에이전트 서버 7a8187e 표지)"

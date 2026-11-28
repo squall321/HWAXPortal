@@ -388,7 +388,9 @@ _DELIB_TOOLS = ("deliberate_jobs", "deliberate_start", "deliberate_status", "del
                 "deliberate_continue", "deliberate_list", "deliberate_cancel",
                 # 11-17 엔진 DL-01 · DL-02 · DL-04(docs/request-1117) — 묶음 시작 · 상태 · 멈춤, 참조 근거 미리 보기, 원천 대조
                 "deliberate_batch_start", "deliberate_batch_status", "deliberate_batch_stop", "deliberate_resolve_evidence",
-                "deliberate_verify")
+                "deliberate_verify",
+                # 11-28 엔진 WD-09(docs/request-1125) — 엔진 보고서 꼴로 부른 사람 이름의 RA 보고서 저장(웹 챗은 확인 카드)
+                "deliberate_save_report")
 _DELIB_MAP = {"map": dict.fromkeys(_DELIB_TOOLS, "hwax-deliberation"), "areas": {}, "area_meta": [],
               "apps": [{"app": "hwax-deliberation", "label": "HWAX 심의"}]}
 _ENGINE_MCP = _ROOT.parent / "HWAXAgentServer" / "mcp_server.py"
