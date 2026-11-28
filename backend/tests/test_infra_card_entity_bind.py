@@ -154,11 +154,16 @@ def _fake_mcp(monkeypatch, calls):
         monkeypatch.setitem(sys.modules, name, mod)
 
 
-def _fake_aidh(tmp_path, body: str) -> Path:
-    """AIDataHub 리포 흉내 — deploy/apptainer/onto.sh 가 받은 인자 · 사전 파일의 권한을 적고 정해 둔 JSON 을 낸다."""
+def _fake_aidh(tmp_path, body: str, *, per_type: bool = True) -> Path:
+    """AIDataHub 리포 흉내 — deploy/apptainer/onto.sh 가 받은 인자 · 사전 파일의 권한을 적고 정해 둔 JSON 을 낸다.
+    per_type — 잇기가 사전에 든 타입만 다시 쓰는 판(AD-22)의 소스 표지를 둔다(타입 일부만 잇는 시험이 그 판에서만 돈다, HPO-2)."""
     d = tmp_path / "AIDataHub" / "deploy" / "apptainer"
     d.mkdir(parents=True)
     (d / "onto.sh").write_text(body, encoding="utf-8")
+    if per_type:
+        svc = tmp_path / "AIDataHub" / "api_server" / "src" / "api" / "services"
+        svc.mkdir(parents=True)
+        (svc / "onto_svc.py").write_text('type_counts = {}\n', encoding="utf-8")
     return tmp_path / "AIDataHub"
 
 
@@ -257,3 +262,59 @@ def test_token_rules_match_aidatahub_service_letter_for_letter():
     for term in ("IC", "PCB", "균열", "균", "123", "solder joint crack", "a b c d e f g h i"):
         toks = tuple(probe.tokens(term))
         assert ns["term_ok"](toks) is probe.term_ok(toks)
+
+
+
+# ── 타입 일부만 잇기(docs/request-1125 HPO-2) · 연결 0 의 까닭(HPO-3) ──────────────────────────────────────
+def test_앞_판_AIDataHub_에_타입_일부만_주면_잇기_전에_멈춘다(monkeypatch, tmp_path, capsys):
+    """AD-22 앞 판의 잇기는 그 허브의 연결을 통째로 다시 쓴다 — --types part 처럼 일부만 주면 다른 타입 연결이 지워진다."""
+    _env(monkeypatch, [])
+    aidh = _fake_aidh(tmp_path, _OK_SH, per_type=False)
+    for args in (["--types", "failure_mode"], ["--only-types", "failure_mode"]):
+        assert bind.main([*args, "--aidh", str(aidh), "--out", str(tmp_path / "o"), "--sleep", "0"]) == 2
+        err = capsys.readouterr().err
+        assert "다른 타입 연결이 지워진다" in err, err
+    assert not (aidh / "deploy" / "apptainer" / "seen.txt").exists(), "AIDataHub 를 부르지 않았다"
+    assert bind.main(["--types", "failure_mode", "--aidh", str(aidh), "--out", str(tmp_path / "o2"), "--sleep", "0", "--dry-run"]) == 0, \
+        "--dry-run 은 AIDataHub 를 부르지 않으니 된다"
+    assert bind.main(["--types", "a,b", "--only-types", "a", "--aidh", str(aidh)]) == 2 and "하나만" in capsys.readouterr().err
+
+
+_TYPED_SH = _OK_SH.replace('"dictionary": {"terms": 10, "short": 0, "stop": 0, "ambiguous": 0}}}',
+                           '"dictionary": {"terms": 10, "short": 0, "stop": 0, "ambiguous": 0}, "links_by_type": {"failure_mode": 5},'
+                           ' "types": ["failure_mode"], "type_counts": {"failure_mode": {"before": 2, "after": 5, "rewritten": true},'
+                           ' "plm_task": {"before": 7, "after": 7, "rewritten": false}}, "links_hub_total": 12}}')
+
+
+def test_only_types_는_그_타입_사전만_넘기고_타입별_전후를_싣는다(monkeypatch, tmp_path, capsys):
+    calls: list = []
+    _env(monkeypatch, calls)
+    aidh = _fake_aidh(tmp_path, _TYPED_SH)
+    out = tmp_path / "out"
+    assert bind.main(["--only-types", "failure_mode", "--aidh", str(aidh), "--out", str(out), "--sleep", "0"]) == 0
+    assert {t for _n, t in calls} == {"failure_mode"}, "그 타입만 허브에 묻는다"
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert summary["scope"] == "only-types" and summary["bind"]["type_counts"]["plm_task"]["after"] == 7
+    text = capsys.readouterr().out
+    assert "failure_mode" in text and "2 →       5  다시 씀" in text and "7 →       7  그대로" in text and "허브 전체 연결 12" in text, text
+
+
+def test_연결_0_인_타입의_까닭이_요약에_있다(monkeypatch, tmp_path, capsys):
+    """11-23 결합 요약에서 개발모델 · 과제 · 관리 기준이 0 이었다 — 카드에 이름이 없는지 · 허브 쪽인지를 타입별로 적는다(수만)."""
+    _env(monkeypatch, [])
+    aidh = _fake_aidh(tmp_path, _TYPED_SH)
+    out = tmp_path / "out"
+    monkeypatch.setitem(OBJECTS, "criterion", [])
+    assert bind.main(["--types", "failure_mode,test_item,criterion", "--aidh", str(aidh), "--out", str(out), "--sleep", "0"]) == 0
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    z = summary["zero"]
+    assert "failure_mode" not in z, "이어진 타입은 까닭이 없다"
+    assert z["criterion"] == "허브에 그 타입의 객체가 없다"
+    assert z["test_item"].startswith("사전 낱말 3개가 AIDataHub 규칙에서 다 걸러졌다"), z
+    assert "연결 0 — test_item" in capsys.readouterr().out
+    r = {"x": {"objects": 3, "names": 3, "verdicts": {"none": 3}, "problem": ""},
+         "y": {"objects": 3, "names": 3, "verdicts": {"exact": 3}, "problem": ""}}
+    w = bind.zero_reasons(r, [{"type_slug": "y", "key": "K", "term": "t"}], {"written": True, "links_by_type": {}})
+    assert w["x"].startswith("허브가 이름을 하나도 exact 로 확인하지 못했다") and w["y"].startswith("카드 글")
+    assert bind.zero_reasons(r, [], None) == {"x": w["x"]}, "잇지 않았으면 허브 쪽 까닭만"
+    assert "솔더" not in json.dumps(z, ensure_ascii=False)
