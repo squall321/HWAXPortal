@@ -410,6 +410,8 @@ echo 'HWAX_WATCHDOG=1' >> infra/.env      # 줄 끝에 주석을 붙이지 않�
 crontab -l | grep hwax-watchdog           # 한 줄이 나오면 된다
 ```
 
-- **손으로 오래 내릴 때는 감시를 먼저 끈다** — `./infra/scripts/install-watchdog.sh --remove`. 끄지 않으면 일부러 내려 둔 서비스를 감시가 몇 분 안에
-  다시 띄운다. 다 올린 뒤 `./infra/scripts/install-watchdog.sh` 로 다시 건다(`infra/.env` 의 줄이 남아 있으면 다음 update-all 도 다시 건다).
+- **손으로 오래 내릴 때는 표지를 둔다** — `touch infra/.state/maintenance`. 표지가 있는 동안 감시가 손대지 않고, 다 올린 뒤
+  `rm infra/.state/maintenance` 로 거두면 다음 분부터 다시 돈다(11-28 판부터 — docs/request-1125 HP-57). update-all · update-collab · start ·
+  restart · stop · deploy-all 이 도는 동안은 표지 없이도 비켜선다. 그 앞 판에서는 감시를 끄고(`./infra/scripts/install-watchdog.sh --remove`)
+  다 올린 뒤 다시 건다(`./infra/scripts/install-watchdog.sh`).
 - 일이 있을 때만 `~/.local/state/hwax/watchdog.log` 에 `✗ <이름> 죽었다 … → down · up` · `✓ … 복구 성공` 이 남는다.

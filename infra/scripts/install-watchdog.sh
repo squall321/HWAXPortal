@@ -6,6 +6,8 @@
 #
 # 왜: 10-18 07:11 UTC dev 의 earlyoom 이 포털 · 게이트웨이 · mxwp-mcp · searxng 를 내렸고 14시간 아무도 다시 띄우지 않았다
 # (docs/followups-1017 FU-D22 · 사용자 결정 10-19 '감시 보강만'). 판정 · 백오프 · update-all 동안 건너뛰기는 services.py cmd_heal 주석.
+# 손으로 오래 내릴 때 — `touch infra/.state/maintenance` 를 두면 감시가 비켜서고 `rm infra/.state/maintenance` 로 거두면 다시 돈다.
+# update-all · update-collab · start · restart · stop · deploy-all 이 도는 동안도 비켜선다(docs/request-1125 HP-57).
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="$HOME/.local/state/hwax"; LOG="$STATE_DIR/watchdog.log"

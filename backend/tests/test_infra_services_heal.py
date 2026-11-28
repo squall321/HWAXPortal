@@ -35,6 +35,8 @@ def heal(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "WATCH_STATE", tmp_path / "watchdog")
     monkeypatch.setattr(m, "WATCH_RECHECK_S", 0)
     monkeypatch.setattr(m, "_update_all_running", lambda: False)
+    monkeypatch.setattr(m, "_stack_script_running", lambda: None)
+    monkeypatch.setattr(m, "MAINT_MARK", tmp_path / "maintenance")
     monkeypatch.setattr(m, "enabled_here", lambda s: True)
     calls = []
     monkeypatch.setattr(m, "cmd_down", lambda names: calls.append(("down", *names)) or 0)
@@ -123,6 +125,8 @@ def test_llm_status_감시는_LLM_STATUS_를_켠_박스에서만이다(tmp_path,
     monkeypatch.setattr(m, "WATCH_STATE", tmp_path / "watchdog")
     monkeypatch.setattr(m, "WATCH_RECHECK_S", 0)
     monkeypatch.setattr(m, "_update_all_running", lambda: False)
+    monkeypatch.setattr(m, "_stack_script_running", lambda: None)
+    monkeypatch.setattr(m, "MAINT_MARK", tmp_path / "maintenance")
     calls = []
     monkeypatch.setattr(m, "cmd_down", lambda names: calls.append(("down", *names)) or 0)
     monkeypatch.setattr(m, "cmd_up", lambda names: calls.append(("up", *names)) or 0)
@@ -133,3 +137,92 @@ def test_llm_status_감시는_LLM_STATUS_를_켠_박스에서만이다(tmp_path,
     (tmp_path / "infra/.env").write_text(f"LLM_STATUS=1\nLLM_STATUS_PORT={port}\n")
     m.cmd_heal([])
     assert calls == [("down", "llm-status"), ("up", "llm-status")], "켠 박스 — 죽은 수집기를 다시 띄운다"
+
+
+# ── 비켜서기(docs/request-1125 HP-57) — update-collab · start · restart · stop · 손 down 중에도 다시 띄우던 것 ─────────────────────────
+
+
+def test_표지_파일이_있으면_건너뛰고_지우면_다시_돈다(heal):
+    m, svcs, calls = heal
+    port = _closed_port()
+    svcs.append({"name": "gw", "watch": True, "health": f"http://127.0.0.1:{port}/health"})
+    m.MAINT_MARK.write_text("")
+    assert m.cmd_heal([]) == 0 and calls == [], "손으로 내려 둔 동안(표지) 다시 띄우지 않는다"
+    m.MAINT_MARK.unlink()
+    m.cmd_heal([])
+    assert calls == [("down", "gw"), ("up", "gw")], "표지를 거두면 다시 돈다"
+
+
+def test_스택_명령이_돌면_건너뛴다(heal, monkeypatch):
+    m, svcs, calls = heal
+    port = _closed_port()
+    svcs.append({"name": "gw", "watch": True, "health": f"http://127.0.0.1:{port}/health"})
+    monkeypatch.setattr(m, "_stack_script_running", lambda: "update-collab.sh")
+    m.cmd_heal([])
+    assert calls == []
+
+
+def _spawn(cmd, cwd):
+    import subprocess
+    import time
+    p = subprocess.Popen(cmd, cwd=str(cwd))
+    time.sleep(0.3)   # exec 가 끝나 /proc/<pid>/cmdline 이 새 명령줄이 될 때까지
+    return p
+
+
+@pytest.mark.parametrize("name", ["start.sh", "restart.sh", "stop.sh", "update-all.sh", "deploy-all-from-drive.sh"])
+def test_이_리포의_스택_스크립트를_상대_경로로_띄워도_알아본다(tmp_path, monkeypatch, name):
+    """진짜 프로세스로 본다 — `cd infra/scripts && ./stop.sh` 처럼 띄우면 명령줄은 './stop.sh' 뿐이라 cwd 로 풀어야 한다."""
+    m = _mod()
+    scripts = tmp_path / "repo/infra/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / name).write_text("sleep 30\n")
+    monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "repo")
+    assert m._stack_script_running() is None
+    p = _spawn(["bash", f"./{name}"], scripts)
+    try:
+        assert m._stack_script_running() == name
+    finally:
+        p.kill()
+        p.wait()
+    assert m._stack_script_running() is None
+
+
+def test_다른_리포의_같은_이름_스크립트로는_비켜서지_않는다(tmp_path, monkeypatch):
+    """에이전트 서버 ./start.sh 같은 다른 리포의 start.sh 가 돌 때마다 감시가 멈추면 안 된다."""
+    m = _mod()
+    (tmp_path / "repo/infra/scripts").mkdir(parents=True)
+    other = tmp_path / "HWAXAgentServer"
+    other.mkdir()
+    (other / "start.sh").write_text("sleep 30\n")
+    monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "repo")
+    p = _spawn(["bash", "./start.sh"], other)
+    try:
+        assert m._stack_script_running() is None
+    finally:
+        p.kill()
+        p.wait()
+
+
+def test_update_collab_은_자리를_몰라_이름으로_본다(tmp_path, monkeypatch):
+    m = _mod()
+    (tmp_path / "repo/infra/scripts").mkdir(parents=True)
+    ops = tmp_path / "ops"
+    ops.mkdir()
+    (ops / "update-collab.sh").write_text("sleep 30\n")
+    monkeypatch.setattr(m, "PORTAL_ROOT", tmp_path / "repo")
+    p = _spawn(["bash", str(ops / "update-collab.sh")], ops)
+    try:
+        assert m._stack_script_running() == "update-collab.sh"
+    finally:
+        p.kill()
+        p.wait()
+
+
+def test_db_sync_적용을_막는_판정은_update_all_만이다():
+    """표지 · start.sh 를 _update_all_running 에 섞으면 db-sync 적용이 손 점검 중에 막힌다 — 판정을 둘로 둔다."""
+    import ast
+    src = (ROOT / "infra/scripts/services.py").read_text()
+    fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "_update_all_running")
+    body = ast.get_source_segment(src, fn)
+    assert "MAINT_MARK" not in body and "_stack_script_running" not in body
