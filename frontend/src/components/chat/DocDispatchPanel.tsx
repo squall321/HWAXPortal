@@ -5,19 +5,23 @@ import {
   type StagedFile,
 } from '../../api/upload.api';
 import { dispatchInstruction, dispatchNotice, reportLink, type UploadNotice } from './uploadNotice';
+import { FIGURES_UNREAD_NOTE, figureLabel, figureStats } from './docAttach';
 
 const SPEC: Record<string, { title: string; note: string; go: string }> = {
   chat: {
     title: '이 대화에서 분석',
     // 저장하지 않는다 — AI 데이터 허브 변환기로 읽어 온 글을 입력창의 문서 칩으로 붙인다(docs/chat-ppt PP-D17).
     note: '글 · 표 · 차트 데이터 · 발표자 노트를 읽어 입력창에 문서로 붙입니다. 어디에도 저장하지 않습니다. '
-      + '그림 내용은 아직 글로 옮기지 않습니다(그림이 있던 자리만 표시).',
+      + '그림은 모델이 읽어 \'모델 판독\' 으로 붙입니다(서버 설정에 따라 꺼져 있으면 그림이 있던 자리만) — 붙인 뒤 그림 · 판독 수를 알립니다.',
     go: '읽어서 붙이기',
   },
   reportarchive: {
     title: 'Report Archive 로 보내기',
     // RA 의 /imports/pptx 를 그대로 쓴다 — 포털에 파서를 새로 만들지 않는다.
-    note: '슬라이드 한 장이 보고서 페이지 한 장이 됩니다. 제목·본문·표·그림이 위젯으로 들어갑니다. '
+    // 이 길은 그림 파일 · 글 · 표만 옮긴다 — 그림 내용(판독) · 차트 개체 · 발표자 노트 · 그림으로 채운 도형은 빠진다(시험한 네 길 가운데 가장 많이
+    // 빠짐 — docs/request-1125 IR-06). RA 가져오기(IR-42)가 바뀌면 이 문구를 다시 맞춘다.
+    note: '슬라이드 한 장이 보고서 페이지 한 장이 됩니다. 제목 · 본문 · 표와 그림 파일이 위젯으로 들어갑니다 — '
+      + '그림 내용(판독) · 차트 개체 · 발표자 노트 · 그림으로 채운 도형은 빠집니다. 그런 덱이면 \'정밀 변환\' 이 낫습니다. '
       + '초안으로 만들어지니 확인하고 저장·게시하세요.',
     go: '보고서 초안 만들기',
   },
@@ -138,6 +142,10 @@ export function DocDispatchPanel({
   const go = async () => {
     setBusy(true); setErr('');
     try {
+      if (destination === 'chat' && staged.locked) {
+        // DRM 으로 잠긴 문서 — 서버는 암호화된 바이트만 본다(WD-11). 보내지 않고 PC 도우미 길을 알린다(서버도 같은 판정으로 막는다).
+        throw new Error('변환 못 함 — DRM 으로 잠긴 파일입니다. 입력창의 문서 붙이기에서 \'PC 의 PowerPoint(Word) 로 열어 가져오기\' 를 쓰면 이 PC 의 Office 가 열어 글을 붙입니다.');
+      }
       const r = await dispatchUpload({
         staging_id: staged.staging_id, filename: staged.filename, destination,
       });
@@ -178,6 +186,9 @@ export function DocDispatchPanel({
   };
 
   if (done && destination === 'chat') {
+    // 그림이 빠졌다는 말이 없으면 사람은 그림까지 읽혔다고 믿는다(docs/request-1125 IR-03 — 처음 신고된 증상이 이것이다)
+    const figs = figureStats(done.doc?.text ?? '');
+    const figLine = figureLabel(figs);
     return (
       <div className="upl-panel">
         <div className="upl-head">
@@ -186,8 +197,16 @@ export function DocDispatchPanel({
           <button type="button" className="upl-x" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         <p className="upl-note">
-          글 <b>{(done.doc?.chars ?? 0).toLocaleString()}</b>자를 문서로 붙였습니다 — 이제 물어보세요. 어디에도 저장하지 않았습니다.
+          글 <b>{(done.doc?.chars ?? 0).toLocaleString()}</b>자를 문서로 붙였습니다{figLine ? <> · {figLine}</> : null} — 이제 물어보세요.
+          어디에도 저장하지 않았습니다.
         </p>
+        {figs.figures > 0 && figs.read === 0 && <p className="upl-note" role="status">⚠ {FIGURES_UNREAD_NOTE}</p>}
+        {figs.missed.length > 0 && (
+          <details className="upl-note">
+            <summary>읽지 못한 것 {figs.missed.length}건</summary>
+            <ul>{figs.missed.slice(0, 20).map((w) => <li key={w}>{w}</li>)}</ul>
+          </details>
+        )}
       </div>
     );
   }

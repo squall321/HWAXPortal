@@ -137,8 +137,9 @@ export function DocExtractHint({ filename, encrypted, onClose, onAttach, onStage
           <b>이 파일은 이 PC 에서 평문으로 읽힙니다</b> — 첫 바이트가 정상 문서 형식입니다.
           그러면 추출기가 필요 없습니다.
           <a href="/report-archive/" target="_blank" rel="noreferrer"> Report Archive</a> 의
-          <b> PPT에서 불러오기</b> 로 올리면 서버가 직접 읽어 <b>그림·표까지</b> 보고서로
-          만들어 줍니다(여기 추출은 글만 갑니다). 그래도 글만 빠르게 보고 싶으면 아래로 진행하세요.
+          <b> PPT에서 불러오기</b> 로 올리면 서버가 직접 읽어 <b>표와 그림 파일까지</b> 보고서로
+          만들어 줍니다(여기 추출은 글만 갑니다 — 다만 그림 내용 · 차트 개체 · 발표자 노트 · 그림 채움 도형은 빠지니, 그런 덱이면 챗에 올려
+          '정밀 변환' 으로 보내는 편이 낫습니다). 그래도 글만 빠르게 보고 싶으면 아래로 진행하세요.
         </p>
       ) : (
         <p className="doc-hint-alt">
@@ -146,7 +147,7 @@ export function DocExtractHint({ filename, encrypted, onClose, onAttach, onStage
             ? '이 파일은 암호화돼 있거나 구형 형식입니다 — 서버가 열지 못합니다. 아래 방법이 맞습니다.'
             : '형식을 단정하지 못했습니다. 서버가 못 읽으면 아래 방법으로 진행하세요.'}
           {' '}DRM 이 안 걸린 자료라면 <a href="/report-archive/" target="_blank" rel="noreferrer">Report Archive</a> 의
-          <b> PPT에서 불러오기</b> 가 그림까지 넣어 주므로 그쪽이 낫습니다.
+          <b> PPT에서 불러오기</b> 가 표와 그림 파일까지 넣어 주므로 그쪽이 낫습니다(그림 내용 · 차트 개체 · 발표자 노트는 빠집니다 — 그런 덱이면 정밀 변환).
         </p>
       )}
       <p className="doc-hint-why">

@@ -24,7 +24,7 @@ import { IconFile, IconPlus, IconSend, IconStop, IconUser } from './icons';
 import { useAuth } from '../../auth/useAuth';
 import { useCan } from '../../auth/useCan';
 import { canUpload, fetchUploadExts, uploadFile, type StagedFile, type DocforgeJob } from '../../api/upload.api';
-import { classify, extOf, readDoc, kindLabel, unitsLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
+import { classify, extOf, readDoc, kindLabel, unitsLabel, figureLabel, isEncryptedOffice, DOC_MAX } from './docAttach';
 import { IMAGES_MAX, isImageFile, readImage, type AttachedImage } from './imageAttach';
 import { DocExtractHint } from './DocExtractHint';
 import { DocActions } from './DocActions';
@@ -565,11 +565,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             <span
               key={`${d.name}-${i}`}
               className="doc-chip"
-              title={`${d.chars.toLocaleString()}자`}
+              title={[`${d.chars.toLocaleString()}자`, ...(d.figs?.missed ?? []).slice(0, 8)].join('\n')}
             >
               <IconFile className="ico" width={14} height={14} /> {d.name}
               <em>
-                {[kindLabel(d.meta), unitsLabel(d.meta), `${d.chars.toLocaleString()}자`]
+                {[kindLabel(d.meta), unitsLabel(d.meta), `${d.chars.toLocaleString()}자`, figureLabel(d.figs)]
                   .filter(Boolean)
                   .join(' · ')}
               </em>
