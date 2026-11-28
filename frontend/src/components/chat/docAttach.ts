@@ -56,7 +56,47 @@ export interface AttachedDoc {
   meta?: DocMeta;
   /** 원문이 상한을 넘어 잘렸나. */
   truncated: boolean;
+  /** 그림 · 판독 · 읽지 못한 것 셈(docs/request-1125 IR-03) — 붙일 때 한 번 센다. */
+  figs?: FigureStats;
 }
+
+/** 붙인 글의 그림 셈 — 그림까지 읽혔다고 믿지 않게 칩 · 완료 문구에 보인다(docs/request-1125 IR-03).
+ *  figures = '[그림 N]' 줄 · read = 그 그림 바로 뒤(빈 줄 전)에 '모델 판독' 줄이 있는 것 · missed = 머리의 '변환 경고' 목록(DocForge 가 담지 못한
+ *  도형 · TIFF · 그림 채움 …을 그대로 적는다). DocForge(textdoc) · AI 데이터 허브 변환(upload.record_markdown) · PC 추출기 글이 같은 꼴이다. */
+export interface FigureStats {
+  figures: number;
+  read: number;
+  missed: string[];
+}
+
+export function figureStats(text: string): FigureStats {
+  const lines = text.split('\n');
+  let figures = 0;
+  let read = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\[그림 \d+\]/.test(lines[i])) continue;
+    figures++;
+    for (let j = i + 1; j < lines.length && lines[j].trim() !== '' && !/^\[그림 \d+\]/.test(lines[j]); j++) {
+      if (lines[j].includes('모델 판독')) { read++; break; }
+    }
+  }
+  const missed: string[] = [];
+  const w = lines.findIndex((l) => l.trim() === '> **변환 경고**');
+  if (w >= 0) {
+    for (let j = w + 1; j < lines.length && lines[j].startsWith('> - '); j++) missed.push(lines[j].slice(4).trim());
+  }
+  return { figures, read, missed };
+}
+
+/** 칩 · 완료 문구의 한 줄 — 그림도 경고도 없으면 빈 글(표시하지 않는다). */
+export function figureLabel(f: FigureStats | undefined): string {
+  if (!f || (!f.figures && !f.missed.length)) return '';
+  return [`그림 ${f.figures}`, `판독 ${f.read}`, ...(f.missed.length ? [`읽지 못한 것 ${f.missed.length}`] : [])].join(' · ');
+}
+
+/** 판독이 하나도 없는데 그림이 있으면 — 사람이 그림까지 읽혔다고 믿지 않게(IR-03 의 문구 그대로). */
+export const FIGURES_UNREAD_NOTE =
+  '그림은 읽지 않았습니다 — 그림이 중요하면 슬라이드 캡처를 붙이거나 정밀 변환으로 보내세요.';
 
 export interface DocMeta {
   schema?: string;
@@ -128,7 +168,7 @@ export async function readDoc(file: File): Promise<AttachedDoc> {
   const truncated = raw.length > DOC_CHARS_MAX;
   const text = truncated ? raw.slice(0, DOC_CHARS_MAX) : raw;
   if (!text.trim()) throw new Error(`${file.name} — 글자가 없습니다.`);
-  return { name: file.name, text, chars: text.length, meta: parseMeta(text), truncated };
+  return { name: file.name, text, chars: text.length, meta: parseMeta(text), truncated, figs: figureStats(text) };
 }
 
 /** 붙인 문서를 심의 사전 근거 항목으로. 도구 결과와 같은 채널을 쓴다 —

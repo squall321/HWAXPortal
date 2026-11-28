@@ -16,6 +16,11 @@ AIDataHub 는 게이트웨이를 모른다. LLM 은 부르지 않는다. 같은 
   export HWAX_GATEWAY_PAT=<포털 /auth/pat 로 발급한 PAT>     # 그 사람의 권한으로 허브를 읽는다
   $PY infra/scripts/card-entity-bind.py --dry-run             # 사전만 짓고 수를 본다(AIDataHub 를 부르지 않는다)
   $PY infra/scripts/card-entity-bind.py                       # 잇는다 — 결과는 infra/.state/card-entity-bind/<시각>/summary.json
+  $PY infra/scripts/card-entity-bind.py --only-types part     # 그 타입만 다시 잇는다 — 다른 타입 연결은 그대로(docs/request-1125 HPO-2)
+
+타입 일부만 잇기(--only-types, 또는 기본 타입보다 적은 --types)는 AIDataHub 의 잇기가 사전에 든 타입의 연결만 다시 쓰는 판(AIDataHub AD-22 —
+답에 type_counts)에서만 돈다. 앞 판은 그 허브의 연결을 타입과 상관없이 통째로 다시 써서, 한 타입만 주면 다른 타입 연결(11-23 345,344줄)이 지워진다 —
+그 판이면 「다른 타입 연결이 지워진다」 를 찍고 잇기 전에 멈춘다(끝 코드 2). 요약에 타입별 전후 연결 수와 연결이 0 인 타입의 까닭(HPO-3)을 싣는다.
 
 끝 코드 — 0 이었다 · 2 준비 실패(mcp 모듈 · PAT · 허브 도구 · AIDataHub 명령이 없다 — 까닭을 찍는다) · 3 이었지만 실패한 타입 · 호출이 있다 ·
 4 사전이 비어 잇지 않았다(연결은 그대로 둔다) · 5 AIDataHub 명령이 실패했다(쓴 것이 없다).
@@ -38,6 +43,42 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 BIND_VERSION = "bind-1"
 HUB_TOOLS = ("objects_list", "objects_resolve_many")
+# AIDataHub 잇기가 사전에 든 타입의 연결만 다시 쓰는 판의 표지 — 그 판의 답 칸 이름(AIDataHub AD-22). onto.sh 는 리포 소스(api.scripts.onto)로 돈다
+PER_TYPE_MARK = "type_counts"
+
+
+def per_type_bind(aidh: Path) -> bool:
+    """이 AIDataHub 의 잇기가 타입별로 다시 쓰는가(AD-22) — 리포 소스에 그 판의 답 칸이 있는가로 본다(onto.sh 가 그 소스로 돈다)."""
+    try:
+        return PER_TYPE_MARK in (aidh / "api_server" / "src" / "api" / "services" / "onto_svc.py").read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def zero_reasons(report: dict, entries: list[dict], bind: dict | None) -> dict[str, str]:
+    """연결이 0 인 타입마다 까닭(HPO-3) — 허브 쪽(객체 · exact)인지, 사전 낱말이 다 걸러졌는지, 카드 글에 그 이름이 없는지. 수만 쓴다."""
+    terms = Counter(e["type_slug"] for e in entries)
+    by_type = (bind or {}).get("links_by_type") or {}
+    scope = (bind or {}).get("types")                 # AD-22 판 — 맞출 낱말이 남아 다시 쓴 타입
+    out: dict[str, str] = {}
+    for t, info in report.items():
+        if by_type.get(t):
+            continue
+        v = info.get("verdicts") or {}
+        if info.get("problem") and not info.get("objects"):
+            why = f"허브에서 받지 못했다 — {info['problem']}"
+        elif not info.get("objects"):
+            why = "허브에 그 타입의 객체가 없다"
+        elif not v.get("exact"):
+            why = "허브가 이름을 하나도 exact 로 확인하지 못했다(" + " · ".join(f"{k} {n}" for k, n in v.items()) + ")"
+        elif not bind or not bind.get("written"):
+            continue                                   # 잇지 않았다(--dry-run · 실패) — 0 은 까닭이 아니다
+        elif isinstance(scope, list) and t not in scope:
+            why = f"사전 낱말 {terms.get(t, 0)}개가 AIDataHub 규칙에서 다 걸러졌다(짧음 · 뺄 낱말 · 겹침) — 그 타입 연결은 다시 쓰지 않았다"
+        else:
+            why = f"카드 글(낱말 · 제목 · 요약 · 절)에 사전 낱말 {terms.get(t, 0)}개가 하나도 나오지 않는다"
+        out[t] = why
+    return out
 
 
 def _probe():
@@ -163,6 +204,7 @@ def summary_text(summary: dict) -> str:
     bind = summary.get("bind")
     if not bind:
         lines.append("  (잇지 않았다 — " + summary.get("why", "--dry-run") + ")")
+        lines += [f"  연결 0 — {t}: {why}" for t, why in (summary.get("zero") or {}).items()]
         return "\n".join(lines)
     if not bind.get("written"):
         lines.append(f"  AIDataHub — 쓰지 않았다: {bind.get('why', '')}")
@@ -176,6 +218,15 @@ def summary_text(summary: dict) -> str:
         lines.append(f"  {doc or '(종류 없음)':24s} {n['linked']:>6} / {n['total']:>6}  {share:5.1f}%")
     d = bind.get("dictionary") or {}
     lines.append(f"  사전 — 쓴 낱말 {d.get('terms', 0)} · 짧아서 뺌 {d.get('short', 0)} · 뺄 낱말 {d.get('stop', 0)} · 겹쳐서 뺌 {d.get('ambiguous', 0)}")
+    tc = bind.get("type_counts") or {}
+    if tc:                                             # AIDataHub AD-22 판 — 타입별 전후(HPO-2)
+        lines.append("  타입별 연결(전 → 후)")
+        for t, n in tc.items():
+            lines.append(f"    {t:22s} {n.get('before', 0):>7} → {n.get('after', 0):>7}  {'다시 씀' if n.get('rewritten') else '그대로'}")
+        if "links_hub_total" in bind:
+            lines.append(f"    허브 전체 연결 {bind['links_hub_total']}")
+    for t, why in (summary.get("zero") or {}).items():
+        lines.append(f"  연결 0 — {t}: {why}")
     return "\n".join(lines)
 
 
@@ -183,7 +234,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="카드 ↔ 허브 객체 잇기(허브 읽기 둘 + AIDataHub onto.sh bind)")
     ap.add_argument("--gateway", default=os.environ.get("HWAX_GATEWAY_URL", "http://127.0.0.1:9110/mcp"))
     ap.add_argument("--token-env", default="HWAX_GATEWAY_PAT", help="PAT 를 담은 환경변수 이름")
-    ap.add_argument("--types", default="", help="허브 타입 슬러그,… (기본 core_vocab types)")
+    ap.add_argument("--types", default="", help="허브 타입 슬러그,… (기본 core_vocab types — 그보다 적으면 AIDataHub AD-22 판에서만)")
+    ap.add_argument("--only-types", default="", help="이 타입만 다시 잇는다 — 다른 타입 연결은 그대로(AIDataHub 가 타입별로 다시 쓰는 판에서만, HPO-2)")
     ap.add_argument("--aidh", default=str(ROOT.parent / "AIDataHub"), help="AIDataHub 리포 자리(기본 형제 폴더)")
     ap.add_argument("--max-objects", type=int, default=50000, help="타입당 받을 객체 상한")
     ap.add_argument("--sleep", type=float, default=0.05, help="호출 사이 쉼(초)")
@@ -203,7 +255,19 @@ def main(argv: list[str] | None = None) -> int:
     probe = _probe()
     vocab = probe.load_core_vocab()
     hub = ((vocab.get("canonical") or {}).get("app") or "").strip()
-    types = [t.strip() for t in a.types.split(",") if t.strip()] or sorted(set((vocab.get("types") or {}).values()))
+    defaults = sorted(set((vocab.get("types") or {}).values()))
+    given = [t.strip() for t in a.types.split(",") if t.strip()]
+    only = [t.strip() for t in a.only_types.split(",") if t.strip()]
+    if given and only:
+        print("✗ --types 와 --only-types 는 하나만 준다", file=sys.stderr)
+        return 2
+    types = only or given or defaults
+    dropped = sorted(set(defaults) - set(types))
+    if (only or dropped) and not a.dry_run and not per_type_bind(Path(a.aidh)):
+        print("✗ 다른 타입 연결이 지워진다 — 이 AIDataHub 의 잇기는 그 허브의 연결을 타입과 상관없이 통째로 다시 쓴다(AIDataHub AD-22 앞 판)."
+              + (f" 기본 타입 가운데 빠진 것: {', '.join(dropped)}." if dropped else "")
+              + " --types 없이 전부 잇거나, AIDataHub 를 타입별로 다시 쓰는 판으로 받은 뒤 다시(--dry-run 은 된다)", file=sys.stderr)
+        return 2
     try:
         tmap = probe._tools_map(a.gateway, token)
     except Exception as exc:  # noqa: BLE001
@@ -239,7 +303,8 @@ def main(argv: list[str] | None = None) -> int:
 
     entries, report, calls, failures = asyncio.run(go())
     summary: dict[str, Any] = {"version": BIND_VERSION, "hub": hub, "types": report, "entries": len(entries),
-                               "dict_version": dict_version(entries), "calls": calls, "call_failures": failures}
+                               "dict_version": dict_version(entries), "calls": calls, "call_failures": failures,
+                               "scope": "only-types" if (only or dropped) else "all"}
     rc = 3 if failures or any(i["problem"] for i in report.values()) else 0
     dict_path = out_dir / "dict.json"
     if not entries:
@@ -263,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             summary["bind"] = bound.get("bind") or {}
             summary["mentions"] = bound.get("mentions") or {}
+    summary["zero"] = zero_reasons(report, entries, summary.get("bind"))
     summary["seconds"] = round(time.time() - t0, 1)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")

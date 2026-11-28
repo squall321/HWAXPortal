@@ -30,7 +30,13 @@ export function UploadRouter({ staged, onClose, onFill, onDispatched, onAttachDo
   // 되돌리기 어려운 일에서 그 어긋남은 위험하다. 그래서 하나여도 고르게 한다.
   const [picked, setPicked] = useState<string>('');
   // 지금 고른 전문가가 그 앱의 운영자면 그쪽을 추천으로 앞세운다(고르는 건 여전히 사람).
-  const rec = dests.find((d) => (DEST_APPS[d.id] ?? []).some((a) => pinnedApps.includes(a)))?.id;
+  const recApp = dests.find((d) => (DEST_APPS[d.id] ?? []).some((a) => pinnedApps.includes(a)))?.id;
+  // 그림 · 차트 · 노트가 있는 덱이면 정밀 변환을 앞에 둔다 — 'Report Archive 로 보내기' 는 그 셋을 뺀다(docs/request-1125 IR-06). 고르는 건 사람이다.
+  const f = staged.doc_features;
+  const rich = !!f && (f.charts > 0 || f.notes > 0 || f.pictures > 0);
+  const both = dests.some((d) => d.id === 'reportarchive') && dests.some((d) => d.id === 'reportarchive_precise');
+  const recRich = rich && both ? 'reportarchive_precise' : undefined;
+  const rec = recApp ?? recRich;
 
   if (dests.length === 0) {
     return (
@@ -65,12 +71,25 @@ export function UploadRouter({ staged, onClose, onFill, onDispatched, onAttachDo
                 className={d.id === rec ? 'upl-go upl-rec' : 'upl-go'}
                 title={over ? `한도 ${mb(d.max_bytes!)} MB 를 넘습니다(${mb(staged.size)} MB)` : undefined}
                 onClick={() => setPicked(d.id)}>
-                {d.label}{d.id === rec && <em> · 지금 전문가</em>}
+                {d.label}{d.id === rec && <em> · {rec === recApp ? '지금 전문가' : '권함'}</em>}
                 {over && <em> · 한도 {mb(d.max_bytes!)} MB 넘음</em>}
               </button>
             );
           })}
         </div>
+        {both && (
+          <p className="upl-note">
+            두 Report Archive 길의 차이 — <b>정밀 변환</b>은 배치 · 표 · 차트 값 · 발표자 노트를 옮기고 그림을 모델이 읽어 붙이며 담지 못한 것을 알립니다.
+            {' '}<b>Report Archive 로 보내기</b>는 글 · 표 · 그림 파일만 옮기고 그림 내용 · 차트 개체 · 발표자 노트 · 그림 채움 도형은 뺍니다.
+            {rich && f ? <> 이 파일 — {[f.charts ? `차트 ${f.charts}` : '', f.notes ? `노트 ${f.notes}쪽` : '', f.pictures ? `그림 ${f.pictures}` : '']
+              .filter(Boolean).join(' · ')} — 정밀 변환을 권합니다.</> : null}
+          </p>
+        )}
+        {staged.locked && (
+          <p className="upl-note" role="alert">
+            ⚠ DRM 으로 잠긴 파일입니다 — 서버는 암호화된 바이트만 봅니다. 입력창의 문서 붙이기에서 PC 의 Office 로 열어 가져오세요.
+          </p>
+        )}
         {dests.some((d) => d.max_bytes && staged.size > d.max_bytes) && (
           <p className="upl-note">
             {mb(staged.size)} MB 라 한도가 있는 곳으로는 보낼 수 없습니다 — 사진을 압축하거나 나눠 보내거나, 한도가 없는 곳(AI 데이터 허브 등)으로 보내세요.

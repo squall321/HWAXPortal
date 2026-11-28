@@ -371,7 +371,10 @@ def test_ontology_lookup_꼴():
         slots = {m for v in row["args"].values() if isinstance(v, str) for m in re.findall(r"\{([a-z_]+)\}", v)}
         assert slots and slots <= {"type_slug", "key", "name", "object_id"}, (key, slots)
         if "types" in row:
-            assert row["types"] and set(row["types"]) <= set(d["types"].values()), (key, row["types"])
+            # 정본 어휘표에 없는 slug(mechanism · plm_model_code …)도 된다 — type 인자로 그 slug 를 직접 준 조회에 맞는다(게이트웨이 _onto_pick ·
+            # _onto_lookup_rows 와 같은 꼴, docs/request-1125 HPO-1). 어휘표 types 에 든 slug 는 적어도 하나 — 낱말 조회에도 맞게.
+            assert row["types"] and all(re.fullmatch(r"[a-z0-9_]{1,80}", t) for t in row["types"]), (key, row["types"])
+            assert set(row["types"]) & set(d["types"].values()), (key, row["types"])
     sib = {k for k, a in d["apps"].items() if a["role"] == "sibling"}
     assert sib <= set(lk), f"형제 허브 {sorted(sib - set(lk))} 가 lookup 에 없다 — 형제는 key 로 다시 푼다"
     assert lk["heax-step_forge"]["args"].get("resolve") is True, "StepForge 는 판정(resolve)을 받는다 — 목록 첫 줄을 고르지 않는다(OF-34)"
@@ -391,3 +394,20 @@ def test_ontology_lookup_을_게이트웨이가_같은_차례로_읽는다():
     rows = parse(d)["onto_lookup"]
     assert [r[0] for r in rows] == list(d["ontology"]["lookup"]), "어휘표 차례 그대로 · 한 줄도 버리지 않는다"
     assert all(r[1] == d["ontology"]["lookup"][r[0]]["tool"] and r[2] == d["ontology"]["lookup"][r[0]]["args"] for r in rows)
+
+
+
+def test_HPO1_HPO4_HP82_운영_박스_덧씌우기에서_옮긴_줄():
+    """cae00 박스 덧씌우기(core_vocab.local.json)에만 있던 값을 저장소로 옮긴다(docs/request-1125 HPO-1 · HPO-4 · HP-82) — 들어오면 운영 쪽이 박스
+    파일의 그 줄을 걷는다. 고장모드 key 의 다음 호출 7줄 · 과제코드 9줄(요청서의 확인 수)이 기본 표만으로 나온다."""
+    d = _load()
+    assert d["apps"]["mountsoldatahub"] == {"role": "sibling", "label": "실장솔루션 Datahub"}
+    assert d["apps"]["ncdevdatahub"] == {"role": "sibling", "label": "NC개발팀 Datahub"}
+    assert d["types"]["부품"] == "part"
+    lk = d["ontology"]["lookup"]
+    assert lk["odb-hub"] == {"tool": "find_job", "args": {"query": "{key}"}, "types": ["plm_project", "plm_task", "plm_model_code"]}
+    assert lk["fmea"]["tool"] == "find_cases_by_hub_name_tool" and lk["fmea"]["args"] == {"names": "{key}"}
+    assert lk["arp"] == {"tool": "list_analyses", "args": {"model": "{key}"}, "types": ["plm_project", "plm_task", "plm_model_code"]}
+    takes = lambda slug: [k for k, r in lk.items() if "types" not in r or slug in r["types"]]  # noqa: E731
+    assert len(takes("failure_mode")) == 7 and len(takes("plm_task")) == 9, (takes("failure_mode"), takes("plm_task"))
+    assert isinstance(lk["failuretrace"], dict), "목록 꼴(HP-82 ②)은 게이트웨이가 받는 판(OL-6) 뒤 — 지금 게이트웨이는 목록 줄을 통째로 버린다"

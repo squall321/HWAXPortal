@@ -731,6 +731,9 @@ def cmd_down(names: list[str]) -> int:
 # HTTP 오류는 죽음이 아니다(바쁜 에이전트 서버를 다시 띄우면 도는 심의가 끊긴다). 고치는 길은 매니페스트의 down(stop) → up 이다 —
 # 인스턴스만 남고 앱이 죽은 포털도 stop 이 인스턴스를 내려 up 이 새로 띄운다. update-all 이 도는 동안은 건너뛴다(잠금은 잡지 않는다 —
 # 잡으면 막 시작하려던 update-all 을 막는다). 서비스마다 백오프 — 복구 뒤 10분, 다시 죽으면 두 배(상한 1시간), 산 것을 보면 푼다.
+# 비켜서기(docs/request-1125 HP-57) — update-all 말고도 update-collab · start · restart · stop · deploy-all 이 도는 동안, 그리고 표지 파일
+# infra/.state/maintenance 가 있는 동안은 손대지 않는다. cae00 은 11-01 에 감시를 켰고 그 뒤 일부러 내린 서비스가 1분 안에 다시 떴다.
+# 손으로 오래 내릴 때 — `touch infra/.state/maintenance` 로 두고, 다 올린 뒤 `rm infra/.state/maintenance` 로 거둔다.
 WATCH_STATE = Path(os.environ.get("HWAX_WATCH_STATE") or (Path.home() / ".local/state/hwax/watchdog"))
 WATCH_RECHECK_S = float(os.environ.get("HWAX_WATCH_RECHECK_S") or 5)
 WATCH_TRIES = 3
@@ -753,7 +756,7 @@ def _refused(url: str) -> bool | None:
 
 
 def _update_all_running() -> bool:
-    """update-all 이 도는가 — 잠금을 잡아 보지 않고 프로세스 명령줄로만 본다."""
+    """update-all 이 도는가 — 잠금을 잡아 보지 않고 프로세스 명령줄로만 본다(db-sync 적용도 이것으로 막는다)."""
     me = os.getpid()
     for p in Path("/proc").iterdir():
         if not p.name.isdigit() or int(p.name) == me:
@@ -766,6 +769,49 @@ def _update_all_running() -> bool:
     return False
 
 
+MAINT_MARK = PORTAL_ROOT / "infra" / ".state" / "maintenance"
+# 이 리포 infra/scripts 의 것만 — 이름만 보면 다른 리포의 start.sh · stop.sh 가 돌 때도 비켜선다(에이전트 서버 ./start.sh 등)
+_MAINT_SCRIPTS = ("update-all.sh", "start.sh", "restart.sh", "stop.sh", "deploy-all-from-drive.sh")
+# cae00 운영 스크립트 — 이 리포의 추적 파일이 아니라 자리를 모른다(docs/ext-connect EC-D14). 이름으로만 본다
+_MAINT_ANY = ("update-collab.sh",)
+
+
+def _stack_script_running() -> str | None:
+    """비켜설 스택 명령이 도는가 — 그 이름, 없으면 None. 상대 경로로 띄운 것은 그 프로세스의 cwd 로 풀어 이 리포의 것인지 본다."""
+    scripts = (PORTAL_ROOT / "infra" / "scripts").resolve()
+    me = os.getpid()
+    for p in Path("/proc").iterdir():
+        if not p.name.isdigit() or int(p.name) == me:
+            continue
+        try:
+            raw = (p / "cmdline").read_bytes()
+        except OSError:
+            continue
+        for a in raw.split(b"\0")[:3]:             # 해석기 · 스크립트 · (env 를 거친 경우) 하나 더
+            arg = a.decode(errors="replace")
+            name = os.path.basename(arg)
+            if name in _MAINT_ANY:
+                return name
+            if name not in _MAINT_SCRIPTS:
+                continue
+            try:
+                path = Path(arg) if os.path.isabs(arg) else Path(os.readlink(p / "cwd")) / arg
+                if path.resolve() == scripts / name:
+                    return name
+            except OSError:
+                continue
+    return None
+
+
+def _maintenance() -> str | None:
+    """감시가 비켜설 까닭(표지 파일 · update-all · 다른 스택 명령), 없으면 None."""
+    if MAINT_MARK.exists():
+        return f"표지 {MAINT_MARK}"
+    if _update_all_running():
+        return "update-all.sh"
+    return _stack_script_running()
+
+
 def cmd_heal(names: list[str]) -> int:
     """죽은 `watch: true` 서비스를 down · up 한다. 아무 일 없으면 아무것도 찍지 않는다(크론 로그가 매분 쌓이지 않게)."""
     stamp = lambda: time.strftime("%F %T")  # noqa: E731
@@ -775,7 +821,7 @@ def cmd_heal(names: list[str]) -> int:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         return 0                                   # 앞 회차가 아직 복구 중이다
-    if _update_all_running():
+    if _maintenance():
         return 0
     rc = 0
     for s in load():

@@ -162,7 +162,7 @@ set_remote() {  # $1=envfile  $2=KEY  $3=path
 
 WANT="${*:-portal mxwp heax aidh signalforge kooremapper}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
-hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
+hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m [%s]\n' "$*" "$(date +%T)"; }   # 꼬리 시각 — SE-9(docs/request-1125)
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # skip 은 노란 경고만 찍고 끝났고, 스크립트 마지막이 echo 라 종료코드는 늘 0 이었다.
 # 그래서 update-all 의 `|| echo "⚠ deploy-all 일부 실패"` 가 실행될 수 없었다(18곳이 이걸 탄다).
@@ -472,8 +472,27 @@ if want signalforge; then
       elif [ -x scripts/drive-sync/merge-from-drive.sh ]; then
         # dev 가 backup-to-drive 로 올린 덤프가 있으면 병합(없으면 조용히 생략=보존).
         # dev 검증: insert/멱등/additive 무손실(363k행), cae00 축적분·미참조행 안전.
-        echo "  · DB MERGE(비파괴) — dev 신규 VOC 반영 + cae00 축적 유지"
-        bash scripts/drive-sync/merge-from-drive.sh || echo "  ⚠ SF merge 실패 — 사전 스냅샷으로 롤백 가능(운영 무손상)"
+        # 위 받기(sync-from-drive)가 받은 덤프를 그대로 넘긴다 — 안 넘기면 병합이 Drive 최신을 다시 받아, 두 단계 사이에 새 덤프가 올라온 실행은
+        # 다른 덤프 둘을 받았다(docs/request-1125 SE-7 ①). 마지막으로 병합한 덤프(이름 · sha256 — 포털 infra/.state/sf-merge-last)와 같으면 사전
+        # 스냅숏 · 적재 · 뷰 새로 고침을 건너뛴다(②). 병합이 '완료' 줄로 끝났을 때만 적는다 — 다른 병합이 돌아 건너뛴 회차 · 덤프 없음은 적지 않는다.
+        # 다시 하려면 SF_MERGE_FORCE=1.
+        _sfd="$(readlink -f backups/sf-db-latest.sql.gz 2>/dev/null || true)"; [ -f "$_sfd" ] || _sfd=""
+        _sfmark="$PORTAL_DIR/infra/.state/sf-merge-last"; _sfid=""
+        [ -n "$_sfd" ] && _sfid="$(basename "$_sfd") $(sha256sum "$_sfd" | cut -d' ' -f1)"
+        if [ -n "$_sfid" ] && [ "${SF_MERGE_FORCE:-0}" != 1 ] && [ "$(cat "$_sfmark" 2>/dev/null)" = "$_sfid" ]; then
+          echo "  · DB MERGE 건너뜀 — 마지막으로 병합한 덤프와 같다($(basename "$_sfd")) · 다시 하려면 SF_MERGE_FORCE=1"
+        else
+          echo "  · DB MERGE(비파괴) — dev 신규 VOC 반영 + cae00 축적 유지${_sfd:+ (받은 덤프 $(basename "$_sfd"))}"
+          _mlog="$(mktemp)"
+          if SF_MERGE_DUMP="$_sfd" bash scripts/drive-sync/merge-from-drive.sh 2>&1 | tee "$_mlog"; then
+            if [ -n "$_sfid" ] && grep -q '✓ SF merge 완료' "$_mlog"; then
+              mkdir -p "$(dirname "$_sfmark")" && printf '%s\n' "$_sfid" > "$_sfmark"
+            fi
+          else
+            echo "  ⚠ SF merge 실패 — 사전 스냅샷으로 롤백 가능(운영 무손상)"
+          fi
+          rm -f "$_mlog"
+        fi
       else
         echo "  · DB 보존(merge 스크립트 없음)."
       fi
@@ -501,6 +520,25 @@ if want aidh; then
       git_update
       _cur="$(_fp_git; hwax_fp deploy/apptainer/.env)"     # 실제 설정은 deploy/apptainer/.env — api_server/.env 는 boot.sh 가 기동 때 다시 쓴다
       _start() { AIDH_ROOT_PATH=/ai-data-hub AIDH_BOOT_HEALTH_TIMEOUT="${AIDH_BOOT_HEALTH_TIMEOUT:-600}" ./boot.sh --force; }
+      # update-all §1b 가 AIDataHub 덤프를 뒤에서 뜨고 있으면(HWAX_AIDH_BACKUP_RC — docs/request-1125 SE-2 ①) 다시 띄우기 전에 끝나기를 기다린다 —
+      # boot.sh 가 alembic 이행을 돌리므로 이행 전 롤백 지점이 있어야 한다. 실패 · 시한(HWAX_AIDH_BACKUP_WAIT_S, 기본 3600초)이면 다시 띄우지 않는다.
+      # 재기동이 정해졌을 때만 기다린다(지문이 같으면 덤프와 상관없다). 묻기 줄은 아래 cycle 이 한 번만 적게 장부 파일을 비운다(SF 구역과 같은 꼴).
+      if [ -n "${HWAX_AIDH_BACKUP_RC:-}" ] && [ "${RESTART:-0}" != 1 ] \
+         && HWAX_RESTART_SKIPPED_FILE= hwax_restart_needed aidh "$_cur" http://localhost:8001/ >/dev/null; then
+        _bw="${HWAX_AIDH_BACKUP_WAIT_S:-3600}"; [[ "$_bw" =~ ^[0-9]+$ ]] || _bw=3600
+        if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
+          echo "  · AIDataHub 사전 덤프(§1b — 뒤에서 도는 중)가 끝나기를 기다린 뒤 다시 띄운다(상한 ${_bw}초)"
+        fi
+        _t0="$(date +%s)"
+        while [ ! -f "$HWAX_AIDH_BACKUP_RC" ] && [ "$(( $(date +%s) - _t0 ))" -lt "$_bw" ]; do sleep 5; done
+        if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
+          echo "  ✗ AIDataHub 사전 덤프가 ${_bw}초 안에 끝나지 않았다 — 이행 전 롤백 지점이 없어 다시 띄우지 않았다(로그 ${HWAX_AIDH_BACKUP_LOG:-?})"
+          exit 1
+        elif [ "$(cat "$HWAX_AIDH_BACKUP_RC")" != 0 ]; then
+          echo "  ✗ AIDataHub 사전 덤프가 실패했다(rc $(cat "$HWAX_AIDH_BACKUP_RC")) — 이행 전 롤백 지점이 없어 다시 띄우지 않았다(로그 ${HWAX_AIDH_BACKUP_LOG:-?})"
+          exit 1
+        fi
+      fi
       # 정지 함수는 `:` — boot.sh --force 가 스스로 옛 uvicorn 을 죽이고 다시 띄운다(내려감 대기 없음). 정말 갈렸는지는 :8001 리스너 pid 로 본다.
       hwax_restart_cycle aidh "$_cur" : _start http://localhost:8001/ || exit 1
       true ) && ok "aidh up" || skip "aidh failed (see above)"

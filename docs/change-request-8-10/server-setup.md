@@ -68,7 +68,7 @@ grep -cE '^[[:space:]]*(export[[:space:]]+)?PORTAL_ADMIN_EMAILS=[^[:space:]#]' i
 
 # 명령 8 — 포털 리포 루트에서. 토큰이 든 파일과 키 이름을 준다(아래는 HWAXRisk 의 예 — 경로·키를 바꿔 다른 토큰도 본다).
 #          주인 이메일과 표지 유무만 찍고 토큰은 찍지 않는다
-python3 - ../HEAXHub/var/app_data/hwax_risk/secrets.env HWAXRISK_PORTAL_PAT <<'PY'
+python3 - ${HWAX_DATA_ROOT:-/data}/appdata/hwax_risk/secrets.env HWAXRISK_PORTAL_PAT <<'PY'
 import base64, json, sys
 for ln in open(sys.argv[1], encoding="utf-8"):
     k, _, v = ln.strip().partition("=")

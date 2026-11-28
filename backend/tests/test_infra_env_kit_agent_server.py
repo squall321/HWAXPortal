@@ -157,10 +157,22 @@ def _external_default(knob: str) -> str | None:
     return d.group(1).replace("_", "") if d else None
 
 
+# 기본값이 이름 붙은 상수이고 다른 손잡이로 물러나는 손잡이 — (파일, 그 상수, 물러날 손잡이). THINK_SEAT_TIMEOUT_S 는 비면 DELIB_TIMEOUT_S 를
+# 따르고 둘 다 비면 상수다(에이전트 서버 thinking._seat_timeout — docs/request-1125 HA-35).
+_FALLBACK_DEFAULTS = {"THINK_SEAT_TIMEOUT_S": ("thinking.py", "_SEAT_TIMEOUT_DEFAULT", "DELIB_TIMEOUT_S")}
+
+
 def _engine_default(knob: str) -> str | None:
     """엔진 소스가 그 손잡이에 주는 기본값(문자열). 손잡이를 모르면 None."""
     if knob.startswith("EXTERNAL_LLM_"):
         return _external_default(knob)
+    if knob in _FALLBACK_DEFAULTS:
+        name, const, then = _FALLBACK_DEFAULTS[knob]
+        f = ENGINE / name
+        src = f.read_text(encoding="utf-8") if f.exists() else ""
+        m = re.search(rf"^{const} = ([0-9_.]+)", src, re.M)
+        if m and f'"{knob}"' in src and f'"{then}"' in src:
+            return m.group(1).replace("_", "")
     pats = (rf'_env_(?:int|float)\(\s*"{knob}"\s*,\s*([0-9.]+)\s*\)', rf'environ\.get\(\s*"{knob}"\s*,\s*"([0-9.]+)"\s*\)',
             rf'\$\{{{knob}:-([0-9.]+)\}}')
     for name in ("app.py", "deliberation.py", "thinking.py", "delib_jobs.py", "mcp_server.py", "start.sh"):
@@ -313,3 +325,11 @@ def test_10_30_챗_관문_손잡이는_바꾸면_재기동이라고_적는다():
     assert "done < .env" in start and 'export "$_k=$_v"' in start, "start.sh 가 .env 를 싣는 꼴이 바뀌었다 — 이 구획의 '재기동' 말을 다시 본다"
     app = (ENGINE / "app.py").read_text(encoding="utf-8")
     assert "load_dotenv" not in app and "dotenv_values" not in app, "서버가 .env 를 스스로 읽게 됐다 — 이 구획의 '재기동' 말을 다시 본다"
+
+
+
+def test_띵킹_좌석_한도는_비면_심의_한도를_따른다고_킷이_말한다():
+    """엔진이 THINK_SEAT_TIMEOUT_S 가 비면 DELIB_TIMEOUT_S 를 따르게 바뀌었다(HA-35) — 킷 주석이 그 차례를 그대로 말한다."""
+    kit = (ROOT / "infra/env-kits/agent-server.env").read_text(encoding="utf-8")
+    block = kit.split("# THINK_SEAT_TIMEOUT_S=", 1)[0].rsplit("# KNOWLEDGE_TIMEOUT_S=", 1)[1]
+    assert "비우면 심의 호출 한도(DELIB_TIMEOUT_S)를 따르고 둘 다 비면 1800" in block

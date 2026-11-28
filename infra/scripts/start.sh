@@ -161,6 +161,12 @@ else
   for k in AUTO_PIPELINE_ENABLED AUTO_PIPELINE_TICK_S AUTO_PIPELINE_MAX_CONCURRENT AUTO_PIPELINE_NIGHT AUTO_PIPELINE_POLL_S AUTO_PIPELINE_SOURCES; do
     [ -n "${!k:-}" ] && AP_ENVS+=(--env "$k=${!k}")
   done
+  # DocForge 옵션 셋(docs/request-1125 IR-08) — 길(이 대화에서 분석 · 정밀 변환)마다 그림 판독 · 쪽 그림 · 판단. 같은 까닭으로 **값이 있을 때만**
+  #   명시해서 넘긴다. 없으면 코드 기본값(모두 켬)이다 — 챗 모델이 바쁜 날 infra/.env 에 DOCFORGE_CHAT_VLM=false 한 줄 + 포털 재기동으로 끈다.
+  DF_ENVS=()
+  for k in DOCFORGE_CHAT_VLM DOCFORGE_CHAT_SNAPSHOT_PAGE DOCFORGE_CHAT_LLM DOCFORGE_PRECISE_VLM DOCFORGE_PRECISE_SNAPSHOT_PAGE DOCFORGE_PRECISE_LLM; do
+    [ -n "${!k:-}" ] && DF_ENVS+=(--env "$k=${!k}")
+  done
   # 사내 프록시(HWAX_FALLBACK_PROXY) — 토큰 화면이 만드는 설치 배치의 npm 레지스트리 폴백 주소를 포털이 PAT 발급 응답으로 준다.
   #   공개 리포에 실제 주소를 두지 않는다(사용자 결정 11-24). 위와 같은 이유로 **값이 있을 때만** 명시해서 넘긴다. 값은 찍지 않는다.
   PROXY_ENVS=()
@@ -204,7 +210,7 @@ else
   "$APPTAINER" instance start \
     ${DATA_BINDS[@]+"${DATA_BINDS[@]}"} ${DATA_ENVS[@]+"${DATA_ENVS[@]}"} ${SAML_ENVS[@]+"${SAML_ENVS[@]}"} \
     ${IDENT_ENVS[@]+"${IDENT_ENVS[@]}"} ${TIME_ENVS[@]+"${TIME_ENVS[@]}"} ${LLMST_ENVS[@]+"${LLMST_ENVS[@]}"} \
-    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} ${IX_ENVS[@]+"${IX_ENVS[@]}"} ${AP_ENVS[@]+"${AP_ENVS[@]}"} \
+    ${PROXY_ENVS[@]+"${PROXY_ENVS[@]}"} ${IX_ENVS[@]+"${IX_ENVS[@]}"} ${AP_ENVS[@]+"${AP_ENVS[@]}"} ${DF_ENVS[@]+"${DF_ENVS[@]}"} \
     --bind "$REPO_ROOT:/workspace" \
     --bind "$STAGING_HOST:/var/upload-staging" \
     --env "UPLOAD_STAGING_DIR=/var/upload-staging" \

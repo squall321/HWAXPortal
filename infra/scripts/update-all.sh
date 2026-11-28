@@ -130,7 +130,8 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
          rm -f "${HWAX_SKIP_LEDGER:-}" ${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"} 2>/dev/null; exit 143; fi
        export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
-       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"
+       # 시각을 꼬리에 — 구간 시간을 실행 기록만으로 잰다(docs/request-1125 SE-9). 제목 문구 · 앞부분은 그대로라 '══ 4)' 같은 grep 은 그대로 맞는다.
+       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m [%s]\n' "$*" "$(date +%T)"
        # 1h 의 비우기 깃발을 § 머리마다 돌본다(늘리기 · 남이 내렸으면 멈추기 · 남의 깃발이 사라졌으면 세우기) — _hwax_drain_tick.
        command -v _hwax_drain_tick >/dev/null 2>&1 && _hwax_drain_tick; return 0; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
@@ -166,6 +167,44 @@ export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=upda
 # 멈춰 둔 KooRemapper 되돌림 사본(infra/.env 의 KOORM_LOCAL_PARKED) — §5 의 kr_ PAT 점검 · 내려간 백엔드 살리기가 그 스택을 재거나 띄우지 않는다.
 #   띄우지 않는 것은 §2 의 deploy-all, 사전 백업은 §1b 의 backup-local 이 같은 lib 로 본다.
 . "$SELF_REPO/infra/scripts/lib/koorm-parked.sh"
+# 허브 Caddy 에 등록된 그 앱의 업스트림 주소(마지막 dial) — 없으면 빈 줄. 401 갈래와 DynaForge 안내(HP-68)가 함께 쓴다
+_caddy_dial_of() {
+  curl -s -m 5 http://127.0.0.1:2019/config/ 2>/dev/null | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(0)
+app=sys.argv[1]; found=[]
+def walk(o):
+    if isinstance(o,dict):
+        if o.get("@id")==f"app-{app}":
+            found.append(json.dumps(o))
+        for v in o.values(): walk(v)
+    elif isinstance(o,list):
+        for v in o: walk(v)
+walk(d)
+if not found: raise SystemExit(0)
+o=json.loads(found[0])
+dials=[]
+def w2(x):
+    if isinstance(x,dict):
+        if "dial" in x and isinstance(x["dial"],str): dials.append(x["dial"])
+        for v in x.values(): w2(v)
+    elif isinstance(x,list):
+        for v in x: w2(v)
+w2(o)
+# forward_auth 서브리퀘스트(:4040)는 업스트림이 아니다 — 마지막 dial 이 실제 앱이다.
+print(dials[-1] if dials else "")' "$1" 2>/dev/null
+}
+# DynaForge 를 이 박스 밖에서 쓰는가 — 멈춰 둔 되돌림 사본(KOORM_LOCAL_PARKED) 또는 바깥 주소(KOORM_BASE). 그때 로컬 :8700 · :8701 ·
+# deploy-all kooremapper 를 권하면 멈춰 둔 사본을 보게 된다 — 실제 업스트림과 '운영 노드 쪽을 본다' 를 적는다(docs/request-1125 HP-68)
+_koorm_elsewhere() { hwax_koorm_parked "$SELF_REPO" || [ -n "${KOORM_BASE:-}" ]; }
+_koorm_where() {
+  local d; d="$(_caddy_dial_of kooremapper_mcp)"
+  echo "      DynaForge 는 이 박스 밖에서 돈다(infra/.env 의 KOORM_LOCAL_PARKED 또는 KOORM_BASE) — 이 박스의 로컬 KooRemapper 는 멈춰 둔 사본이다."
+  echo "      실제 업스트림: 웹 ${KOORM_BASE:-(모름 — KOORM_BASE=<주소> 로 주면 적는다)} · MCP ${d:-(허브에 등록된 주소 없음)}"
+  echo "      조치: 운영 노드 쪽(그 KooRemapper 의 웹 · MCP · 인스턴스)을 본다"
+}
+
 # 상태판 경보 멈춤 풀기 — 1b2 가 걸었으면. 5b 의 설정 생성이 늘 풀므로(그때 HWAX_BOARD_PAUSED=0) 여기는 5b 전에 멈춘 경로(§ 머리 정지)와
 #   완주 끝의 마지막 확인이다. 실패는 삼킨다 — 시한(60분)이 지나면 상태판의 밀어 넣는 쪽(status-push.py)이 걷어낸다.
 _hwax_board_resume() {
@@ -524,8 +563,21 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   # 그래서 signalforge·mxwp 백업이 22회 내내 실패하는 동안 화면엔 '✓ 백업 완료'만 보였다.
   # 성공하면 꼬리만, 실패하면 실패 줄을 전부 보여준다.
   BK_LOG="$(mktemp)"
+  # AIDataHub 덤프는 뒤에서 따로 뜬다(docs/request-1125 SE-2 ①) — 11 GB · 27 ~ 28분이 §1b 를 통째로 붙잡았다. 끝나기를 deploy-all 의 AIDataHub
+  # 재기동(boot.sh --force — alembic 이행이 거기서 돈다) 앞과 이 실행의 끝(_aidh_backup_finish)에서 기다린다. 실패하면 deploy-all 이 AIDataHub 를
+  # 다시 띄우지 않는다(이행 전 롤백 지점이 없다). 끄기 HWAX_AIDH_BACKUP_BG=0(종전대로 함께 뜬다). 뒤의 실행은 이 실행의 잠금 fd 를 물려받지 않는다
+  # (본문은 fd 를 닫고 돈다) · 출력은 파일로만 — 호출자를 붙들지 않는다.
+  _bk_skip=""
+  if [ "${HWAX_AIDH_BACKUP_BG:-1}" = 1 ] && [ -n "$(find_repo AIDataHub)" ]; then
+    _bkd="$(mktemp -d)"; HWAX_AIDH_BACKUP_RC="$_bkd/rc"; HWAX_AIDH_BACKUP_LOG="$_bkd/log"; export HWAX_AIDH_BACKUP_RC HWAX_AIDH_BACKUP_LOG
+    nohup env HWAX_BACKUP_PRE=1 bash -c '"$1" aidh > "$2" 2>&1; echo "$?" > "$3.tmp"; mv -f "$3.tmp" "$3"' _ \
+      "$SELF_REPO/infra/scripts/backup-local.sh" "$HWAX_AIDH_BACKUP_LOG" "$HWAX_AIDH_BACKUP_RC" </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true
+    _bk_skip="aidh"
+    echo "  · AIDataHub 덤프는 뒤에서 뜬다(로그 $HWAX_AIDH_BACKUP_LOG) — AIDataHub 재기동 앞과 이 실행의 끝에서 기다린다"
+  fi
   # ○ 는 일부러 뜨지 않은 대상이다(멈춰 둔 KooRemapper 사본 — 실패 아님). 꼬리 넷에 들지 않아 따로 보인다 — 끝 요약에는 backup-local 이 장부로 넘긴다.
-  if "$SELF_REPO/infra/scripts/backup-local.sh" >"$BK_LOG" 2>&1; then
+  if HWAX_BACKUP_PRE=1 HWAX_BACKUP_SKIP="$_bk_skip" "$SELF_REPO/infra/scripts/backup-local.sh" >"$BK_LOG" 2>&1; then
     grep '○' "$BK_LOG" | sed 's/^/  /'
     tail -4 "$BK_LOG" | sed 's/^/  /'
   else
@@ -3486,6 +3538,17 @@ if [ "$TM_OK" = 1 ]; then
   done <<<"$_aco"
   [ "$_acrc" = 0 ] || bad "새 앱 점검을 하지 못했다(rc $_acrc) — python3 infra/scripts/app-checks.py 를 손으로 돌려 본다"
 fi
+# ── 리스크 앱이 사람의 읽기 전용 PAT 로 부르는 남의 앱 조회 도구 — 게이트웨이 읽기 판정(/tools-map tool_class)을 지나는가(docs/request-1125 HP-59) ──
+# 11-01 에 odb-hub find_job 이 읽기 전용 PAT 로 막혀 리스크 앱 ECAD 가 약 48분 멈췄는데 verify 204 · 스모크 3/3 은 초록이었다. 지나지 못하면 ✗.
+if [ "$TM_OK" = 1 ]; then
+  _rcm="$(mktemp)"; printf '%s' "$TM" > "$_rcm"; _rcrc=0
+  _rco="$(python3 "$SELF_REPO/infra/scripts/risk-cross-reads.py" --tools-map "$_rcm")" || _rcrc=$?
+  rm -f "$_rcm"
+  while IFS=$'\t' read -r _rck _rct; do
+    case "$_rck" in ok) ok "$_rct" ;; fail) fail "$_rct" ;; info) echo "  · $_rct" ;; esac
+  done <<<"$_rco"
+  [ "$_rcrc" = 0 ] || bad "리스크 앱 조회 도구 점검을 하지 못했다(rc $_rcrc) — python3 infra/scripts/risk-cross-reads.py --tools-map <파일> 을 손으로 돌려 본다"
+fi
 # ── HE팀 운영자 점검 — 실행마다, 재기동 · 재프로비저닝을 마친 게이트웨이로 본다(docs/request-1030 HP-51 · HP-53) ──
 # '! ' 는 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것 포함)가 모는 앱이 이 게이트웨이에 없다는 줄이다 — 조직도에서 고를 수는 있어도
 # 챗을 보낸 뒤에야 주의가 떴다(DW-12). '목록 밖 쓰기' 는 운영자 앱의 쓰기 꼴 도구가 정본 writes · confirm 어디에도 없다는 줄이다. '읽기를 쓰기로'
@@ -3619,7 +3682,11 @@ if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
       # 드리프트는 토큰 문제가 아니다 — 재프로비저닝으로 안 고쳐진다. 배포본이 낡은 것이라
       # 그 앱을 재기동/재빌드해야 한다. 엉뚱한 복구를 돌리지 않고 조치만 정확히 알린다.
       fail "MCP 앱이 코드보다 오래된 배포본으로 돌고 있다(위 ✗ 줄) — 호출은 되지만 새 도구가 빠져 있다."
-      echo "      DynaForge(kooremapper_mcp): (KooRemapper) apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"
+      if _koorm_elsewhere; then
+        echo "      DynaForge(kooremapper_mcp): 이 박스 밖에서 돈다 — 운영 노드 쪽 KooRemapper 를 다시 띄운다(이 박스의 koorm_mcp 는 멈춰 둔 사본)"
+      else
+        echo "      DynaForge(kooremapper_mcp): (KooRemapper) apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"
+      fi
       echo "      heax 등록 앱:              (HEAXHub) bash deploy/apptainer/redeploy-app.sh <slug> --rebuild"
       echo "      둘 다 소스가 bind-mount 라 재기동만으로 최신 코드가 물린다(빌드형은 --rebuild)."
     elif [ "$rc" = 1 ] && ! repair_mcp; then
@@ -3672,7 +3739,12 @@ for app in $heax_apps; do
   if [ "$is_mcp" = 1 ]; then
     if [ "$reach" != "1" ] || [ "${tools:-0}" -eq 0 ]; then
       app_bad "$crit" "heax MCP 앱 $app → 도구 ${tools:-0}개 / 연결 $([ "$reach" = 1 ] && echo O || echo X) — 등록은 됐으나 기능이 0개다."
-      echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다(DynaForge=kooremapper_mcp → :8701)."
+      if _koorm_elsewhere; then
+        echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다."
+        case "$app" in kooremapper*) _koorm_where ;; esac
+      else
+        echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다(DynaForge=kooremapper_mcp → :8701)."
+      fi
       echo "      진단: $SELF_REPO/infra/scripts/check-mcp-registration.sh $app"
     else
       ok "heax MCP 앱 $app → 도구 ${tools}개 (정상)"
@@ -3707,31 +3779,7 @@ for app in $heax_apps; do
       #   익명이면 게이트에서 401 이 나므로, 업스트림이 통째로 죽어 있어도 똑같이 401 이다.
       #   그래서 Caddy 에 등록된 업스트림 주소를 꺼내 직접 두드려 본다. 게이트 앞에서 막힌
       #   401 과, 뒤가 죽어서 못 쓰는 401 을 구분하지 못하면 '초록인데 안 되는' 상태가 된다.
-      _up="$(curl -s -m 5 http://127.0.0.1:2019/config/ 2>/dev/null | python3 -c '
-import json,sys
-try: d=json.load(sys.stdin)
-except Exception: raise SystemExit(0)
-app=sys.argv[1]; found=[]
-def walk(o):
-    if isinstance(o,dict):
-        if o.get("@id")==f"app-{app}":
-            found.append(json.dumps(o))
-        for v in o.values(): walk(v)
-    elif isinstance(o,list):
-        for v in o: walk(v)
-walk(d)
-if not found: raise SystemExit(0)
-o=json.loads(found[0])
-dials=[]
-def w2(x):
-    if isinstance(x,dict):
-        if "dial" in x and isinstance(x["dial"],str): dials.append(x["dial"])
-        for v in x.values(): w2(v)
-    elif isinstance(x,list):
-        for v in x: w2(v)
-w2(o)
-# forward_auth 서브리퀘스트(:4040)는 업스트림이 아니다 — 마지막 dial 이 실제 앱이다.
-print(dials[-1] if dials else "")' "$app" 2>/dev/null)"
+      _up="$(_caddy_dial_of "$app")"
       if [ -n "$_up" ]; then
         _uc="$(curl -s -o /dev/null -m 6 -w '%{http_code}' "http://$_up/" 2>/dev/null || echo 000)"
         if [ "$_uc" = "000" ]; then
@@ -3750,8 +3798,12 @@ print(dials[-1] if dials else "")' "$app" 2>/dev/null)"
       # 같은 문구를 주면 없는 라우트를 찾아 헤매게 된다.
       app_bad "$crit" "heax 앱 $app → $code — 라우트는 살아 있고 업스트림이 죽었다(등록 문제 아님)."
       echo "      프록시형 앱이면 SIF 가 아니라 별도로 떠 있어야 할 서버가 없는 것이다."
-      echo "      DynaForge(kooremapper/kooremapper_mcp) → :8700 웹 / :8701 MCP."
-      echo "      조치: bash $SELF_REPO/infra/scripts/deploy-all-from-drive.sh kooremapper"
+      if _koorm_elsewhere; then
+        case "$app" in kooremapper*) _koorm_where ;; esac
+      else
+        echo "      DynaForge(kooremapper/kooremapper_mcp) → :8700 웹 / :8701 MCP."
+        echo "      조치: bash $SELF_REPO/infra/scripts/deploy-all-from-drive.sh kooremapper"
+      fi
     elif [ "$TM_OK" = 0 ] && [ "$code" = "404" ]; then
       # 게이트웨이가 죽어 MCP 여부를 모르는 상태다. MCP 전용 앱은 루트 404 가 정상이므로
       # 여기서 '미서빙'이라 단정하면 멀쩡한 앱을 범인으로 지목하게 된다(게이트웨이는 이미 위에서 계상).
@@ -4049,6 +4101,21 @@ try:
 except Exception:
     pass
 PY
+fi
+
+# §1b 가 뒤에서 뜬 AIDataHub 덤프 — 끝나기를 기다려 결과를 센다(SE-2 ①). 실패는 종전 §1b 와 같은 비치명(⚠ — 배포는 이미 했다).
+if [ -n "${HWAX_AIDH_BACKUP_RC:-}" ]; then
+  _aidh_bk_wait="${HWAX_AIDH_BACKUP_WAIT_S:-3600}"; [[ "$_aidh_bk_wait" =~ ^[0-9]+$ ]] || _aidh_bk_wait=3600
+  _t0="$(date +%s)"
+  while [ ! -f "$HWAX_AIDH_BACKUP_RC" ] && [ "$(( $(date +%s) - _t0 ))" -lt "$_aidh_bk_wait" ]; do sleep 5; done
+  if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
+    bad "AIDataHub 사전 덤프가 ${_aidh_bk_wait}초 안에 끝나지 않았다 — 뒤에서 계속 돈다(로그 $HWAX_AIDH_BACKUP_LOG)"
+  elif [ "$(cat "$HWAX_AIDH_BACKUP_RC")" = 0 ]; then
+    ok "AIDataHub 사전 덤프 — $(grep -E '✓ aidh →' "$HWAX_AIDH_BACKUP_LOG" | head -1 | sed 's/^[[:space:]]*//')"
+  else
+    bad "AIDataHub 사전 덤프 실패(rc $(cat "$HWAX_AIDH_BACKUP_RC")) — 아래 줄(로그 $HWAX_AIDH_BACKUP_LOG)"
+    grep -E '✗' "$HWAX_AIDH_BACKUP_LOG" | sed 's/^/    /'
+  fi
 fi
 
 # ○ 옵션·설정이 없어 안 켠 기능은 성공·실패 어느 쪽 끝에서도 다시 말한다 — 조용히 지나가면 그 기능이

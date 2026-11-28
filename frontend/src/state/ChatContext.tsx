@@ -1528,7 +1528,10 @@ export function ChatProvider({
     // 빈 대화를 목록에 만들지 않는다 — activeId=null이 '새 대화(랜딩)' 상태.
     setActiveId(null);
     setInput('');
-  }, []);
+    // 붙인 문서 · 그림은 입력창에 매여 있어 새 대화 첫 질문에 앞 대화의 문서가 딸려 갔다(docs/request-1125 IR-05 — 11-10 실측). 새 대화면 비운다.
+    setAttachedDocs([]);
+    setAttachedImages([]);
+  }, [setAttachedDocs, setAttachedImages]);
 
   const selectConversation = useCallback((id: string) => {
     setActiveId(id);

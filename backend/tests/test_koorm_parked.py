@@ -329,3 +329,43 @@ def test_예시와_안내서에_자리를_적는다():
     assert KEY in (ROOT / "docs/cae00-deploy-guide.md").read_text(encoding="utf-8")
     assert '. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/koorm-parked.sh"' in DEPLOY
     assert '. "$SELF_REPO/infra/scripts/lib/koorm-parked.sh"' in UA
+
+
+# ── 장애 안내 문구(docs/request-1125 HP-68) — 멈춰 둔 사본이면 로컬 :8700 · :8701 · deploy-all kooremapper 를 권하지 않는다 ─────────────────
+def _hint_fns() -> str:
+    src = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
+    a = src.index("_caddy_dial_of() {")
+    b = src.index("\n}\n", src.index("_koorm_where() {")) + 3
+    return src[a:b]
+
+
+def _branch_502() -> str:
+    src = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
+    a = src.index('    elif [ "$code" = "502" ] || [ "$code" = "503" ] || [ "$code" = "504" ]; then')
+    b = src.index("\n    elif ", a + 10)
+    return "if false; then :\n" + src[a + 4:b] + "\nfi\n"
+
+
+@pytest.mark.parametrize("parked", [True, False])
+def test_502_안내가_멈춰_둔_사본이면_실제_업스트림을_적는다(tmp_path, parked):
+    portal = tmp_path / "portal"; (portal / "infra").mkdir(parents=True)
+    (portal / "infra/.env").write_text("KOORM_LOCAL_PARKED=1\n" if parked else "")
+    lib = (ROOT / "infra/scripts/lib/koorm-parked.sh").read_text(encoding="utf-8")
+    body = (lib + "\n" + _hint_fns() + "\n_caddy_dial_of() { echo node-a:8701; }\n"
+            'app_bad() { echo "BAD $2"; }\nSELF_REPO="' + str(portal) + '"\ncode=502\napp=kooremapper_mcp\n' + _branch_502())
+    r = subprocess.run(["bash", "-c", body], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "KOORM_BASE": "https://node-a/kr"} if parked else {"PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0, r.stderr
+    if parked:
+        assert ":8700" not in r.stdout and ":8701 MCP" not in r.stdout and "deploy-all-from-drive.sh kooremapper" not in r.stdout, r.stdout
+        assert "웹 https://node-a/kr · MCP node-a:8701" in r.stdout and "운영 노드 쪽" in r.stdout, r.stdout
+    else:
+        assert ":8700 웹 / :8701 MCP" in r.stdout and "deploy-all-from-drive.sh kooremapper" in r.stdout, "종전 문구 그대로"
+
+
+def test_장애_안내_세_자리가_모두_멈춤을_본다():
+    src = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
+    for line in ("(DynaForge=kooremapper_mcp → :8701).", "DynaForge(kooremapper/kooremapper_mcp) → :8700 웹 / :8701 MCP.",
+                 "apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"):
+        i = src.index(line)
+        before = src[max(0, i - 400):i]
+        assert "if _koorm_elsewhere; then" in before and "else" in before, line

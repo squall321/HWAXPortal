@@ -110,7 +110,7 @@ T="$(mktemp -d)" && rclone copy "$R/tools/age/" "$T/" && (cd "$T" && sha256sum -
 공개키(`age1…`)는 비밀이 아니다. 사용자에게 받거나 dev 에서 `age-keygen -y ~/.config/hwax/risk-backup.agekey` 로 본다.
 
 ```bash
-D=~/Projects/HEAXHub/var/app_data/hwax_risk
+D=${HWAX_DATA_ROOT:-/data}/appdata/hwax_risk
 grep -c '^HWAXRISK_BACKUP_KEY=' "$D/secrets.env"                 # 0 이면 아래
 read -r PUB                                                      # age1… 를 붙여 넣는다
 case "$PUB" in age1*) printf 'HWAXRISK_BACKUP_KEY=%s\n' "$PUB" >> "$D/secrets.env"; chmod 600 "$D/secrets.env";; *) echo '공개키가 아니다';; esac

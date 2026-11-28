@@ -11,6 +11,7 @@ update-sites 와 deploy-all 의 구획을 **원문 그대로 떼어** 지어낸 
 import http.server
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -250,16 +251,18 @@ def _sf_block() -> str:
     return DEPLOY[i:DEPLOY.index("# ── 4. AI Data Hub", i)]
 
 
-def _deploy_sf(tmp_path: Path, agent, api: str, *, under: bool = True, sif_change: bool = False, **env):
+def _deploy_sf(tmp_path: Path, agent, api: str, *, under: bool = True, sif_change: bool = False, sync_extra: str = "",
+               merge_extra: str = "", **env):
     """deploy-all 의 SignalForge 구획을 임시 SignalForge 리포에서 돌린다 → (화면, 장부, skip 으로 센 줄). 받기 · down · up · DB 병합은 사건 파일에
-    적는 대역이다. sif_change 면 받기 대역이 SIF 를 바꾼다(떠 있는 인스턴스 밑을 덮었다)."""
+    적는 대역이다. sif_change 면 받기 대역이 SIF 를 바꾼다(떠 있는 인스턴스 밑을 덮었다). sync_extra · merge_extra 는 받기 · 병합 대역에 더할 줄
+    (docs/request-1125 SE-7 — 받기가 받은 덤프를 병합이 그대로 받는가)."""
     sf = tmp_path / "SignalForge"
     (sf / "scripts/drive-sync").mkdir(parents=True)
     (sf / "apptainer/sif").mkdir(parents=True)
     (sf / "apptainer/sif/backend.sif").write_bytes(b"x")
     ev = agent["events"]
-    for rel, extra in (("scripts/down.sh", ""), ("scripts/up.sh", ""), ("scripts/drive-sync/merge-from-drive.sh", ""),
-                       ("scripts/sync-from-drive.sh", 'echo y >> apptainer/sif/backend.sif\n' if sif_change else "")):
+    for rel, extra in (("scripts/down.sh", ""), ("scripts/up.sh", ""), ("scripts/drive-sync/merge-from-drive.sh", merge_extra),
+                       ("scripts/sync-from-drive.sh", ('echo y >> apptainer/sif/backend.sif\n' if sif_change else "") + sync_extra)):
         p = sf / rel
         p.write_text(f'#!/usr/bin/env bash\necho "{Path(rel).name}" >> "{ev}"\n{extra}exit 0\n'); p.chmod(0o755)
     st = tmp_path / "state"; st.mkdir(exist_ok=True)
@@ -416,3 +419,35 @@ def test_판정_파일은_완주_끝과_정지_경로에서_지운다():
     hr = UA[UA.index("hr() {"):UA.index("ok() {")]
     stop = hr[:hr.index("exit 143")]
     assert '${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"}' in stop.splitlines()[-1], stop[-300:]
+
+
+
+# ── SignalForge 병합이 받기가 받은 덤프를 그대로 쓰고, 마지막으로 병합한 덤프와 같으면 건너뛴다(docs/request-1125 SE-7 ① ②) ─────────────────
+_SF_SYNC_DUMP = ('mkdir -p backups && echo d1 > backups/sf-db-20261128-0300.sql.gz && ( cd backups && ln -sf sf-db-20261128-0300.sql.gz sf-db-latest.sql.gz )\n')
+
+
+def test_SignalForge_병합은_받은_덤프를_넘기고_같은_덤프는_다시_하지_않는다(tmp_path, agent, svc):
+    # NO_RESTART=1 — 떠 있는 가짜 SignalForge 를 내리지 않고 지나간다(재기동 판정은 위 시험들이 본다 — 여기는 병합 줄만)
+    agent.update(active=0, queued=0)
+    merge = 'echo "DUMP=${SF_MERGE_DUMP:-}" >> "$(dirname "$0")/../../merge.seen"\necho "✓ SF merge 완료 — 운영 유지 + dev 반영(id 는 code 로 번역)"\n'
+    out, _l, _f = _deploy_sf(tmp_path, agent, svc, under=False, sync_extra=_SF_SYNC_DUMP, merge_extra=merge, NO_RESTART="1")
+    assert (tmp_path / "SignalForge/merge.seen").exists(), out
+    seen = (tmp_path / "SignalForge/merge.seen").read_text().splitlines()
+    assert seen == [f"DUMP={tmp_path}/SignalForge/backups/sf-db-20261128-0300.sql.gz"], (seen, out)
+    mark = (tmp_path / "portal/infra/.state/sf-merge-last").read_text().split()
+    assert mark[0] == "sf-db-20261128-0300.sql.gz" and len(mark[1]) == 64, mark
+    # 같은 덤프로 다시 — 사전 스냅숏 · 적재 · 뷰 새로 고침을 건너뛴다
+    shutil.rmtree(tmp_path / "SignalForge"); (tmp_path / "state").joinpath("signalforge").write_text("old-fp\n")
+    out, _l, _f = _deploy_sf(tmp_path, agent, svc, under=False, sync_extra=_SF_SYNC_DUMP, merge_extra=merge, NO_RESTART="1")
+    assert not (tmp_path / "SignalForge/merge.seen").exists() and "DB MERGE 건너뜀 — 마지막으로 병합한 덤프와 같다" in out, out
+    shutil.rmtree(tmp_path / "SignalForge")
+    out, _l, _f = _deploy_sf(tmp_path, agent, svc, under=False, sync_extra=_SF_SYNC_DUMP, merge_extra=merge, SF_MERGE_FORCE="1", NO_RESTART="1")
+    assert (tmp_path / "SignalForge/merge.seen").exists(), "SF_MERGE_FORCE=1 이면 다시 한다"
+
+
+def test_SignalForge_병합이_완료로_끝나지_않으면_적지_않는다(tmp_path, agent, svc):
+    """다른 병합이 돌아 이번 차례를 건너뛴 회차(rc 0) · 실패는 '병합함' 으로 적지 않는다 — 다음 실행이 다시 한다."""
+    agent.update(active=0, queued=0)
+    out, _l, _f = _deploy_sf(tmp_path, agent, svc, under=False, sync_extra=_SF_SYNC_DUMP,
+                             merge_extra='echo "· 다른 병합이 signalforge 에서 도는 중 — 이번 차례는 건너뛴다"\n', NO_RESTART="1")
+    assert not (tmp_path / "portal/infra/.state/sf-merge-last").exists(), out

@@ -24,11 +24,11 @@ APPTAINERENV_DOCFORGE_INPUT_ROOTS=<포털 업로드 스테이징의 호스트 �
 - **필수.** 없으면 DocForge 가 '경로 입력이 닫혀 있다 — DOCFORGE_INPUT_ROOTS 가 비었다' 로, 스테이징과 다르면 '허용된 입력 뿌리 밖의 경로다' 로
   모든 변환을 거절한다(포털은 스테이징의 호스트 경로를 넘긴다).
 - 값 — 포털 `infra/.env` 에 `HWAX_UPLOAD_STAGING` 이 있으면 그 값, 없으면 `$HOME/.hwax/upload-staging` 의 절대경로(포털 start.sh 의 기본).
-- 선택 — `APPTAINERENV_DOCFORGE_HOST_DATA_DIR=<~/Projects/HEAXHub/var/app_data/doc_forge 의 절대경로>`(패키지 요약에 호스트 경로를 싣는 데만 쓴다 —
+- 선택 — `APPTAINERENV_DOCFORGE_HOST_DATA_DIR=<${HWAX_DATA_ROOT:-/data}/appdata/doc_forge 의 절대경로>`(패키지 요약에 호스트 경로를 싣는 데만 쓴다 —
   포털은 쓰지 않는다).
 - 그림 판독(VLM) 끝점은 적지 않는다 — 포털 `infra/.env` 의 `CHAT_LLM_*` 를 update-all 1g2 가 허브로 맞춘다(DF-D16). 챗을 stcx Qwen 으로 쓰는 박스면 이미 있다.
 - 선택 — **SP 허브 연결**(보고서 첫 쪽 '연결된 과제 · 모델', DocForge E13 · E14). 허브 관리자가 API 루트 주소와 core:read 토큰을 주면 — 주소는 이 파일에
-  `APPTAINERENV_DOCFORGE_SP_CORE_URL=<허브 API 루트>` 한 줄, 토큰은 `~/Projects/HEAXHub/var/app_data/doc_forge/secrets.env` 에 `DOCFORGE_SP_TOKEN=<토큰>`
+  `APPTAINERENV_DOCFORGE_SP_CORE_URL=<허브 API 루트>` 한 줄, 토큰은 `${HWAX_DATA_ROOT:-/data}/appdata/doc_forge/secrets.env` 에 `DOCFORGE_SP_TOKEN=<토큰>`
   한 줄(따옴표 없이 · `chmod 600` · 이 이름은 Drive 백업이 뺀다). 없으면 연결 칸이 생기지 않을 뿐 변환은 같다. 확인 — capabilities 의
   `ontology.sp_configured` 참 · 한 시간 안에 `ontology.last_sync.status` 가 ok.
 

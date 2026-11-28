@@ -17,6 +17,10 @@ export interface StagedFile {
   content_type: string;
   /** 이 사용자·이 확장자로 고를 수 있는 목적지. 빈 배열이면 보낼 곳이 없다. */
   destinations?: UploadDestination[];
+  /** 문서가 잠겼다(DRM 머리 · OLE — 서버가 머리 바이트로 본다, docs/request-1125 WD-11). */
+  locked?: 'drm' | 'ole';
+  /** 문서의 차트 개체 · 발표자 노트 · 박힌 그림 수(zip 목록 — IR-06). 문서가 아니면 없다. */
+  doc_features?: { charts: number; notes: number; pictures: number };
 }
 
 export interface StepProject {

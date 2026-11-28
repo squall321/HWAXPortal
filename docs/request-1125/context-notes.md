@@ -438,3 +438,39 @@
 - ste 세션(smarttwinexplorer-06)이 그쪽 사용자 지시로 GitHub main 을 859a02d → 47101d9 로 올렸다(35 커밋 · 빨리감기). 원격 가지 둘(registry-part-fetch b4503ec · lsdyna-license-default-removal 0313ceb)은 main 에 합치지 않았다.
 - Drive staging 은 859a02db7d93 그대로라 cae00 기다리개의 꾸러미 · 11-23 글 6절 · 6-1 → 6-2 절차는 영향이 없다. cae00 의 .deployed-commit 이 859a02d 면 GitHub main 의 조상이라 추적도 맞다.
 - 라이선스 가지는 cae00 의 `STE_LSTC_LICENSE_SERVER` 줄이 들어오기 전까지 합치지 않는 것 그대로. 다음 Drive(ste · CalculiX)는 교체 보고(기한 11-30) 뒤 그쪽 사용자에게 묻고 한다. 87 에 알렸다.
+
+## R25-28 포털 몫(1-1 · 1-12 · 2절)을 짓는다 — 가지 `wt1128/r1125-portal`(11-28)
+
+- 사용자 결정(11-28) 「미뤄 온 개발 일 — 우리 몫 전부 짓기」. R25-1 의 '미배정' 가운데 포털 리포 몫을 이 가지에서 지었다. 4절 · 부록 A 는 하지 않았다.
+  항목마다 git log · 코드로 먼저 봤다 — 29건 모두 요청서 번호로 된 커밋이 없었고 코드에도 없었다(이미 됨 0). 운영 박스 절차는 [server-setup.md](server-setup.md).
+- **판단을 고른 것**(요청서가 둘 중 하나를 허락했거나 말이 엇갈린 자리).
+  - HP-57 — 표지 `infra/.state/maintenance` + 도는 스택 명령(이 리포 `infra/scripts` 의 update-all · start · restart · stop · deploy-all — 상대 경로는 그 프로세스
+    cwd 로 풀어 본다, update-collab 은 운영 스크립트라 이름으로). db-sync 적용을 막는 판정은 update-all 만 그대로(표지로 db-sync 가 막히지 않게).
+  - HP-58 — deploy/apptainer 는 **알리기만**. dev 실측 자동 후보 8 가운데 DB 자리가 넷(POSTGRES_HOST · EXTERNAL_POSTGRES …)이라 자동으로 켜면 DB 연결이 바뀐다.
+  - HP-59 — 판정은 /tools-map 의 `tool_class`(한 판정 — 읽기 전용 PAT 를 여는 쪽보다 좁거나 같다). `routine_read` 는 이름 낱말로도 열어 11-01 find_job 같은
+    경우를 놓친다. 쌍은 리스크 앱 어댑터 소스와 시험이 견준다. dev 에서 곧바로 `list_session_files` 하나를 잡았다 — 게이트웨이 몫(다른 리포).
+  - HP-60 — 11-23 안내의 '잡이 0 이 되면 저절로 바꾼다' 는 코드에 없었다(deploy-ste · refresh-code · deploy-backend 모두 squeue 0곳 — 운영 박스 스크립트).
+    그래서 update-all(--if-stale)은 멈춤이 아니라 '이번에 바꾸지 않음'(rc 3 · ○), 직접 부름은 멈춤(rc 1) · `--force`. 셀 수 없으면 0 으로 보지 않는다.
+  - HP-74 — `location = /<id>/mcp/ → 308 /<id>/mcp`(업스트림이 루트인 *-mcp 만 · 늘). proxy_redirect 는 앱이 쓴 Location 꼴(Host · 접두)에 기대 버렸다.
+  - HP-75 — 평문 서버 블록에 `allow 127.0.0.1 · ::1 · deny all`(404 · 443 돌리기가 아니라) — 이 박스의 게이트웨이 · 점검이 루프백 8088 로 부르는 길을 살린다.
+  - SE-2 — 형식을 바꾸지 않는 여러 코어 gzip(lib/pgzip.py — 멤버를 잇는다)을 골랐다. zstd · -Fd 는 복원 · 대조 스크립트 넷이 따라 바뀌어야 한다.
+    '-pre' 꼬리로 update-all 이 뜬 것을 가른다. 짓다가 하나 찾음 — backup-local 의 '편입' 이 `$BACKUP_ROOT/aidh/pre-merge-*` 도 daily 로 옮겨, 그 자리의 정리 줄은
+    옮겨 간 뒤에는 아무것도 못 지웠다(7일 규칙으로 쌓였다). daily 안에서도 새 둘만 남긴다. ③ 은 사용자 결정(SYNCEFF-4).
+  - SE-7 — '병합함' 기록은 병합이 '✓ SF merge 완료' 로 끝났을 때만(다른 병합이 돌아 건너뛴 회차도 rc 0 이다). ③ 받는 쪽 보관은 SignalForge 몫.
+  - HPO-2 — AIDataHub AD-22 는 **새 인자 없이** 지우기 범위를 사전의 타입으로 좁혔다(가지 `wt1128/r1125` `ac52e54` — 답에 type_counts). 포털은 그 판인지 리포
+    소스의 답 칸 이름(type_counts)으로 본다(onto.sh 가 리포 소스로 돈다). 앞 판이면 일부 타입 잇기를 잇기 전에 멈춘다.
+  - HPO-1 · HP-82 — lookup 의 받는 타입은 정본 어휘표 밖 slug(mechanism · plm_model_code)도 받게 시험을 넓혔다(type 인자로 직접 준 조회용 — 게이트웨이 꼴).
+    FailureTrace 목록 꼴(결함 목록 줄)은 **넣지 않았다** — 지금 게이트웨이 `_onto_lookup_rows` 가 목록 줄을 통째로 버려 FailureTrace 다음 호출이 사라진다(OL-6 뒤).
+  - IR-02 — snapshot_page 기본 켬(요청 그대로). DocForge 가 판독할 쪽 그림을 스스로도 그리고 겹치면 한 번만 그린다(R25-9) — 느리면 `DOCFORGE_*_SNAPSHOT_PAGE=false`.
+  - IR-03 — 셈은 글의 표지로(DocForge textdoc · 포털 record_markdown · PC 추출기가 같은 꼴): '[그림 N]' · 그 뒤 '모델 판독' · 머리 '변환 경고'.
+  - IR-04 — AIDataHub IR-31(가지 `wt1128/r1125` `f810ef5` — 박스 AIDH_VLM_*)의 `figures[].reading` 을 '모델 판독' 줄로. 판독이 없으면 IR-03 문구가 선다.
+  - IR-05 — 새 대화에서 문서와 그림을 함께 비운다(같은 결함 꼴).
+  - WD-11 — 머리 바이트 판정을 서버(수신 응답 `locked` · 대화 분석 거절)와 화면(보내지 않음)에 둘 다. 바이트는 docAttach.ts 와 시험이 견준다.
+- **못 지은 것** — WD-05(웹 이어하기 → deliberate_continue): 대화에 MCP 심의의 job_id 가 있어야 하는데 그것을 싣는 WD-03 의 포털 몫(엔진 창구
+  `GET /delib/conversations` 를 읽어 대화로 저장 · 사이드바)이 아직이다 — 엔진 창구 둘(WD-03 `c27c13e` · WD-05 `f955eff`)은 에이전트 서버 가지 `wt1128/r1125-as`
+  (미병합). 그 가지가 들어간 뒤 WD-03 포털 몫과 함께 짓는다. HPO-3 의 유도 규칙(선택)은 운영 쪽 23-U1 결정 뒤 · 관리 기준 유도는 AIDataHub 잇기가 유도 연결을
+  받아야 한다. 2절 P-1 — 보기 머리(`portal` · 목적)는 이미 기본이다(C-41 · MM-10). `X-HWAX-Result: ref` 를 기본으로 넣는 것은 TS-6(11-24 사용자 결정 — 2판 스위치
+  모두 기본 꺼짐)과 부딪쳐 짓지 않았다 — 운영 쪽 측정 판(2절 '받는 순서' 2) 뒤 사용자 결정. light 기본은 게이트웨이 G-1 뒤. 1-12 HP-71 은 포털 몫이 없다(세 리포 착지 R25-17).
+- **회귀 중 형제 리포가 움직였다** — 에이전트 서버 main 이 이 작업 도중 `wt1128/r1125-as` 를 합쳐(b8de57b) 포털 대조 시험 둘이 붉었다. 포털 몫만 맞췄다 —
+  확인 카드 호출의 `summary` 형(WD-06 — 화면은 본문 카드 글의 '심의 —' 줄로 이미 보이고 칸으로 고치기 confirm_edit 은 짓지 않음) · 킷의 THINK_SEAT_TIMEOUT_S
+  주석(HA-35 — 비면 DELIB_TIMEOUT_S). 회귀는 도구 상한(10분) 때문에 다섯 조각으로 돌렸다(스크래치 r1125-regression-summary.txt).

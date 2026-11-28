@@ -73,3 +73,12 @@
 - [ ] Q45 `images{}` — 운영 템플릿 잡 끝나면 c8 · 87 에
 - [x] KooRemapper 착지 셋(804a7acb · 664a2f28 · ST-25-KR 4f8f73ec) → 87(R25-23)
 - [x] StepForge ST-25 착지 값(push · Drive · SIF 수 둘 · 손 할 일 · DB 이행) → 87 — KooRemapper 와 같은 회차 — 다섯 다 받아 87 에 넘김(R25-24)
+
+## 포털 몫(1-1 · 1-12 · 2절 — 사용자 결정 11-28, 가지 `wt1128/r1125-portal`, R25-28)
+
+- [x] HP-57 감시 비켜서기 · HP-58 env-sync deploy/apptainer(알리기만) · SE-9 단계 시각 · HP-68 장애 안내 · HP-69 update-forges 프록시 · SYNCEFF-3 · HP-61
+- [x] HPO-2 · HPO-3(까닭 칸) card-entity-bind · HPO-1 · HPO-4 · HP-82(types) 어휘표 · HP-72 · HP-74 · HP-75 nginx · HP-59 리스크 조회 점검 · HP-60 ste 잡
+- [x] SE-2(① ② ④) 배포 전 백업 · SE-7(① ②) SignalForge 병합 · IR-01 · 02 · 07 · 08 DocForge 옵션 · IR-03 · 04 · 05 · 06 · WD-11 문서 붙이기
+- [ ] WD-05 — WD-03 포털 몫(엔진 창구 읽어 대화로)과 함께, 에이전트 서버 가지 `wt1128/r1125-as` 병합 뒤
+- [ ] HP-82 lookup FailureTrace 목록 꼴 — 게이트웨이 OL-6 뒤 · HPO-3 유도 규칙 — 23-U1 뒤 · SE-2 ③ — SYNCEFF-4 사용자 결정 · P-1 Result 머리 기본 — TS-6 과 부딪침(사용자 결정)
+- [ ] 가지 병합 · push(부른 쪽) → cae00 절차 [server-setup.md](server-setup.md) — 받기 전 게이트웨이 읽기 목록 한 줄(0 절)

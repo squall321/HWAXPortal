@@ -434,6 +434,49 @@ def _md_cell(v) -> str:
     return " ".join(str("" if v is None else v).split()).replace("|", "\\|")
 
 
+# DRM 으로 잠긴 Office 문서의 머리 — 화면 docAttach.ts 의 DRM_HEAD · OLE 판정과 같은 바이트다(시험이 견준다, docs/request-1125 WD-11).
+DRM_HEAD = bytes((0x3C, 0x23, 0x23, 0x20, 0x4E, 0x41, 0x53, 0x43, 0x41))   # "<## NASCA" — 사내 DRM 머리
+OLE_HEAD = bytes((0xD0, 0xCF, 0x11, 0xE0))                                    # OLE 복합문서 — 암호화(또는 구형 .ppt · .doc)
+_OOXML_EXTS = (".pptx", ".docx", ".xlsx")
+DRM_REFUSAL = ("변환 못 함 — DRM 으로 잠긴 파일입니다. 서버는 암호화된 바이트만 봅니다. 입력창의 문서 붙이기에서 "
+               "'PC 의 PowerPoint(Word) 로 열어 가져오기' 를 쓰면 이 PC 의 Office 가 열어 글을 붙입니다.")
+
+
+def office_lock(path: Path) -> str | None:
+    """OOXML(.pptx · .docx · .xlsx)인데 머리가 zip 이 아니면 잠긴 것 — 'drm'(사내 DRM 머리) · 'ole'(OLE 복합문서), 아니면 None.
+    다른 확장자(.ppt · .pdf · .md …)는 보지 않는다 — OLE 는 구형 .ppt 의 정상 꼴이다."""
+    if path.suffix.lower() not in _OOXML_EXTS:
+        return None
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except OSError:
+        return None
+    if head.startswith(DRM_HEAD):
+        return "drm"
+    if head.startswith(OLE_HEAD):
+        return "ole"
+    return None
+
+
+def doc_features(path: Path) -> dict:
+    """발표자료 · 문서의 차트 개체 · 발표자 노트 · 박힌 그림 수 — zip 목록만 읽는다(본문을 풀지 않는다). 'Report Archive 로 보내기' 가 빼는 셋이라
+    화면이 그런 덱에서 정밀 변환을 앞에 둔다(docs/request-1125 IR-06). 잠겼거나 zip 이 아니면 빈 dict."""
+    if path.suffix.lower() not in _OOXML_EXTS:
+        return {}
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = zf.namelist()
+    except (OSError, zipfile.BadZipFile, ValueError):
+        return {}
+    root = {".pptx": "ppt/", ".docx": "word/", ".xlsx": "xl/"}[path.suffix.lower()]
+    charts = sum(1 for n in names if n.startswith(root + "charts/chart") and n.endswith(".xml"))
+    notes = sum(1 for n in names if n.startswith("ppt/notesSlides/notesSlide") and n.endswith(".xml"))
+    pictures = sum(1 for n in names if n.startswith(root + "media/"))
+    return {"charts": charts, "notes": notes, "pictures": pictures}
+
+
 def record_markdown(record: dict, filename: str) -> str:
     """AI 데이터 허브 변환 결과(record — 절 · 블록 · 표 · 그림) → `.hwax.md`(PC 추출기와 같은 꼴: 머리말 schema hwax-doc/1, 슬라이드는
     `## [s.N]`). 이 챗에서 읽고 묻는 데 쓴다(docs/chat-ppt PP-D17). 발표자 노트는 '> 발표자 노트:' 로, 표는 마크다운 표로, 그림은 자리와
@@ -487,7 +530,15 @@ def record_markdown(record: dict, filename: str) -> str:
                 body.append("")
             elif kind == "figure" and b.get("ref") in figures:
                 f = figures[b["ref"]]
-                body.append(f"[그림 {f.get('number')}] {_caption(f.get('caption'))} — 그림 내용은 글로 옮기지 않았다")
+                # AI 데이터 허브가 그림을 판독했으면(그 박스가 AIDH_VLM_* 를 켰다 — AIDataHub IR-31) 그 요약을 '모델 판독' 으로 싣는다 — DocForge 글과
+                # 같은 표지라 화면이 판독 수를 같은 규칙으로 센다(docs/request-1125 IR-04). 판독 전문은 그림 바로 뒤 글 블록으로 이미 온다.
+                rd = f.get("reading") if isinstance(f.get("reading"), dict) else {}
+                summ = " ".join(str(rd.get("summary") or "").split())
+                if summ:
+                    body.append(f"[그림 {f.get('number')}] {_caption(f.get('caption'))}".rstrip())
+                    body.append(f"> 모델 판독: {summ}")
+                else:
+                    body.append(f"[그림 {f.get('number')}] {_caption(f.get('caption'))} — 그림 내용은 글로 옮기지 않았다")
                 body.append("")
         if body and body[-1] != "":
             body.append("")
