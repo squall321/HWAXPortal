@@ -20,6 +20,10 @@
 # 실제로 그 때문에 포털→ste 자격 중계가 조용히 죽어 있었다(2026-09-23, docs/one-token D-12).
 #
 # `--if-stale` 을 주면 원격과 리포를 대조해 **다를 때만** 배포한다(update-all 이 이걸 쓴다).
+# **실행 중 잡이 있으면 바꾸지 않는다**(docs/request-1125 HP-60) — 헤드의 squeue 로 ste 잡(STE_JOB_USER, 기본 ste-run)이 도는(R · CG · CF) 수를
+# 센다. 잡 중 배포는 계산 노드가 읽는 공유 폴더를 덮고 백엔드를 여러 번 다시 띄운다(11-01 7일 한도 잡 셋). 직접 부르면 멈추고(rc 1 · 까닭 한 줄)
+# `--force` 일 때만 넘긴다. `--if-stale`(update-all)은 이번에 바꾸지 않고 건너뛴다(rc 3 · 장부 ○ — 다음 실행이 다시 본다). 셀 수 없으면(헤드에
+# 못 닿음 · squeue 실패) 0 으로 보지 않는다 — 둘 다 rc 1.
 # 저장소가 없으면(최초) Drive 스테이징 번들에서 rclone 으로 받아 git clone 한다 — 단 Teleport 접속
 # 설정(transport.env)만은 클러스터 비밀이라 자동 못 채우고, 한 번 채우라 안내하고 멈춘다(그 뒤 재실행).
 set -euo pipefail
@@ -43,10 +47,12 @@ STAGING="${STE_STAGING:-$HOME/ste-staging}"
 DEPLOY="$STE_REPO/deploy/refresh-code.sh"
 SKIP_PULL=""
 IF_STALE=0
+FORCE=0
 ARGS=()
 for a in "$@"; do
   case "$a" in
     --if-stale) IF_STALE=1 ;;
+    --force) FORCE=1 ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -68,6 +74,34 @@ fi
 # 건너뛰는 사유는 update-all 의 "있는데 안 켠 기능" 장부(○)에도 남긴다 — exit 0 만 하면 조용히 지나간다(cae00 실측 2026-09-27:
 # 2c 가 왜 배포하지 않았는지 끝 요약에 아무것도 없었다).
 if [ -f "$SELF/infra/scripts/lib/skip-ledger.sh" ]; then . "$SELF/infra/scripts/lib/skip-ledger.sh"; else hwax_skip_record() { :; }; fi   # SELF = 리포 루트
+
+# 헤드에서 도는 ste 잡 수 — 셀 수 없으면 빈 값(모름은 0 이 아니다). squeue 가 실패하면 원격이 7 로 끝나 빈 값이 된다(wc 가 0 을 내지 않게).
+_ste_running_jobs() {
+  local n
+  n="$(cd "$STE_REPO" && . deploy/lib/transport.sh >/dev/null 2>&1 \
+       && tr_run "o=\$(squeue -h -u ${STE_JOB_USER:-ste-run} -t R,CG,CF -o %i) || exit 7; printf '%s\n' \"\$o\" | grep -c . ; true" 2>/dev/null \
+       | tr -d '[:space:]')" || n=""
+  [[ "$n" =~ ^[0-9]+$ ]] && printf '%s' "$n"
+  return 0
+}
+# 바꾸기 앞의 잡 확인 — 0 이면 돌아가고(진행), 아니면 스크립트를 끝낸다(위 머리말의 규칙).
+_ste_jobs_gate() {
+  local n
+  if [ "$FORCE" = 1 ]; then printf '  · --force — 실행 중 ste 잡을 보지 않고 바꾼다\n'; return 0; fi
+  n="$(_ste_running_jobs)"
+  [ "$n" = 0 ] && return 0
+  if [ -z "$n" ]; then
+    bad "실행 중 ste 잡 수를 셀 수 없다(헤드에 못 닿았거나 squeue 실패) — 바꾸지 않았다. 헤드 접속(Teleport 세션)을 확인하거나 잡이 없음을 확인한 뒤 --force"
+    exit 1
+  fi
+  if [ "$IF_STALE" = 1 ]; then
+    printf '  · 실행 중 ste 잡 %s개 — 이번에는 바꾸지 않는다(잡 중 배포는 계산 노드가 읽는 공유 폴더를 덮는다). 다음 update-all 이 다시 본다\n' "$n"
+    hwax_skip_record "ste 코드 최신화" "실행 중 ste 잡 ${n}개 — 잡 중에는 바꾸지 않는다" "잡이 끝난 뒤 update-all 을 다시(지금 바꾸려면 infra/scripts/deploy-ste.sh --force)"
+    exit 3
+  fi
+  bad "실행 중 ste 잡 ${n}개 — 바꾸지 않았다(잡 중 배포는 계산 노드가 읽는 공유 폴더를 덮고 백엔드를 다시 띄운다). 잡이 끝난 뒤 다시, 지금 바꾸려면 --force"
+  exit 1
+}
 if [ "$IF_STALE" = 1 ]; then
   if [ ! -x "$DEPLOY" ]; then
     printf '  · ste 리포가 이 박스에 없다(%s) — 건너뛴다. 최초 반입은 infra/scripts/deploy-ste.sh 를 직접 부른다.\n' "$STE_REPO"
@@ -116,6 +150,7 @@ if [ "$TRANSPORT_MODE" = direct ]; then
   fi
 
   if [ "${STE_SKIPPED:-0}" != 1 ]; then
+    _ste_jobs_gate
     printf '\033[1;36m▶ ste 코드 갱신 (direct: 리포 → 헤드, Drive 경유 없음) — %s\033[0m\n' "$STE_REPO"
     ( cd "$STE_REPO" && bash deploy/deploy-backend.sh ) || die "ste 백엔드 배포 실패"
     # 프론트는 dist 가 있으면 그것을 보낸다. 빌드는 dev 에서만 되므로(cae00 은 npm 이 막혔다)
@@ -206,6 +241,7 @@ EOF
       exit 3   # 게이트가 막았다 — update-all 은 이 코드를 "안 켬(장부)" 으로 읽는다. 0 이면 배포됨과 구별이 안 된다
     fi
   fi
+  _ste_jobs_gate
   printf '\033[1;36m▶ STE 코드 갱신 배포 트리거 — %s\033[0m\n' "$STE_REPO"
   # PORTAL_ENV — refresh-code §8 의 sync-sso-secret 은 포털을 형제 디렉터리(../HWAXPortal)로 찾는데 cae00 은 ~/SmartTwinExplorer 와
   # ~/Projects/HWAXPortal 이라 못 찾고 "포털 쪽 값이 비어 있다" 로 빠져 헤드에 시크릿이 안 심겼다(cae00 실측 2026-09-27: 자격중계 404).

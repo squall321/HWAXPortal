@@ -16,6 +16,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 UPDATE_ALL = (ROOT / "infra/scripts/update-all.sh").read_text(encoding="utf-8")
 DEPLOY_STE = ROOT / "infra/scripts/deploy-ste.sh"
@@ -122,3 +124,65 @@ def test_deploy_ste_passes_portal_env_on_both_paths():
     assert 'PORTAL_ENV="$SELF/infra/.env" bash "$STE_REPO/deploy/sync-sso-secret.sh"' in src, "direct 경로"
     assert 'STE_STAGING="$STAGING" PORTAL_ENV="$SELF/infra/.env" "$DEPLOY"' in src, "Drive(refresh-code) 경로"
 
+
+
+# ── 실행 중 잡이 있으면 바꾸지 않는다(docs/request-1125 HP-60) ─────────────────────────────────────────────────
+# 11-01 에 7일 한도 해석 잡 셋이 돌아 배포를 미뤘고, 박스가 따로 '잡 0 일 때 배포' 스크립트로 기다렸다 — deploy-ste.sh · STE 쪽 스크립트 셋에
+# squeue 확인이 0곳이었다(11-23 안내의 '0 이 되면 저절로 바꾼다' 는 코드가 아니라 그 박스 스크립트였다). 임시 포털 · 가짜 ste 리포(전송 lib 의
+# tr_run 을 바꿔 끼운다)로 스크립트를 그대로 돌린다 — 실제 헤드 · 실 포털에 닿지 않는다.
+def _fake_ste(tmp_path):
+    import http.server
+    import shutil
+    import threading
+    portal = tmp_path / "HWAXPortal"
+    (portal / "infra/scripts/lib").mkdir(parents=True)
+    shutil.copy(DEPLOY_STE, portal / "infra/scripts/deploy-ste.sh")
+    shutil.copy(ROOT / "infra/scripts/lib/skip-ledger.sh", portal / "infra/scripts/lib/skip-ledger.sh")
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{"service":"smart-twin-explorer"}')
+
+        def log_message(self, *a):
+            pass
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    (portal / "infra/.env").write_text(f"HTTP_PORT={srv.server_address[1]}\n")
+    ste = tmp_path / "SmartTwinExplorer"
+    (ste / "deploy/lib").mkdir(parents=True)
+    (ste / "deploy/transport.env").write_text("TRANSPORT_MODE=direct\n")
+    (ste / "deploy/lib/transport.sh").write_text(
+        'SSH=true; TARGET=head\n'
+        'tr_run() { case "$*" in *squeue*) [ -n "${FAKE_SQUEUE_FAIL:-}" ] && return 7; echo "${FAKE_JOBS:-0}" ;; *) return 0 ;; esac; }\n')
+    for f, body in (("deploy-backend.sh", f'echo backend >> {tmp_path}/calls\n'), ("deploy-frontend.sh", "exit 0\n"),
+                    ("sync-sso-secret.sh", "exit 0\n"), ("refresh-code.sh", "exit 0\n")):
+        (ste / "deploy" / f).write_text("#!/usr/bin/env bash\n" + body)
+        (ste / "deploy" / f).chmod(0o755)
+    return portal, ste, srv
+
+
+@pytest.mark.parametrize("jobs,args,rc,deployed,say", [
+    ("0", [], 0, True, ""),
+    ("2", [], 1, False, "실행 중 ste 잡 2개 — 바꾸지 않았다"),
+    ("2", ["--force"], 0, True, "--force — 실행 중 ste 잡을 보지 않고 바꾼다"),
+    ("2", ["--if-stale"], 3, False, "실행 중 ste 잡 2개 — 이번에는 바꾸지 않는다"),
+    ("fail", [], 1, False, "실행 중 ste 잡 수를 셀 수 없다"),
+    ("fail", ["--if-stale"], 1, False, "실행 중 ste 잡 수를 셀 수 없다"),
+])
+def test_실행_중_잡이_있으면_바꾸지_않는다(tmp_path, jobs, args, rc, deployed, say):
+    portal, ste, srv = _fake_ste(tmp_path)
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "STE_REPO": str(ste)}
+    env.update({"FAKE_SQUEUE_FAIL": "1"} if jobs == "fail" else {"FAKE_JOBS": jobs})
+    ledger = tmp_path / "ledger"; ledger.write_text("")
+    env["HWAX_SKIP_LEDGER"] = str(ledger)
+    try:
+        r = subprocess.run(["bash", str(portal / "infra/scripts/deploy-ste.sh"), *args], capture_output=True, text=True,
+                           env=env, timeout=60)
+    finally:
+        srv.shutdown(); srv.server_close()
+    out = r.stdout + r.stderr
+    assert r.returncode == rc, out
+    assert (tmp_path / "calls").exists() == deployed, out
+    assert say in out, out
+    if rc == 3:
+        assert "실행 중 ste 잡 2개" in ledger.read_text(), "update-all 끝 요약(○)에 남는다"
