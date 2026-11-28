@@ -4,7 +4,7 @@
 
 ## AIDataHub(dev 내기)
 
-- [x] `parts-to-drive.sh` — 표 · 열 · 조각 규칙, 이진 COPY + gzip 시각 0 + 내용 해시 이름, pre-data 스키마, 목록(JSON), 새 조각만 올리기, 목록 7판 · 안 가리키는 조각 지우기 · 한 시점(AP-4) — AIDataHub `2f6d60b`
+- [x] `parts-to-drive.sh` — 표 · 열 · 조각 규칙, 이진 COPY + gzip 시각 0 + 내용 해시 이름, pre-data 스키마, 목록(JSON), 새 조각만 올리기, 목록 3판(처음 7판 — AIDataHub `779e112` 로 줄임, AP-11) · 안 가리키는 조각 지우기 · 한 시점(AP-4) — AIDataHub `2f6d60b`
 - [ ] dev cron(전체 덤프 뒤) — **사용자 몫**: 넣으려던 줄은 자동 모드 분류기가 막았다(AP-15). 그동안은 낡음 검사(AP-14)가 cae00 을 전체 덤프 길로 돌린다.
   11-11 cae00 이 이 빈 곳을 짚었다(HP-63 — 11-08 뒤 목록이 끊겨 전체 덤프 길 약 1시간 30분). dev 에서 `crontab -e` 로 지금의 전체 덤프 줄
   (`45 4 * * * … backup-to-drive.sh …  # AIDataHub daily Drive backup`)을 아래 한 줄로 바꾼다. 같은 예약에서 덤프 뒤 조각을 이어 낸다(덤프가 실패해도

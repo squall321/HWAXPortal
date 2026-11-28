@@ -37,7 +37,7 @@ SNAPSHOT` 으로 빌린다(pg_dump 도 `--snapshot`). psql 은 질의 결과마�
 조각 길이 실패한 날 전체 길은 대개 돈다(표식이 옛 덤프). 운영자 미리보기(HE팀 페르소나)는 어느 길이든 병합이 돈 실행에만. 잠깐 끄기는
 `AIDH_SYNC_MODE=full`(실행 때 환경변수 — `SF_RESTORE_DB` 와 같은 꼴, 박스 설정으로 두지 않는다).
 
-**AP-8 앞 모습 폴더는 백업과 같은 보관 일수로 지운다.** 전체 길의 `pre-merge-*.sql.gz`(4.4 GB)는 포털 `backup-local.sh` 가 RETAIN_DAYS(7)로 지운다 —
+**AP-8 앞 모습 폴더는 백업과 같은 보관 일수로 지운다.** 전체 길의 `pre-merge-*.sql.gz`(4.4 GB — dev 실측. 운영 박스는 약 11.2 GB, 11-24 운영 쪽 바로잡기 · docs/request-1125 SYNCEFF-3)는 포털 `backup-local.sh` 가 RETAIN_DAYS(7)로 지운다 —
 `pre-parts-*` 폴더도 같은 줄에서. 앞 모습은 그 병합이 건드린 줄(덮일 수 있는 줄 = 받은 조각에 든 키의 운영 행)이라 바뀐 날엔 작고, 첫 조각 병합은
 운영 행 거의 전부라 전체 스냅숏만큼 크다.
 
