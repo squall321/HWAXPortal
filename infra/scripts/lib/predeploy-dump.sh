@@ -30,7 +30,7 @@ hwax_predeploy_dump_decide() {
     *) printf 'fresh\tknob\tHWAX_PREDEPLOY_DUMP 의 값(%s)을 모른다 — fresh · auto 만 받는다. 새로 뜬다\n' "$knob"; return 0 ;;
   esac
   today="$(date +%Y%m%d)"
-  # glob 은 이름 차례로 펼친다 — 시각이 이름에 있어 마지막이 가장 새 것이다. -pre(이 스크립트가 배포 전에 뜬 것) · pre-merge-*(병합 전 덤프)는 꼴이 달라 빠진다.
+  # glob 은 이름 차례로 펼친다 — 시각이 이름에 있어 마지막이 가장 새 것이다. -pre(update-all 이 배포 전에 뜬 것) · pre-merge-*(병합 전 덤프)는 꼴이 달라 빠진다.
   for f in "$daily/aidh-$box-"[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].sql.gz; do
     [ -e "$f" ] || continue
     any="$f"
