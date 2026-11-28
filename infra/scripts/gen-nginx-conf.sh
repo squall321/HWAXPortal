@@ -107,8 +107,19 @@ EOF
   esac
 }
 
-loc_block() {  # $1=id  $2=url  (unquoted heredoc: ${} expands, \$ stays literal for nginx)
-  local id="$1" url="$2"
+loc_block() {  # $1=id  $2=url  $3=plain(1 = 평문 HTTP 서버 블록)  (unquoted heredoc: ${} expands, \$ stays literal for nginx)
+  local id="$1" url="$2" plain="${3:-0}"
+  # Host — 기본은 받은 Host($host). NGINX_UPSTREAM_HOST_ROUTES 에 적은 라우트는 업스트림 주소의 Host($proxy_host) — 루프백에 묶은 FastMCP 앱
+  # (데이터허브 셋 · MX 백서)은 DNS rebinding 막이로 포털 도메인 Host 를 421 로 거절해, 박스가 Host 만 바꾸는 중계를 따로 띄웠다(docs/request-1125 HP-72).
+  # 공개 주소를 다시 짓는 앱은 X-Forwarded-Host 를 본다 — 그 줄은 그대로다.
+  local host_var='$host'
+  case " $UPSTREAM_HOST_ROUTES " in *" $id "*) host_var='$proxy_host' ;; esac
+  # 평문(HTTP_PORT) 서버에서 TLS 로만 낼 라우트 — 루프백(이 박스의 게이트웨이 · 점검)만 받고 나머지는 403(docs/request-1125 HP-75).
+  # MCP 클라이언트는 Authorization: Bearer 를 매 요청에 실어 http 주소를 등록하면 개인 토큰이 사내망에 평문으로 흐른다.
+  local plain_only=""
+  if [ "$plain" = 1 ] && _tls_only "$id"; then
+    plain_only=$'            allow 127.0.0.1;\n            allow ::1;\n            deny all;\n'
+  fi
   # X-Forwarded-Prefix = the SERVICE root prefix (first path segment of the id), so a prefix-aware
   # backend (e.g. HEAXHub's agent manifest building absolute installer/download URLs) can prepend it
   # and emit https://<host>/<id>/... rather than a prefix-less URL the portal would 404. For a nested
@@ -122,7 +133,7 @@ loc_block() {  # $1=id  $2=url  (unquoted heredoc: ${} expands, \$ stays literal
   # they use to rebuild public URLs. So re-declare the full set in every generated location.
   cat <<EOF
         location /${id}/ {
-            proxy_set_header Host              \$host;
+${plain_only}            proxy_set_header Host              ${host_var};
             proxy_set_header X-Real-IP         \$remote_addr;
             proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto \$scheme;
@@ -144,6 +155,15 @@ EOF
   # To enable another service, add its id to this list.
   case " ste " in
     *" $id "*) printf '        location = /%s { return 301 /%s/; }\n' "$id" "$id" ;;
+  esac
+  # *-mcp 의 끝 슬래시 — 앱 MCP 는 '/mcp/' 에 '/mcp' 로 307 을 내는데 Location 이 포털 접두(/<id>/)를 모르고(셋은 443 으로 불러도 http:// 로
+  # 내려갔다 — 11-13 실측) 포털 루트 /mcp(SPA)로 샜다. 접두를 아는 상대 주소로 308(POST 본문을 그대로 다시 보낸다 — docs/request-1125 HP-74).
+  # 업스트림이 루트를 가리킬 때만이다 — 길이 있는 주소(…/mcp/)를 적은 라우트는 이미 그 길로 간다.
+  case "$id" in
+    *-mcp)
+      if [[ "$url" =~ ^https?://[^/]+/$ ]]; then
+        printf '        location = /%s/mcp/ {\n%s            return 308 /%s/mcp;\n        }\n' "$id" "$plain_only" "$id"
+      fi ;;
   esac
   # 반대 경우 — 포털이 **같은 이름의 자기 SPA 페이지**를 가진 id. nginx 는 prefix location
   # (`/id/`)에 대해 슬래시 없는 `/id` 를 자동으로 301 `/id/` 한다(실측: /apps·/heax-hub·
@@ -234,6 +254,31 @@ for _r in $(printf '%s' "${NGINX_LARGE_BUFFER_ROUTES:-}" | tr ',' ' '); do
   else echo "  ✗ NGINX_LARGE_BUFFER_ROUTES 의 '$_r' 는 라우트 이름 꼴이 아니라 버렸다(routes.env 의 키 — 예 failuretrace)" >&2; fi
 done
 LARGE_BUFFER_ROUTES="${LARGE_BUFFER_ROUTES% }"
+# 라우트 이름 목록 손잡이를 읽는다 — 위 NGINX_LARGE_BUFFER_ROUTES 와 같은 꼴(쉼표 · 이름 꼴만, 틀린 것은 버리고 알린다). $2 는 받는 특수 낱말.
+_route_list() {  # $1=손잡이 이름 [$2=특수 낱말] → 공백으로 가른 이름들
+  local out="" r parts=()
+  IFS=', ' read -ra parts <<<"${!1:-}"     # read -a 로 쪼갠다 — 따옴표 없는 for 는 '*-mcp' 를 현재 폴더의 파일 이름으로 푼다
+  for r in ${parts[@]+"${parts[@]}"}; do
+    if [ -n "${2:-}" ] && [ "$r" = "$2" ]; then out+="$r "
+    elif [[ "$r" =~ ^[A-Za-z0-9_][A-Za-z0-9_/-]*$ ]]; then out+="$r "
+    else echo "  ✗ $1 의 '$r' 는 라우트 이름 꼴이 아니라 버렸다(routes.env 의 키 — 예 failuretrace-mcp)" >&2; fi
+  done
+  printf '%s' "${out% }"
+}
+# 업스트림 주소의 Host 를 보낼 라우트 — 기본 비움(끔, docs/request-1125 HP-72). 예 NGINX_UPSTREAM_HOST_ROUTES=failuretrace-mcp,mx-white-paper-mcp
+UPSTREAM_HOST_ROUTES="$(_route_list NGINX_UPSTREAM_HOST_ROUTES)"
+# 평문 서버에서는 루프백만 받을 라우트(TLS 로만 낸다) — 기본 비움(끔, HP-75). '*-mcp' 한 낱말은 이름이 -mcp 로 끝나는 라우트 전부다.
+# TLS 가 꺼진 박스(ENABLE_TLS 가 true 가 아님)에서는 버린다 — 켜면 그 라우트를 밖에서 아예 못 쓰게 된다.
+TLS_ONLY_ROUTES="$(_route_list NGINX_TLS_ONLY_ROUTES '*-mcp')"
+if [ -n "$TLS_ONLY_ROUTES" ] && [ "${ENABLE_TLS:-false}" != "true" ]; then
+  echo "  ⚠ NGINX_TLS_ONLY_ROUTES 를 쓰지 않는다 — TLS 가 꺼진 박스다(ENABLE_TLS). 켜면 그 라우트를 밖에서 아예 못 쓴다" >&2
+  TLS_ONLY_ROUTES=""
+fi
+_tls_only() {  # $1=id → 0 = 평문 서버에서 루프백만
+  case " $TLS_ONLY_ROUTES " in *" $1 "*) return 0 ;; esac
+  case "$1" in *-mcp) case " $TLS_ONLY_ROUTES " in *" *-mcp "*) return 0 ;; esac ;; esac
+  return 1
+}
 _ste_result_re='"~^/ste/api/jobs/[^/]+/result(\.zip|/file/)"'
 http_extras=""
 if [ -n "$STE_RESULT_RATE" ]; then
@@ -244,7 +289,8 @@ if [ -n "$STE_RESULT_CONN" ]; then
   http_extras+="    limit_conn_zone \$ste_result_key zone=ste_result:10m;"$'\n'
 fi
 
-locations=""
+locations=""          # 평문(HTTP_PORT) 서버 — 템플릿의 {{LOCATIONS}}
+locations_tls=""      # TLS 서버 — 평문 서버와 같되 TLS 로만 낼 라우트의 루프백 제한이 없다(HP-75)
 count=0
 _route_ids=""
 if [ -f "$ROUTES_MERGED" ]; then
@@ -265,13 +311,21 @@ if [ -f "$ROUTES_MERGED" ]; then
       http://*/*|https://*/*) : ;;                 # already has a path → leave as-is
       http://*|https://*)     url="${url%/}/" ;;    # bare host → force trailing slash (strip)
     esac
-    locations="${locations}$(loc_block "$id" "$url")"$'\n'
+    locations="${locations}$(loc_block "$id" "$url" 1)"$'\n'
+    locations_tls="${locations_tls}$(loc_block "$id" "$url" 0)"$'\n'
     count=$((count + 1))
     _route_ids+=" $id"
   done < "$ROUTES_MERGED"
 fi
 for _r in $LARGE_BUFFER_ROUTES; do
   case "$_route_ids " in *" $_r "*) ;; *) echo "  ⚠ NGINX_LARGE_BUFFER_ROUTES 의 '$_r' 는 라우트에 없다 — 큰 응답 버퍼가 아무 데도 붙지 않았다(routes.env · routes.local.env 의 키를 본다)" >&2 ;; esac
+done
+for _r in $UPSTREAM_HOST_ROUTES; do
+  case "$_route_ids " in *" $_r "*) ;; *) echo "  ⚠ NGINX_UPSTREAM_HOST_ROUTES 의 '$_r' 는 라우트에 없다 — 업스트림 Host 가 아무 데도 붙지 않았다(routes.env · routes.local.env 의 키를 본다)" >&2 ;; esac
+done
+for _r in $TLS_ONLY_ROUTES; do
+  [ "$_r" = '*-mcp' ] && continue
+  case "$_route_ids " in *" $_r "*) ;; *) echo "  ⚠ NGINX_TLS_ONLY_ROUTES 의 '$_r' 는 라우트에 없다 — 평문 막기가 아무 데도 붙지 않았다(routes.env · routes.local.env 의 키를 본다)" >&2 ;; esac
 done
 
 # 스트리밍 두 경로의 침묵 한도(proxy_read_timeout) — infra/.env 의 손잡이 둘. 템플릿(HTTP 서버)과 아래 TLS 사본은 같은 토큰을
@@ -381,7 +435,7 @@ if [ "${ENABLE_TLS:-false}" = "true" ]; then
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-${locations}${stream_locations}        location / {
+${locations_tls}${stream_locations}        location / {
             proxy_pass http://127.0.0.1:{{PORTAL_PORT}};
         }
     }
