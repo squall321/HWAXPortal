@@ -472,8 +472,27 @@ if want signalforge; then
       elif [ -x scripts/drive-sync/merge-from-drive.sh ]; then
         # dev 가 backup-to-drive 로 올린 덤프가 있으면 병합(없으면 조용히 생략=보존).
         # dev 검증: insert/멱등/additive 무손실(363k행), cae00 축적분·미참조행 안전.
-        echo "  · DB MERGE(비파괴) — dev 신규 VOC 반영 + cae00 축적 유지"
-        bash scripts/drive-sync/merge-from-drive.sh || echo "  ⚠ SF merge 실패 — 사전 스냅샷으로 롤백 가능(운영 무손상)"
+        # 위 받기(sync-from-drive)가 받은 덤프를 그대로 넘긴다 — 안 넘기면 병합이 Drive 최신을 다시 받아, 두 단계 사이에 새 덤프가 올라온 실행은
+        # 다른 덤프 둘을 받았다(docs/request-1125 SE-7 ①). 마지막으로 병합한 덤프(이름 · sha256 — 포털 infra/.state/sf-merge-last)와 같으면 사전
+        # 스냅숏 · 적재 · 뷰 새로 고침을 건너뛴다(②). 병합이 '완료' 줄로 끝났을 때만 적는다 — 다른 병합이 돌아 건너뛴 회차 · 덤프 없음은 적지 않는다.
+        # 다시 하려면 SF_MERGE_FORCE=1.
+        _sfd="$(readlink -f backups/sf-db-latest.sql.gz 2>/dev/null || true)"; [ -f "$_sfd" ] || _sfd=""
+        _sfmark="$PORTAL_DIR/infra/.state/sf-merge-last"; _sfid=""
+        [ -n "$_sfd" ] && _sfid="$(basename "$_sfd") $(sha256sum "$_sfd" | cut -d' ' -f1)"
+        if [ -n "$_sfid" ] && [ "${SF_MERGE_FORCE:-0}" != 1 ] && [ "$(cat "$_sfmark" 2>/dev/null)" = "$_sfid" ]; then
+          echo "  · DB MERGE 건너뜀 — 마지막으로 병합한 덤프와 같다($(basename "$_sfd")) · 다시 하려면 SF_MERGE_FORCE=1"
+        else
+          echo "  · DB MERGE(비파괴) — dev 신규 VOC 반영 + cae00 축적 유지${_sfd:+ (받은 덤프 $(basename "$_sfd"))}"
+          _mlog="$(mktemp)"
+          if SF_MERGE_DUMP="$_sfd" bash scripts/drive-sync/merge-from-drive.sh 2>&1 | tee "$_mlog"; then
+            if [ -n "$_sfid" ] && grep -q '✓ SF merge 완료' "$_mlog"; then
+              mkdir -p "$(dirname "$_sfmark")" && printf '%s\n' "$_sfid" > "$_sfmark"
+            fi
+          else
+            echo "  ⚠ SF merge 실패 — 사전 스냅샷으로 롤백 가능(운영 무손상)"
+          fi
+          rm -f "$_mlog"
+        fi
       else
         echo "  · DB 보존(merge 스크립트 없음)."
       fi
