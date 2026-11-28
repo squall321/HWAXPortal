@@ -52,6 +52,7 @@ interface StoredConversation {
   createdAt: number;
   updatedAt: number;
   serverId?: string; // 서버 정본 id — 캐시 재로드 후에도 서버 병합·이어쓰기가 이어지게 영속
+  source?: 'mcp'; // 서버 대화의 출처가 MCP 다 — 사이드바 표지 · 거르기(docs/request-1125 WD-03). web 은 적지 않는다
   // 아래 저장 한도로 무엇이든 줄였으면 true — 열 때 서버 정본에서 되채운다. 표식 없이 줄이면 줄인 판이 원본처럼 쓰인다.
   cacheTrimmed?: true;
   // 지정 앱·도구·전문가 — 영속하지 않으면 새로고침에 조용히 풀려, 사용자는 여전히 지정된 줄 안다.
@@ -190,6 +191,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
         ...(typeof c.serverId === 'string' ? { serverId: c.serverId } : {}),
+        ...(c.source === 'mcp' ? { source: 'mcp' as const } : {}),
         ...(c.cacheTrimmed ? { cacheTrimmed: true } : {}),
         ...(Array.isArray(c.pinnedApps) ? { pinnedApps: c.pinnedApps.filter((x) => typeof x === 'string') } : {}),
         ...(Array.isArray(c.pinnedTools) ? { pinnedTools: c.pinnedTools.filter((x) => typeof x === 'string') } : {}),
@@ -328,6 +330,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.source === 'mcp' ? { source: 'mcp' as const } : {}),
       // 메모리의 표식을 잇는다 — 새로고침 직후 저장은 이미 줄인 메시지로 다시 판정해 아무것도 줄이지 않으므로, 그 판정만 믿으면
       // 되채우기 전에 표식이 지워져 다음 새로고침부터 줄인 판이 원본처럼 남는다. 되채운 뒤에는 메모리가 false 라 다시 판정한다.
       ...(cut.any || c.cacheTrimmed ? { cacheTrimmed: true as const } : {}),

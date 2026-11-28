@@ -1,6 +1,6 @@
 // 서버 대화 저장소 REST 클라이언트 — Claude(MCP) 심의·웹 챗·GLM 이어가기가 공유하는 정본
 import { apiFetch } from './client';
-import type { ActivityItem, Conversation, DelibData, DelibTally, DelibTurn, Message, RoutineState } from '../types/chat';
+import type { ActivityItem, Conversation, DelibData, DelibTally, DelibTurn, McpJobRef, Message, RoutineState } from '../types/chat';
 import { embedsFromMeta, newId, panelsFromMeta } from '../state/chatStore';
 
 export type ConvKind = 'chat' | 'deliberation';
@@ -136,6 +136,26 @@ export function subjectFromRaw(raw: unknown): DelibData['subject'] | undefined {
   };
 }
 
+/** 결정문 줄의 meta.mcp_delib → delib.mcpJob — 포털이 엔진 잡을 대화로 들인 것(docs/request-1125 WD-03). 잡 id 가 글일 때만. */
+export function mcpJobFromMeta(raw: unknown): McpJobRef | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.job_id !== 'string' || !o.job_id) return undefined;
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  const out: McpJobRef = { jobId: o.job_id };
+  const pairs: [keyof McpJobRef, unknown][] = [['rootJobId', o.root_job_id], ['job', o.job], ['chairTemplate', o.chair_template],
+    ['status', o.status], ['continues', o.continues]];
+  for (const [k, v] of pairs) if (str(v)) (out as unknown as Record<string, string>)[k] = str(v)!;
+  return out;
+}
+
+/** 서버 meta 의 활동(meta.activity) — 배열이면 그대로. 개인 Claude 가 save_conversation 으로 남긴 발언 · 결정문의 도구 활동이 여기 온다(게이트웨이
+ *  WD-04 — 웹 중계와 같은 꼴). */
+function activityOf(meta: Record<string, unknown> | null | undefined): ActivityItem[] {
+  const a = meta?.activity;
+  return Array.isArray(a) ? (a as ActivityItem[]) : [];
+}
+
 /** 답 meta.ra_report → raReport — 번호가 양의 정수일 때만. */
 function raReportFromMeta(raw: unknown): Message['raReport'] | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -157,6 +177,10 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   let pinned: Message['persona'];
   // 웹 심의의 실행 id — 포털 중계가 발언 · 답의 meta.delib_run 에 남긴다(triage A24). 답 없이 끊긴 심의도 이것으로 '멈춤' 이 그 심의를 짚는다.
   let runId = '';
+  // 좌석 발언에 남은 도구 활동(게이트웨이 save_conversation 의 activity — docs/request-1125 WD-04) — 다음 결정문에 모아 붙인다. 활동 패널 · 앞 턴
+  // 근거(history.turnEvidence) · 심의 넘기기(conversationEvidence)가 결정문의 activity 를 읽는다. 종전엔 심의 대화의 활동을 되살리지 않아 MCP 로
+  // 저장한 심의를 웹에서 열면 '원 도구 결과가 있니?' 에 근거가 0건이었다.
+  let seatActs: ActivityItem[] = [];
   for (const m of server) {
     const ts = (m.ts ?? 0) * 1000;
     if (m.role === 'persona') {
@@ -164,6 +188,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 이어하기가 양보 불가 조항을 승계하지 못한다(구 저장분은 meta 가 없어 그대로 비어 온다).
       const meta = (m.meta ?? {}) as Record<string, unknown>;
       if (typeof meta.delib_run === 'string' && meta.delib_run) runId = meta.delib_run;
+      seatActs = seatActs.concat(activityOf(meta));
       turns.push({
         round: m.round ?? 0,
         persona: m.persona ?? '',
@@ -240,11 +265,16 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       // 심의 주제 — 에이전트 서버가 확인한 것(답 meta.subject). 이어하기가 이것을 다시 싣는다(ChatContext continueDeliberation).
       // 답 meta.subject → delib.subject — 포털 중계가 에이전트 서버의 확인 사건(delib kind=subject)만 남긴다(docs/project-insight-graph M1)
       const subject = subjectFromRaw((m.meta as { subject?: unknown } | null)?.subject);
+      // 포털이 대화로 들인 엔진 잡(WD-03) — 이어하기가 엔진으로 잇는 열쇠(WD-05)
+      const mcpJob = mcpJobFromMeta((m.meta as { mcp_delib?: unknown } | null)?.mcp_delib);
+      // 좌석 발언과 결정문의 도구 활동(WD-04) — 결정문 칸에 모은다
+      const acts = [...seatActs, ...activityOf(m.meta)];
       out.push({
         id: newId(),
         role: 'assistant',
         text: m.content,
         ts,
+        ...(acts.length ? { activity: acts } : {}),
         delib: {
           turns: local,
           ...((cx && m.content === stopNote) || undecided ? {} : { decision: m.content }),
@@ -253,6 +283,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
           ...(nx ? { nextStage: true } : {}),
           ...(outcome ? { outcome } : {}),
           ...(subject ? { subject } : {}),
+          ...(mcpJob ? { mcpJob } : {}),
           totalRounds: Math.max(...local.map((t) => t.round)),
           ...(Array.isArray(ev) && ev.length
             ? {
@@ -268,6 +299,7 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
       });
       turns = [];
       runId = '';
+      seatActs = [];
     } else {
       // 서버 meta 에 영속된 도구 활동(status) 복원 — 리로드·크로스디바이스에서도 심의 핸드오프
       // 근거 추출(conversationEvidence)이 동작하게 한다.
@@ -297,7 +329,8 @@ export function serverMessagesToLocal(server: ServerMessage[]): Message[] {
   }
   if (turns.length > 0) {
     // 결정문 없이 끝난 심의(비정상 종료) — 발언만이라도 보이게 남긴다. 실행 id 가 있으면 서버에서 아직 돌 수 있는 그 심의를 멈출 수 있다.
-    out.push({ id: newId(), role: 'assistant', text: '', ts: Date.now(), delib: { turns, ...(runId ? { runId } : {}) } });
+    out.push({ id: newId(), role: 'assistant', text: '', ts: Date.now(), ...(seatActs.length ? { activity: seatActs } : {}),
+               delib: { turns, ...(runId ? { runId } : {}) } });
   }
   return out;
 }
@@ -340,6 +373,7 @@ export function serverConvToLocal(
   return {
     id: conv.id,
     serverId: conv.id,
+    ...(conv.source === 'mcp' ? { source: 'mcp' as const } : {}),
     title: conv.title || '새 대화',
     messages: serverMessagesToLocal(conv.messages),
     createdAt: conv.created_at * 1000,

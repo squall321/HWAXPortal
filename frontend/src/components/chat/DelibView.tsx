@@ -490,6 +490,9 @@ function StopBar({ msgId, runId, cut }: { msgId: string; runId: string; cut: boo
   );
 }
 
+// 엔진 잡의 끝난 상태(delib_jobs) — 화면 낱말
+const MCP_STATUS: Record<string, string> = { error: '오류', cancelled: '접힘', interrupted: '끊김 — 이어가면 남은 라운드만 돈다', failed: '실패' };
+
 export function DelibView({ msg }: { msg: Message }) {
   const d = msg.delib!;
   const live = Boolean(msg.streaming);
@@ -517,6 +520,14 @@ export function DelibView({ msg }: { msg: Message }) {
       {d.subject && (
         <p className="dv-subject" role="note">
           <b>주제</b> · {subjectLine(d.subject)}
+        </p>
+      )}
+      {/* MCP 로 연 심의 — 포털이 엔진 잡을 대화로 들인 것(docs/request-1125 WD-03). 결정문 없이 끝난 잡은 그 상태를 말한다. */}
+      {d.mcpJob && (
+        <p className="dv-subject dv-mcpjob" role="note">
+          <b>MCP 심의</b> · 엔진 잡 <code>{d.mcpJob.jobId}</code>
+          {d.mcpJob.continues ? <> · 앞 잡 <code>{d.mcpJob.continues}</code></> : null}
+          {d.mcpJob.status && d.mcpJob.status !== 'done' ? ` · 결정문 없이 끝남(${MCP_STATUS[d.mcpJob.status] ?? d.mcpJob.status})` : ''}
         </p>
       )}
       <PersonaIntro d={d} />

@@ -105,6 +105,18 @@ export interface DelibData {
   /** 심의 주제 — 에이전트 서버가 확인한 것(SSE delib kind=subject · 서버 사본 답 meta.subject, docs/project-insight-graph M1). 없으면 주제 없이 돈
    *  심의다(어느 과제에도 잇지 않는다). 브라우저가 보낸 값은 여기 들지 않는다. */
   subject?: DelibSubject;
+  /** MCP 로 연 심의(엔진 잡)를 포털이 대화로 들인 것 — 결정문 줄의 meta.mcp_delib(포털 app/agent/mcp_delib.py, docs/request-1125 WD-03). 웹 '이어하기'
+   *  가 새 웹 심의 대신 이 잡을 엔진으로 잇는 열쇠다(WD-05). 웹 심의에는 없다. */
+  mcpJob?: McpJobRef;
+}
+/** 엔진 잡의 머리 — 잡 id · 뿌리(이어하기 사슬의 맨 앞) · 종류 · 의장 틀 · 끝난 상태 · 앞 잡. */
+export interface McpJobRef {
+  jobId: string;
+  rootJobId?: string;
+  job?: string;
+  chairTemplate?: string;
+  status?: string;
+  continues?: string;
 }
 /** 서버가 확인한 심의 주제(HWAXAgentServer delib_subject — confirmed 확인 · claimed 주장 · none 없음). 과제는 SP 허브 plm_task key, 차수는 개발
  *  단계 코드(모르면 null — '차수 모름'). */
@@ -488,6 +500,8 @@ export interface Conversation {
   // 서버 대화 저장소 정본 id — 있으면 /agent/chat 이 이 대화에 user+assistant 를 서버 저장.
   // 서버에서 로드된 대화(MCP 심의 포함)는 id === serverId. 웹 생성분은 전송 시 발급받아 채움.
   serverId?: string;
+  /** 서버 대화의 출처 — mcp 는 개인 Claude(MCP)가 저장했거나 포털이 엔진 잡을 들인 대화(docs/request-1125 WD-03). 사이드바가 표지 · 거르기에 쓴다. */
+  source?: 'web' | 'mcp';
   /** 브라우저 사본을 저장 한도(쿼터)로 줄였다 — 열 때 서버 정본에서 줄인 칸을 되채운다(ChatContext · fillTrimmed). */
   cacheTrimmed?: boolean;
   /** 줄인 사본을 서버 정본으로 되채우지 못했다(메시지 모양이 다르다) — 이 세션에서만 쥐는 값이라 저장하지 않는다. 대화 머리가 알린다. */

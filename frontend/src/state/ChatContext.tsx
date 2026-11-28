@@ -198,6 +198,8 @@ interface ChatContextValue {
   streamLive: () => StreamLive | null;
   newConversation: () => void;
   selectConversation: (id: string) => void;
+  /** 서버 대화 목록을 지금 다시 읽는다(주기 읽기와 같은 병합 — docs/request-1125 WD-04). 엔진 잡이 끝난 것을 본 진행 카드 · 이어하기가 부른다. */
+  refreshServerList: () => Promise<void>;
   /** 서버에 이미 있는 대화(다른 화면이 만든 것 — 절차 실행을 챗으로 가져가기)를 목록에 넣고 연다. 메시지는 열 때 서버에서 읽는다
    *  ('열 때 최신 로드'). 이 제공자의 종류(serverKind)로 만든 대화여야 다음 새로고침의 목록 거름에도 남는다. */
   openServerConversation: (serverId: string, title: string, pins?: OpenPins) => void;
@@ -433,6 +435,8 @@ interface ChatProviderProps {
 
 // 다시 보일 때 서버 사본과 맞추는 침묵 문턱 — 챗 · 심의 스트림 모두 15초마다 ping 을 낸다(P-1 ②)
 const RESYNC_QUIET_MS = 20_000;
+// 서버 대화 목록을 다시 읽는 간격(docs/request-1125 WD-04) — 화면이 보일 때만. 포털이 엔진 잡을 당기는 간격(DELIB_CONV_SYNC_S 기본 60초)과 같다.
+const SERVER_LIST_EVERY_MS = 60_000;
 
 type DeckNoticeLike = { text: string; activity: ActivityItem[]; deck: { job_id: string } };
 // 발표자료 알림을 다른 챗 제공자에게 알리는 창 신호(WD-D64)
@@ -625,39 +629,74 @@ export function ChatProvider({
       });
   }, []);
 
-  // 로그인 후 1회(+사용자 변경 시): 서버 목록을 로컬 목록에 병합. 메시지는 열 때 로드.
+  // 서버 목록을 로컬 목록에 병합 — 로그인 뒤 한 번(+사용자 변경 시), 그 뒤 SERVER_LIST_EVERY_MS 마다 · 화면이 다시 보일 때(docs/request-1125 WD-04 —
+  // 개인 Claude 가 save_conversation 으로 남긴 대화와 포털이 들인 엔진 잡(WD-03)이 새로 고침 없이 사이드바에 선다). 메시지는 열 때 로드한다.
+  // 있던 대화는 손대지 않는다 — 웹 대화는 브라우저 사본에만 있는 칸(좌석 명단 · 쉬운 설명 등)이 있어 열 때 '열 때 최신 로드' 가 맞춘다. 출처가 MCP 인
+  // 대화(서버가 정본이다)만 서버가 더 새로우면 바꾼다 — 열려 있으면 곧바로 다시 읽고(엔진 이어하기 결과가 붙는다), 아니면 자리표시자로(열 때 읽는다).
+  const syncServerList = useCallback(async (): Promise<void> => {
+    if (!serverKind || !user) return;
+    const epoch = accountEpochRef.current;
+    let list: Awaited<ReturnType<typeof listServerConversations>>;
+    try {
+      list = await listServerConversations();
+    } catch {
+      return; /* 서버 미가용 — 로컬 캐시만으로 동작 */
+    }
+    if (accountEpochRef.current !== epoch) return; // 그새 계정이 바뀌었다
+    const metas = list.filter((m) => m.kind === serverKind);
+    for (const m of metas) serverMetaRef.current.set(m.id, m.updated_at * 1000);
+    const reread: string[] = [];
+    setConversations((prev) => {
+      const byId = new Map(metas.map((m) => [m.id, m] as const));
+      const have = new Set(prev.map((c) => c.serverId ?? c.id));
+      let changed = false;
+      const merged = prev.map((c) => {
+        const m = byId.get(c.serverId ?? c.id);
+        if (!m || streamConvRef.current === c.id) return c;
+        const mcp = m.source === 'mcp';
+        const fresh = mcp && m.updated_at * 1000 > c.updatedAt + 2000;
+        if (!fresh && (!mcp || c.source === 'mcp')) return c;
+        changed = true;
+        if (!fresh) return { ...c, source: 'mcp' as const };
+        if (c.id === activeIdRef.current) {
+          reread.push(m.id); // 열려 있다 — 아래에서 곧바로 다시 읽는다(시각은 그때 서버 값으로)
+          return { ...c, source: 'mcp' as const };
+        }
+        return { ...c, source: 'mcp' as const, title: m.title || c.title, messages: [], updatedAt: m.updated_at * 1000 };
+      });
+      for (const m of metas) {
+        if (have.has(m.id)) continue; // 이미 로컬 캐시에 있음 — 상세는 열 때 판정
+        changed = true;
+        merged.push({
+          id: m.id,
+          serverId: m.id,
+          title: m.title || '새 대화',
+          messages: [], // 자리표시자 — 선택 시 상세 로드
+          createdAt: m.created_at * 1000,
+          updatedAt: m.updated_at * 1000,
+          ...(m.source === 'mcp' ? { source: 'mcp' as const } : {}),
+        });
+      }
+      return changed ? merged.sort((a, b) => b.updatedAt - a.updatedAt) : prev;
+    });
+    for (const sid of reread) refreshFromServer(sid);
+  }, [serverKind, user, refreshFromServer]);
+
   useEffect(() => {
     if (!serverKind || !user) return;
-    let cancelled = false;
-    void listServerConversations()
-      .then((list) => {
-        if (cancelled) return;
-        const metas = list.filter((m) => m.kind === serverKind);
-        for (const m of metas) serverMetaRef.current.set(m.id, m.updated_at * 1000);
-        setConversations((prev) => {
-          const bySrv = new Map(prev.map((c) => [c.serverId ?? c.id, c] as const));
-          const merged = [...prev];
-          for (const m of metas) {
-            if (bySrv.has(m.id)) continue; // 이미 로컬 캐시에 있음 — 상세는 열 때 판정
-            merged.push({
-              id: m.id,
-              serverId: m.id,
-              title: m.title || '새 대화',
-              messages: [], // 자리표시자 — 선택 시 상세 로드
-              createdAt: m.created_at * 1000,
-              updatedAt: m.updated_at * 1000,
-            });
-          }
-          return merged.sort((a, b) => b.updatedAt - a.updatedAt);
-        });
-      })
-      .catch(() => {
-        /* 서버 미가용 — 로컬 캐시만으로 동작 */
-      });
-    return () => {
-      cancelled = true;
+    void syncServerList();
+    const tick = () => {
+      if (document.visibilityState === 'visible') void syncServerList();
     };
-  }, [serverKind, user]);
+    const t = window.setInterval(tick, SERVER_LIST_EVERY_MS);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, [serverKind, user, syncServerList]);
 
   // "열 때 최신 로드": 활성 대화가 서버 대화인데 비었거나 서버가 더 새로우면 상세 재로드.
   useEffect(() => {
@@ -1645,6 +1684,7 @@ export function ChatProvider({
         newConversation,
         selectConversation,
         openServerConversation,
+        refreshServerList: syncServerList,
         deleteConversation,
         renameConversation,
         open,
