@@ -92,5 +92,5 @@
 - [x] WD-13 — SSE `job_card` 그리기 · 서버 사본 meta.job_cards · 진행 조회(deliberate_status)로 끝나면 결과 링크
 - [x] WD-08 — 내 엔진 잡 목록(날짜 · 글 거르기 · 더 보기) · 결정문 전문 보기 · 「이 대화에 싣기」
 - [x] 업데이트 이력 · 화면 빌드 · 화면 시험
-- [ ] 포털 전체 회귀(조각마다 rc)
+- [x] 포털 전체 회귀(여섯 조각 · 조각마다 rc — 스크래치 wd-regression-summary.txt, 붉은 둘은 고친 뒤 다시 초록)
 - [ ] 가지 `wt1128/wd-portal` 병합 · push(부른 쪽) → cae00 절차 [server-setup.md](server-setup.md) 3 절
