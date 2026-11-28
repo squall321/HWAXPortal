@@ -447,7 +447,25 @@ export interface ConfirmCall {
   kind: 'job' | 'write' | 'confirm';
   args_text: string;
   workload?: string;
+  /** 심의 시작 · 이어하기 호출의 요약(에이전트 서버 _confirm_delib_summary — 인자에서만 센다, docs/request-1125 WD-06). 같은 내용이 본문 카드 글의
+   *  '심의 —' 줄로도 온다 — 화면은 아직 이 칸으로 고치기(confirm_edit)를 하지 않는다. */
+  summary?: ConfirmDelibSummary;
   again: boolean;
+}
+
+export interface ConfirmDelibSummary {
+  call: string;
+  job: string;
+  rounds: number;
+  seats: string[];
+  seats_n: number;
+  save_report: boolean;
+  evidence_n: number;
+  evidence_chars: number;
+  apps: string[];
+  editable: string[];
+  modifiers?: string[];
+  previous_job_id?: string;
 }
 
 /** 확인 카드(SSE confirm) — 사람이 이번 말로 시키지 않았거나 되돌리기 어려운 작업은 에이전트 서버가 보내지 않고 멈춘다.
