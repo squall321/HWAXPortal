@@ -167,6 +167,44 @@ export HWAX_DELIB_GATE="${HWAX_SKIP_LEDGER}.delib-gate" HWAX_DELIB_PAUSE_BY=upda
 # 멈춰 둔 KooRemapper 되돌림 사본(infra/.env 의 KOORM_LOCAL_PARKED) — §5 의 kr_ PAT 점검 · 내려간 백엔드 살리기가 그 스택을 재거나 띄우지 않는다.
 #   띄우지 않는 것은 §2 의 deploy-all, 사전 백업은 §1b 의 backup-local 이 같은 lib 로 본다.
 . "$SELF_REPO/infra/scripts/lib/koorm-parked.sh"
+# 허브 Caddy 에 등록된 그 앱의 업스트림 주소(마지막 dial) — 없으면 빈 줄. 401 갈래와 DynaForge 안내(HP-68)가 함께 쓴다
+_caddy_dial_of() {
+  curl -s -m 5 http://127.0.0.1:2019/config/ 2>/dev/null | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: raise SystemExit(0)
+app=sys.argv[1]; found=[]
+def walk(o):
+    if isinstance(o,dict):
+        if o.get("@id")==f"app-{app}":
+            found.append(json.dumps(o))
+        for v in o.values(): walk(v)
+    elif isinstance(o,list):
+        for v in o: walk(v)
+walk(d)
+if not found: raise SystemExit(0)
+o=json.loads(found[0])
+dials=[]
+def w2(x):
+    if isinstance(x,dict):
+        if "dial" in x and isinstance(x["dial"],str): dials.append(x["dial"])
+        for v in x.values(): w2(v)
+    elif isinstance(x,list):
+        for v in x: w2(v)
+w2(o)
+# forward_auth 서브리퀘스트(:4040)는 업스트림이 아니다 — 마지막 dial 이 실제 앱이다.
+print(dials[-1] if dials else "")' "$1" 2>/dev/null
+}
+# DynaForge 를 이 박스 밖에서 쓰는가 — 멈춰 둔 되돌림 사본(KOORM_LOCAL_PARKED) 또는 바깥 주소(KOORM_BASE). 그때 로컬 :8700 · :8701 ·
+# deploy-all kooremapper 를 권하면 멈춰 둔 사본을 보게 된다 — 실제 업스트림과 '운영 노드 쪽을 본다' 를 적는다(docs/request-1125 HP-68)
+_koorm_elsewhere() { hwax_koorm_parked "$SELF_REPO" || [ -n "${KOORM_BASE:-}" ]; }
+_koorm_where() {
+  local d; d="$(_caddy_dial_of kooremapper_mcp)"
+  echo "      DynaForge 는 이 박스 밖에서 돈다(infra/.env 의 KOORM_LOCAL_PARKED 또는 KOORM_BASE) — 이 박스의 로컬 KooRemapper 는 멈춰 둔 사본이다."
+  echo "      실제 업스트림: 웹 ${KOORM_BASE:-(모름 — KOORM_BASE=<주소> 로 주면 적는다)} · MCP ${d:-(허브에 등록된 주소 없음)}"
+  echo "      조치: 운영 노드 쪽(그 KooRemapper 의 웹 · MCP · 인스턴스)을 본다"
+}
+
 # 상태판 경보 멈춤 풀기 — 1b2 가 걸었으면. 5b 의 설정 생성이 늘 풀므로(그때 HWAX_BOARD_PAUSED=0) 여기는 5b 전에 멈춘 경로(§ 머리 정지)와
 #   완주 끝의 마지막 확인이다. 실패는 삼킨다 — 시한(60분)이 지나면 상태판의 밀어 넣는 쪽(status-push.py)이 걷어낸다.
 _hwax_board_resume() {
@@ -3620,7 +3658,11 @@ if [ -x "$SMOKE_PY" ] && [ -f "$SELF_REPO/infra/scripts/mcp-smoke.py" ]; then
       # 드리프트는 토큰 문제가 아니다 — 재프로비저닝으로 안 고쳐진다. 배포본이 낡은 것이라
       # 그 앱을 재기동/재빌드해야 한다. 엉뚱한 복구를 돌리지 않고 조치만 정확히 알린다.
       fail "MCP 앱이 코드보다 오래된 배포본으로 돌고 있다(위 ✗ 줄) — 호출은 되지만 새 도구가 빠져 있다."
-      echo "      DynaForge(kooremapper_mcp): (KooRemapper) apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"
+      if _koorm_elsewhere; then
+        echo "      DynaForge(kooremapper_mcp): 이 박스 밖에서 돈다 — 운영 노드 쪽 KooRemapper 를 다시 띄운다(이 박스의 koorm_mcp 는 멈춰 둔 사본)"
+      else
+        echo "      DynaForge(kooremapper_mcp): (KooRemapper) apptainer instance stop koorm_mcp && bash platform/infra/scripts/start.sh"
+      fi
       echo "      heax 등록 앱:              (HEAXHub) bash deploy/apptainer/redeploy-app.sh <slug> --rebuild"
       echo "      둘 다 소스가 bind-mount 라 재기동만으로 최신 코드가 물린다(빌드형은 --rebuild)."
     elif [ "$rc" = 1 ] && ! repair_mcp; then
@@ -3673,7 +3715,12 @@ for app in $heax_apps; do
   if [ "$is_mcp" = 1 ]; then
     if [ "$reach" != "1" ] || [ "${tools:-0}" -eq 0 ]; then
       app_bad "$crit" "heax MCP 앱 $app → 도구 ${tools:-0}개 / 연결 $([ "$reach" = 1 ] && echo O || echo X) — 등록은 됐으나 기능이 0개다."
-      echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다(DynaForge=kooremapper_mcp → :8701)."
+      if _koorm_elsewhere; then
+        echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다."
+        case "$app" in kooremapper*) _koorm_where ;; esac
+      else
+        echo "      프록시형 앱은 업스트림 서버가 죽으면 이 모양이 된다(DynaForge=kooremapper_mcp → :8701)."
+      fi
       echo "      진단: $SELF_REPO/infra/scripts/check-mcp-registration.sh $app"
     else
       ok "heax MCP 앱 $app → 도구 ${tools}개 (정상)"
@@ -3708,31 +3755,7 @@ for app in $heax_apps; do
       #   익명이면 게이트에서 401 이 나므로, 업스트림이 통째로 죽어 있어도 똑같이 401 이다.
       #   그래서 Caddy 에 등록된 업스트림 주소를 꺼내 직접 두드려 본다. 게이트 앞에서 막힌
       #   401 과, 뒤가 죽어서 못 쓰는 401 을 구분하지 못하면 '초록인데 안 되는' 상태가 된다.
-      _up="$(curl -s -m 5 http://127.0.0.1:2019/config/ 2>/dev/null | python3 -c '
-import json,sys
-try: d=json.load(sys.stdin)
-except Exception: raise SystemExit(0)
-app=sys.argv[1]; found=[]
-def walk(o):
-    if isinstance(o,dict):
-        if o.get("@id")==f"app-{app}":
-            found.append(json.dumps(o))
-        for v in o.values(): walk(v)
-    elif isinstance(o,list):
-        for v in o: walk(v)
-walk(d)
-if not found: raise SystemExit(0)
-o=json.loads(found[0])
-dials=[]
-def w2(x):
-    if isinstance(x,dict):
-        if "dial" in x and isinstance(x["dial"],str): dials.append(x["dial"])
-        for v in x.values(): w2(v)
-    elif isinstance(x,list):
-        for v in x: w2(v)
-w2(o)
-# forward_auth 서브리퀘스트(:4040)는 업스트림이 아니다 — 마지막 dial 이 실제 앱이다.
-print(dials[-1] if dials else "")' "$app" 2>/dev/null)"
+      _up="$(_caddy_dial_of "$app")"
       if [ -n "$_up" ]; then
         _uc="$(curl -s -o /dev/null -m 6 -w '%{http_code}' "http://$_up/" 2>/dev/null || echo 000)"
         if [ "$_uc" = "000" ]; then
@@ -3751,8 +3774,12 @@ print(dials[-1] if dials else "")' "$app" 2>/dev/null)"
       # 같은 문구를 주면 없는 라우트를 찾아 헤매게 된다.
       app_bad "$crit" "heax 앱 $app → $code — 라우트는 살아 있고 업스트림이 죽었다(등록 문제 아님)."
       echo "      프록시형 앱이면 SIF 가 아니라 별도로 떠 있어야 할 서버가 없는 것이다."
-      echo "      DynaForge(kooremapper/kooremapper_mcp) → :8700 웹 / :8701 MCP."
-      echo "      조치: bash $SELF_REPO/infra/scripts/deploy-all-from-drive.sh kooremapper"
+      if _koorm_elsewhere; then
+        case "$app" in kooremapper*) _koorm_where ;; esac
+      else
+        echo "      DynaForge(kooremapper/kooremapper_mcp) → :8700 웹 / :8701 MCP."
+        echo "      조치: bash $SELF_REPO/infra/scripts/deploy-all-from-drive.sh kooremapper"
+      fi
     elif [ "$TM_OK" = 0 ] && [ "$code" = "404" ]; then
       # 게이트웨이가 죽어 MCP 여부를 모르는 상태다. MCP 전용 앱은 루트 404 가 정상이므로
       # 여기서 '미서빙'이라 단정하면 멀쩡한 앱을 범인으로 지목하게 된다(게이트웨이는 이미 위에서 계상).
