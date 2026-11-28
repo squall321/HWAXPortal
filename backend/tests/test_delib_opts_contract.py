@@ -521,8 +521,10 @@ def test_이어하기는_앞_회차의_기준일을_싣고_그_값이_패널_값
     merge = "{ ...delibOptsToWire(delibOptsRef.current),\n                      search_sources: effSources, ...(extraDelibOpts ?? {}) }"
     assert merge in src, "sendMessage 의 병합 순서가 바뀌었다 — 이어하기의 기준일이 패널 값에 덮일 수 있다"
     view = (_FRONT.parent / "components" / "chat" / "DelibView.tsx").read_text(encoding="utf-8")
-    bar = view[view.index("function ContinueBar("):]
+    # 웹 심의의 이어가기 칸(WebContinueBar) — MCP 로 연 심의는 엔진 이어가기 칸으로 가고 기준일은 엔진의 _CONT_CARRY 가 잇는다(docs/request-1125 WD-05)
+    bar = view[view.index("function WebContinueBar("):]
     bar = bar[: bar.index("\n}\n")]
+    assert "if (d.mcpJob) return <EngineContinueBar d={d} />;" in view
     assert "decisionAsOf(d.decision)" in bar and "delibOpts.as_of" in bar and 'className="dv-continue-asof"' in bar, bar[:400]
 
 
