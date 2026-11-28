@@ -1,4 +1,4 @@
-// 개인 Claude 보기 — 허브 도구 목록을 전체 · 묶음(고른 영역) · 가벼운(찾기 · 부르기 둘) · 목적(고른 업무 목적)으로 고르는 칸(docs/request-1029 E-4 · docs/mcp-modernize M3)
+// 개인 Claude 보기 — 허브 도구 목록을 전체 · 묶음(고른 영역) · 가벼운(찾기 · 부르기 + 패널 · 확인 도구) · 목적(고른 업무 목적)으로 고르는 칸(docs/request-1029 E-4 · docs/mcp-modernize M3)
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchHubView,
@@ -19,12 +19,13 @@ const MODES: { mode: HubViewMode; label: string; desc: string }[] = [
   {
     mode: 'light',
     label: '가벼운',
-    desc: 'search_tools · invoke_tool 두 도구만 싣습니다 — 찾아서 부릅니다.',
+    // docs/request-1125 G-1 — 게이트웨이가 가벼운 보기에 패널 도구 · verify_answer · list_tool_apps 를 더한다(종전 search_tools · invoke_tool 둘뿐)
+    desc: 'search_tools · invoke_tool 에 패널 도구(화면이 열리는 open_* 등) · verify_answer · list_tool_apps 를 더해 싣습니다 — 나머지는 찾아서 부릅니다.',
   },
   {
     mode: 'purpose',
     label: '목적',
-    desc: '고른 업무 목적(낙하 해석 준비 · 보고서 쓰기 등)의 단계 도구 + 허브 자체 도구를 싣습니다 — 목적 → 묶음 → 기능 MCP 차례로 좁힙니다.',
+    desc: '고른 업무 목적(낙하 해석 준비 · 보고서 쓰기 등)의 단계 도구 + 그 목적 앱의 패널 도구 + 허브 자체 도구를 싣습니다 — 목적 → 묶음 → 기능 MCP 차례로 좁힙니다.',
   },
 ];
 
@@ -275,10 +276,10 @@ export default function HubViewPanel({
             </li>
             {mode === 'light' && (
               <li>
-                가벼운 보기에서는 패널 도구(SimFlow · ARP 의 open_* 등)의 패널이 뜨지 않고, 파괴 ·
-                제어 도구(delete_ · cancel_ 등)는 <code>invoke_tool</code> 로 부를 수 없어 닿지
-                않습니다(전체 보기로 바꿔 씁니다). 모든 호출이 <code>invoke_tool</code> 한 도구의
-                허락으로 묻습니다.
+                가벼운 보기도 패널 도구(SimFlow · ARP 의 open_* 등)는 목록에 실어 패널이 뜹니다. 그 밖의
+                파괴 · 제어 도구(delete_ · cancel_ 등)는 <code>invoke_tool</code> 로 부를 수 없어 닿지
+                않습니다(전체 보기로 바꿔 씁니다). 목록에 없는 도구의 호출은 <code>invoke_tool</code>{' '}
+                한 도구의 허락으로 묻습니다.
               </li>
             )}
             {mode === 'bundle' && (
