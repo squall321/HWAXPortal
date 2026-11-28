@@ -14,7 +14,7 @@
 | 항목 | 확인 |
 |---|---|
 | SE-9 | 실행 기록의 단계 제목 줄 꼬리에 `[HH:MM:SS]` |
-| SE-2 | §1b 에 'AIDataHub 덤프는 뒤에서 뜬다(로그 …)' · deploy-all AIDataHub 구획에 기다림 줄(재기동이 정해졌을 때만) · 끝 요약 앞 '✓ AIDataHub 사전 덤프'. §1b + §2 합계가 줄었는지. 새 덤프 `…-pre.sql.gz` 를 `gunzip -t` · 시험 DB 복원으로 한 번 본다. update-all 이 뜬 `-pre` 와 병합 전 덤프 `pre-merge-*` 는 대상마다 새 둘만 남는다(`PRE_KEEP`) |
+| SE-2 | §1b 에 'AIDataHub 덤프는 뒤에서 뜬다(로그 …)' · deploy-all AIDataHub 구획에 기다림 줄(재기동이 정해졌을 때만) · 끝 요약 앞 '✓ AIDataHub 사전 덤프'. §1b + §2 합계가 줄었는지. 새 덤프 `…-pre.sql.gz` 를 `gunzip -t` · 시험 DB 복원으로 한 번 본다. update-all 이 뜬 `-pre` 와 병합 전 덤프 `pre-merge-*` 는 대상마다 새 둘만 남는다(`PRE_KEEP`). ③(11-28) — 그날 일일 덤프가 온전하고 받을 AIDataHub 판에 이관이 없으면 §1b 가 '✓ AIDataHub 배포 전 롤백 지점 — 일일 덤프 재사용 — <파일> · <시각>' 이고 새 `-pre` 를 뜨지 않는다(끝 요약에도 그 줄). 다시 쓴 것은 `${BACKUP_ROOT:-/data/backups}/hwax/<박스>/aidh/predeploy-rollback.log` 에 한 줄씩. 이관이 있거나 덤프가 없 · 낡 · 깨졌으면 '· … 새로 뜬다 — <까닭>'(깨짐은 ⚠) |
 | SE-7 | SignalForge 구획에 덤프 받기 줄이 한 번 · 병합 줄 '(받은 덤프 sf-db-….sql.gz)'. 다음 실행에서 같은 덤프면 'DB MERGE 건너뜀'. 기록은 `infra/.state/sf-merge-last` |
 | HP-58 | `./infra/scripts/env-sync.sh --check` 가 `AIDataHub/deploy/apptainer` 의 빠진 키를 이름으로 낸다(자동으로 넣지 않는다 — 필요한 줄만 손으로) |
 | HP-59 | §6 에 '리스크 앱 조회 도구 N개 — 게이트웨이 읽기 판정을 지난다'(0 절을 했으면) |
@@ -46,4 +46,7 @@
    로 멈춘다). `card-entity-bind.py --only-types part --dry-run` 로 수를 보고, 뜻이 섞인 낱말(25개 — 운영 쪽 결정 대기)을 `onto_rules.local.json` 에 정한 뒤
    `--only-types part` 로 잇는다. 요약에 타입별 전후 수 · 연결 0 인 타입의 까닭이 나온다.
 3. **서비스 감시 표지(HP-57)** — 손으로 오래 내릴 때 `touch infra/.state/maintenance`, 다 올린 뒤 `rm infra/.state/maintenance`.
-4. **AIDataHub 덤프를 종전대로 함께 뜨려면** `HWAX_AIDH_BACKUP_BG=0`(SE-2). 03:30 일일 덤프를 배포 전 롤백 지점으로 쓸지(SE-2 ③)는 사용자 결정(SYNCEFF-4) 뒤.
+4. **AIDataHub 덤프를 종전대로 함께 뜨려면** `HWAX_AIDH_BACKUP_BG=0`(SE-2). **그날 03:30 일일 덤프를 배포 전 롤백 지점으로 다시 쓰는 것이 기본**(SE-2 ③ —
+   사용자 결정 11-28 · SYNCEFF-4). 늘 새로 뜨려면 `infra/.env`(또는 그 실행의 환경)에 `HWAX_PREDEPLOY_DUMP=fresh` — §1b 에 ○ 줄이 남는다. 이관이 든 판은
+   손잡이와 상관없이 새로 뜬다. 다시 쓴 배포에서 되돌릴 일이 생기면 롤백 지점은 `predeploy-rollback.log` 의 마지막 줄 파일이다(그 시각 뒤 AIDataHub 쓰기는
+   잃는다 — 이관 없는 배포는 DB 를 건드리지 않아 대개 코드만 되돌리면 된다).

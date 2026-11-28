@@ -568,7 +568,36 @@ if [ -x "$SELF_REPO/infra/scripts/backup-local.sh" ]; then
   # 다시 띄우지 않는다(이행 전 롤백 지점이 없다). 끄기 HWAX_AIDH_BACKUP_BG=0(종전대로 함께 뜬다). 뒤의 실행은 이 실행의 잠금 fd 를 물려받지 않는다
   # (본문은 fd 를 닫고 돈다) · 출력은 파일로만 — 호출자를 붙들지 않는다.
   _bk_skip=""
-  if [ "${HWAX_AIDH_BACKUP_BG:-1}" = 1 ] && [ -n "$(find_repo AIDataHub)" ]; then
+  # 그날 03:30 일일 덤프를 배포 전 롤백 지점으로 다시 쓸지(docs/request-1125 SE-2 ③ — 사용자 결정 11-28). 그날 덤프가 온전하고(sha256 짝이 맞고) 받을
+  # AIDataHub 판에 alembic 이관이 없으면 새로 뜨지 않고 그것을 적는다 — 이관이 있거나 덤프가 없 · 낡 · 깨졌거나 볼 수 없으면 지금처럼 새로 뜬다(판정은
+  # lib/predeploy-dump.sh). 늘 새로 뜨려면 HWAX_PREDEPLOY_DUMP=fresh(환경 또는 infra/.env). 다시 쓴 것은 백업 자리의 aidh/predeploy-rollback.log 에
+  # 한 줄씩 남는다(이 실행의 화면 기록은 박스에 남지 않는다). 박스 · 뿌리는 backup-local.sh 와 같은 차례다(환경 > infra/.env > hostname -s).
+  _aidh_reused=""
+  _aidh_repo="$(find_repo AIDataHub)"
+  if [ -n "$_aidh_repo" ]; then
+    . "$SELF_REPO/infra/scripts/lib/predeploy-dump.sh"
+    # _envfile_value(아래 1e 에 정의 — 여기서는 아직 없다)와 글자 단위로 같은 규칙
+    _pd_env() { LC_ALL=C sed -n -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//p" "$SELF_REPO/infra/.env" 2>/dev/null | tail -1 \
+      | LC_ALL=C sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | LC_ALL=C tr -d '"'"'"'\r'; }
+    _pd_box="${HWAX_BOX:-$(_pd_env HWAX_BOX)}"; _pd_box="${_pd_box:-$(hostname -s)}"
+    _pd_daily="${BACKUP_ROOT:-/data/backups}/hwax/$_pd_box/aidh/daily"
+    _pd_knob="${HWAX_PREDEPLOY_DUMP:-$(_pd_env HWAX_PREDEPLOY_DUMP)}"
+    IFS=$'\t' read -r _pd_v _pd_a _pd_b _pd_c <<<"$(hwax_predeploy_dump_decide "$_aidh_repo" "$_pd_daily" "$_pd_box" "$_pd_knob")"
+    case "$_pd_v:$_pd_a" in
+      reuse:*)
+        _bk_skip="aidh"; _aidh_reused="$(basename "$_pd_a") · $_pd_b"
+        ok "AIDataHub 배포 전 롤백 지점 — 일일 덤프 재사용 — $(basename "$_pd_a") · $_pd_b ($_pd_c)"
+        printf '%s\t일일 덤프 재사용\t%s\t덤프 시각 %s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$_pd_a" "$_pd_b" "$_pd_c" \
+          >> "$(dirname "$_pd_daily")/predeploy-rollback.log" 2>/dev/null \
+          || bad "AIDataHub 일일 덤프 재사용을 $(dirname "$_pd_daily")/predeploy-rollback.log 에 적지 못했다 — 롤백 지점은 위 줄의 파일이다" ;;
+      fresh:knob)
+        hwax_skip "AIDataHub 일일 덤프 재사용" "$_pd_b" \
+          "환경 · infra/.env 의 HWAX_PREDEPLOY_DUMP 를 지운다 — 그날 일일 덤프가 온전하고 받을 판에 이관이 없으면 그것을 배포 전 롤백 지점으로 쓴다" ;;
+      fresh:broken) bad "AIDataHub 일일 덤프를 다시 쓰지 않는다 — $_pd_b. 배포 전 덤프는 새로 뜬다(그 일일 덤프는 롤백에 쓰지 않는다)" ;;
+      *) echo "  · AIDataHub 배포 전 덤프를 새로 뜬다 — ${_pd_b:-판정 줄이 비었다}" ;;
+    esac
+  fi
+  if [ -z "$_bk_skip" ] && [ "${HWAX_AIDH_BACKUP_BG:-1}" = 1 ] && [ -n "$_aidh_repo" ]; then
     _bkd="$(mktemp -d)"; HWAX_AIDH_BACKUP_RC="$_bkd/rc"; HWAX_AIDH_BACKUP_LOG="$_bkd/log"; export HWAX_AIDH_BACKUP_RC HWAX_AIDH_BACKUP_LOG
     nohup env HWAX_BACKUP_PRE=1 bash -c '"$1" aidh > "$2" 2>&1; echo "$?" > "$3.tmp"; mv -f "$3.tmp" "$3"' _ \
       "$SELF_REPO/infra/scripts/backup-local.sh" "$HWAX_AIDH_BACKUP_LOG" "$HWAX_AIDH_BACKUP_RC" </dev/null >/dev/null 2>&1 &
@@ -4104,6 +4133,7 @@ PY
 fi
 
 # §1b 가 뒤에서 뜬 AIDataHub 덤프 — 끝나기를 기다려 결과를 센다(SE-2 ①). 실패는 종전 §1b 와 같은 비치명(⚠ — 배포는 이미 했다).
+# 뜨지 않고 그날 일일 덤프를 롤백 지점으로 다시 썼으면(③) 그 파일을 다시 말한다.
 if [ -n "${HWAX_AIDH_BACKUP_RC:-}" ]; then
   _aidh_bk_wait="${HWAX_AIDH_BACKUP_WAIT_S:-3600}"; [[ "$_aidh_bk_wait" =~ ^[0-9]+$ ]] || _aidh_bk_wait=3600
   _t0="$(date +%s)"
@@ -4111,11 +4141,14 @@ if [ -n "${HWAX_AIDH_BACKUP_RC:-}" ]; then
   if [ ! -f "$HWAX_AIDH_BACKUP_RC" ]; then
     bad "AIDataHub 사전 덤프가 ${_aidh_bk_wait}초 안에 끝나지 않았다 — 뒤에서 계속 돈다(로그 $HWAX_AIDH_BACKUP_LOG)"
   elif [ "$(cat "$HWAX_AIDH_BACKUP_RC")" = 0 ]; then
-    ok "AIDataHub 사전 덤프 — $(grep -E '✓ aidh →' "$HWAX_AIDH_BACKUP_LOG" | head -1 | sed 's/^[[:space:]]*//')"
+    # backup-local 의 ✓ 는 색 글자 사이에 있다(✓ 와 이름 사이에 \033[0m) — '✓ aidh →' 로 찾으면 늘 비어 꼬리 없이 찍혔다. 이름부터 찾는다.
+    ok "AIDataHub 사전 덤프 — $(grep -m1 -E 'aidh → ' "$HWAX_AIDH_BACKUP_LOG" | sed 's/^.*aidh → //')"
   else
     bad "AIDataHub 사전 덤프 실패(rc $(cat "$HWAX_AIDH_BACKUP_RC")) — 아래 줄(로그 $HWAX_AIDH_BACKUP_LOG)"
     grep -E '✗' "$HWAX_AIDH_BACKUP_LOG" | sed 's/^/    /'
   fi
+elif [ -n "${_aidh_reused:-}" ]; then
+  ok "AIDataHub 배포 전 롤백 지점 — 일일 덤프 재사용 — $_aidh_reused(SE-2 ③ — 새로 뜨지 않았다)"
 fi
 
 # ○ 옵션·설정이 없어 안 켠 기능은 성공·실패 어느 쪽 끝에서도 다시 말한다 — 조용히 지나가면 그 기능이
