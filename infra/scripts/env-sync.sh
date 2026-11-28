@@ -57,7 +57,8 @@ backup_env() {
   return 1
 }
 
-# 대상 찾기 — 리포 루트와 흔한 하위 배치(infra/·platform/)를 본다. `.env` 가 없으면 건너뛴다
+# 대상 찾기 — 리포 루트와 흔한 하위 배치(infra/·platform/·deploy/apptainer/)를 본다. `.env` 가 없으면 건너뛴다
+# (deploy/apptainer/ 는 AIDataHub 의 자리 — 11-01 에 예시가 권하는 값이 박스에 없어 기본값으로 돌았다, docs/request-1125 HP-58)
 # (그건 최초 설치의 일이지 동기화의 일이 아니다).
 # 기본 대상은 **이 스택이 운영하는 리포만**이다. 형제 디렉터리를 통째로 훑으면 남의 프로젝트
 # (.env 를 자기 규칙으로 쓰는) 까지 건드린다 — 실제로 첫 판이 KooRemapper·MXWhitePaper 등
@@ -74,7 +75,7 @@ discover() {
     done
   fi
   for r in "${roots[@]}"; do
-    for sub in "" "/infra" "/platform"; do
+    for sub in "" "/infra" "/platform" "/deploy/apptainer"; do
       [ -f "$r$sub/.env.example" ] && [ -f "$r$sub/.env" ] || continue
       # 같은 경로가 두 번 나오지 않게(리포 루트와 형제 목록에 동시에 걸릴 수 있다)
       case "$seen" in *"|$r$sub|"*) continue ;; esac
@@ -174,11 +175,19 @@ for DIR in $(discover); do
   if [ "$CHECK" = "1" ]; then
     _record_needs; ADDED=$((ADDED + n_a)); NEEDS=$((NEEDS + n_c)); continue
   fi
+  # deploy/apptainer/ 는 **알리기만** 한다 — AIDataHub 예시의 활성 줄에 DB 자리(POSTGRES_HOST · EXTERNAL_POSTGRES · 호스트 망)가 섞여 있어,
+  # 박스가 기본값에 기대는 자리에 예시 값을 켜면 도는 DB 연결이 바뀐다(dev 실측 11-28 — 자동 후보 8 중 DB 넷). 키 이름만 내고 손으로 넣는다(HP-58).
+  case "$DIR" in */deploy/apptainer)
+    echo "    ○ 알리기만 — 이 자리는 DB 연결 설정이 섞여 있어 자동으로 넣지 않는다. 필요한 줄만 $rel/.env 에 손으로 넣는다"
+    hwax_skip_record "설정값 ($rel)" "새 설정 $((n_a + n_c))개를 알리기만 했다(deploy/apptainer — 자동으로 넣지 않는 자리)" "$rel/.env.example 과 견줘 필요한 줄만 $rel/.env 에 손으로 넣고 재기동"
+    NEEDS=$((NEEDS + n_a + n_c)); continue ;;
+  esac
 
-  # 리포 루트와 리포 안 경로 — discover 는 <리포><""|/infra|/platform> 을 낸다
+  # 리포 루트와 리포 안 경로 — discover 는 <리포><""|/infra|/platform|/deploy/apptainer> 을 낸다
   case "$DIR" in
     */infra)    R="${DIR%/infra}";    SUB="infra/" ;;
     */platform) R="${DIR%/platform}"; SUB="platform/" ;;
+    */deploy/apptainer) R="${DIR%/deploy/apptainer}"; SUB="deploy/apptainer/" ;;
     *)          R="$DIR";             SUB="" ;;
   esac
   # 센다·장부에 적는 것은 백업과 덧붙이기가 **된 뒤에만**(LLM 풀 반대 검토 2라운드 LOW 5 · LP-D14) — 종전엔 세고 나서 백업이 실패해, 하나도

@@ -242,3 +242,19 @@ def test_a_big_backlog_goes_to_a_human_instead_of_flipping_switches(tmp_path):
     # 상한을 올리면 적용된다 — 막는 것이 아니라 **사람의 결정을 요구**하는 것이다
     r2 = _run(d, HWAX_ENV_SYNC_MAX="50")
     assert "OPT14=14" in (d / ".env").read_text(encoding="utf-8"), r2.stdout
+
+
+def test_deploy_apptainer_자리는_찾되_알리기만_한다(tmp_path):
+    """AIDataHub 의 deploy/apptainer/.env 새 키가 조용히 빠졌다(11-01 AIDH_RECOMMEND_CANDIDATE_SECTIONS — docs/request-1125 HP-58). 이제 찾아서
+    이름으로 보이되, 예시의 활성 줄에 DB 자리(POSTGRES_HOST · EXTERNAL_POSTGRES)가 섞여 있어 자동으로 넣지 않는다 — .env 는 바이트까지 그대로."""
+    d = tmp_path / "repo"; (d / "deploy/apptainer").mkdir(parents=True)
+    (d / "deploy/apptainer/.env.example").write_text("OLD=1\nAIDH_RECOMMEND_CANDIDATE_SECTIONS=300\nEXTERNAL_POSTGRES=0\n")
+    (d / "deploy/apptainer/.env").write_text("OLD=1\n")
+    r = _run(d, "--check")
+    assert r.returncode == 1 and "AIDH_RECOMMEND_CANDIDATE_SECTIONS" in r.stdout and "deploy/apptainer" in r.stdout, r.stdout
+    ledger = tmp_path / "ledger"; ledger.write_text("")
+    r = _run(d, HWAX_SKIP_LEDGER=str(ledger))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (d / "deploy/apptainer/.env").read_text() == "OLD=1\n", "알리기만 하는 자리에 썼다"
+    assert "알리기만" in r.stdout and "EXTERNAL_POSTGRES" in r.stdout
+    assert "알리기만" in ledger.read_text(), "update-all 끝 요약(○)에 남아야 한다"
