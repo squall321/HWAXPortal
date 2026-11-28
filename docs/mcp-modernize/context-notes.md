@@ -128,3 +128,20 @@ cae00 은 표지 없음 83.5% 라 훨씬 많다). 이름으로 여는 것은 안
   바이트까지 같다 — 시험).
 - **게이트웨이 시험 하나가 붉어진다** — 게이트웨이 `test_E4_포털이_저장하는_보기_글을_게이트웨이가_같은_뜻으로_읽는다` 가 형제 포털의 `MODES == ("full", "bundle",
   "light")` 를 단언한다. 이 가지가 main 에 들면 그 시험이 실패한다 — 게이트웨이 세션에 「앞 셋 + purpose(PURPOSE_VIEW_ON 일 때 왕복)」 로 바꿔 달라고 청한다.
+
+## MM-11 앱이 결과 꼴을 바꿀 때 소비처가 소리 없이 비는 것(2026-11-28 — SignalForge 계약 2단계에서)
+
+- **일어난 것** — SignalForge 가 C7 · C8 을 지키며 목록 도구 일곱의 답을 `{total, truncated, results}` 로 쌌다(81aef78). 정해진 칸(`issues`)만 읽던 소비처 둘이
+  예외 없이 0행이 됐다 — 리스크 앱 E10(VOC 근거) · 에이전트 서버 심의 준비(경보 제품의 이슈). 둘 다 `results` 도 받게 고쳤다(리스크 앱 `213d131` · 에이전트
+  `1038241`).
+- **대조하며 더 나온 것(이번 변경과 무관한 오래된 어긋남)** — 리스크 앱 E10 이 기대한 꼴(plan §5.6.2 — `issue_key` · `n` · `text`, 문헌 `papers[{doi, abstract}]`)이
+  실제 도구에 없었다. SignalForge `get_top_issues` 는 처음부터 주제 집계 `{category, total_count, negative_rate}` 였고, WebResearch `search_scholar` 는 처음부터
+  공통 봉투 `{ok, data: {results[{title, url, doi, snippet}]}}`(08-08) 였다. 그래서 E10 은 실데이터에서 늘 비어 「조회했는데 0건」 처럼 보였다(dev 원장
+  `rr_brief_calls` 0행 — 실주행이 없어 원장으로는 못 봤고 코드 대조로 찾았다). 리스크 앱은 한 함수(`brief._canon_field_item` — 조립과 인용 해석이 함께 지난다)에서
+  실제 꼴을 맞춘다 — 주제를 이슈 키로(참조 토큰이 끊기지 않게 빈칸 · `]` 은 `_`), 수는 total_count, 발췌는 부정 비율, 문헌 발췌는 snippet, DOI 없는 논문은 url.
+- **인자도** — 리스크 앱이 `window_days` 를 보냈는데 도구 인자는 `period_days` 였다. SDK 1.x 는 모르는 인자를 오류 없이 버려 기본 30일 · 10개로 돌았다. `period_days:
+  90` · `top_n: 3` 으로 고쳤다. SignalForge 에는 거절 대신 드러내기를 청했다 — 결과에 `ignored_args`, 서버 로그에 경고 한 줄(값은 남기지 않음, SignalForge
+  `183fa00`). 거절로 바꾸면 지금 되는 호출이 깨지니, 부르는 쪽이 그 칸을 보고 고친 뒤에 다시 정한다.
+- **교훈 — 계약을 보낼 때** — C7 · C8 은 앱 쪽 기준만 적었다. 결과 꼴이 바뀌는 판은 「바뀐 도구 이름 · 옛 꼴 → 새 꼴」 을 함께 알리고, 받는 쪽은 소비처를
+  `grep` 으로 찾아 맞춘다. 가짜(시험 꼴)가 진짜 꼴과 달라 판정 결함을 숨긴 일([[test-fakes-must-match-real-shape]])과 같은 뿌리다 — 리스크 앱 시험의
+  `ISSUES`/`PAPERS` 는 계획서가 그린 꼴이었다. 새 시험은 실제 답 꼴(`REAL_TOP_ISSUES` · `REAL_SCHOLAR`)로 둔다.
