@@ -51,6 +51,7 @@ from app.config import Settings, chat_pat_ttl_s, get_settings
 from app.agent import docforge_delivery as _dfd
 from app.agent import onto_preview as _onto_preview
 from app.agent import embeds as _embeds
+from app.agent import mcp_delib as _mcp_delib
 from app.agent import pc_upload as _pc
 from app.agent import ra_post as _ra_post
 from app.agent import subject as _subject
@@ -347,6 +348,24 @@ _ROUTINE_INPUT_KEYS = 24
 _ROUTINE_INPUT_CHARS = 20_000
 
 
+class ConfirmEditSet(BaseModel):
+    """확인 카드에서 바꾼 칸(docs/request-1125 WD-06) — 에이전트 서버 _CONFIRM_EDIT_KEYS(save_report · job · rounds) 셋뿐이다. 값의 판정(엔진의 심의 종류 ·
+    0 · 2~8)은 에이전트 서버가 다시 한다 — 여기는 꼴만. 모르는 칸은 422(바꾼 줄 알았던 칸이 조용히 버려지지 않게)."""
+    model_config = {"extra": "forbid"}
+
+    save_report: StrictBool | None = None
+    job: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,39}$")
+    rounds: int | None = Field(default=None, ge=0, le=8)
+
+
+class ConfirmEdit(BaseModel):
+    """승인 말과 함께 오는 카드 고침 — {id: 카드 번호, set: {…}}. 에이전트 서버는 그 카드의 심의 시작 · 이어하기 호출에만 얹는다(_confirm_apply_edit)."""
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    set: ConfirmEditSet
+
+
 class RoutineReq(BaseModel):
     """챗 루틴 모드 한 턴(R3-design 3.1) — 새 실행은 {id, version?, inputs, note?}, 이어서 · 다시 붙기는 {run_id}, 끝난 실행의 RA 초안 올리기는
     {run_id, upload_ra: true}(R3-design 8). 에이전트 서버의 실행기가 게이트웨이 routine_run_start 로 실행을 만들거나 잇는다(R3 D1). 모르는 칸은
@@ -432,6 +451,8 @@ class ChatRequest(BaseModel):
     # 그대로 옮긴다. 고를 수 있는 사람인지 · 박스 목록 안인지는 에이전트 서버가 본다(밖이면 기본으로 돌고 답 아래에 알린다). Claude 턴이 아니면 읽히지 않는다.
     claude_model: str | None = Field(default=None, max_length=64, pattern=r"^claude-[a-z0-9]+(?:-[a-z0-9]+)*$")
     claude_effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    # 확인 카드에서 바꾼 칸(docs/request-1125 WD-06) — 승인 말과 함께 온다. 바꾼 칸이 있을 때만 에이전트 서버에 옮긴다(에이전트 서버 ChatRequest 에도 같은 칸).
+    confirm_edit: ConfirmEdit | None = None
 
 
 # ── 서버 대화 저장소 REST ─────────────────────────────────────────────────────
@@ -1286,6 +1307,10 @@ async def _relay_stream(
         payload["claude_model"] = body.claude_model
     if body.claude_effort:
         payload["claude_effort"] = body.claude_effort
+    if body.confirm_edit is not None:  # 확인 카드에서 바꾼 칸(WD-06) — 바꾼 것만. 아무것도 안 바꿨으면 싣지 않는다(종전 요청 그대로)
+        _ce = {k: v for k, v in body.confirm_edit.set.model_dump().items() if v is not None}
+        if _ce:
+            payload["confirm_edit"] = {"id": body.confirm_edit.id, "set": _ce}
     if body.documents:  # 붙인 문서의 추출문 — 원본이 아니라 평문이다
         payload["documents"] = [d.model_dump() for d in body.documents]
     if body.images:  # 올린 그림 — 에이전트 서버가 저장하고 주소를 돌려준다(user_images)
@@ -3505,6 +3530,7 @@ async def chat(
         routine_ptr: dict = {}       # 분석 루틴 프레임에서 모은 포인터(run_id · routine_id · title · state) — 답 meta.routine 으로 남긴다
         panels: list[dict] = []      # 패널(ui_resource) 포인터(app · tool · uri · call · 제목) — 답 meta.panels 로 남긴다. 결과 · 입력 · _meta 는 남기지 않는다(B-4 · B-6)
         embeds: list[dict] = []      # 뷰어 카드(SSE embeds) 포인터(app · tool · url · 제목) — 같은 규칙으로 걸러 답 meta.embeds 로 남긴다(docs/chat-embeds CE-2)
+        job_cards: list[dict] = []   # 진행 카드(SSE job_card — 확인 뒤 건 잡, docs/request-1125 WD-13) — 아는 칸만 걸러 답 meta.job_cards 로 남긴다(새로고침 뒤에도 카드)
         # 턴 메타(SSE meta — 답한 모델 · 생각 · 자기검증, SSE confirm — 확인 카드) — 상호작용 기록을 켠 박스에서만 답 meta.turn 으로 남긴다
         # (docs/interaction-data PLAN S2 · IX-12). 꺼진 박스는 모으지도 남기지도 않는다 — 서버 사본이 바이트까지 종전 그대로다.
         turn_ix: dict = {}
@@ -3630,6 +3656,11 @@ async def chat(
                             elif evt == "embeds":
                                 # 뷰어 카드 — 바이트는 위 큐로 그대로 흘리고(화면이 다시 거른다) 서버 사본에는 규칙에 맞는 포인터만(docs/chat-embeds PLAN 1절)
                                 embeds[:] = _embeds.pointers(embeds + list(data.get("items") or []))
+                            elif evt == "job_card" and len(job_cards) < 8:
+                                # 진행 카드(WD-13) — 바이트는 그대로 흘리고(화면이 그린다) 서버 사본에는 아는 칸만(다시 묻기는 심의 잡의 deliberate_status 만)
+                                _jc = _mcp_delib.card_pointer(data)
+                                if _jc is not None:
+                                    job_cards.append(_jc)
                             elif evt == "routine" and isinstance(data.get("run_id"), str) and data["run_id"]:
                                 # 분석 루틴(R3-design 3.2 · 3.3) — 대화에는 포인터만 남긴다(정본은 포털 원장, 단계 · 보고서는 화면이 run_id 로 읽는다).
                                 # 실행 id 는 모든 프레임에, 루틴 id · 제목은 plan 에, 실행 상태는 plan · done 에 있다. 마지막 값이 이긴다.
@@ -3755,7 +3786,8 @@ async def chat(
                                 reply = cancelled["message"] = cancelled["message"] or "(심의를 멈췄다)"
                             if reply:
                                 _am = {k: v for k, v in (("activity", activity), ("delib_evidence", delib_ev),
-                                                         ("user_images", user_images), ("panels", panels), ("embeds", embeds)) if v}
+                                                         ("user_images", user_images), ("panels", panels), ("embeds", embeds),
+                                                         ("job_cards", job_cards)) if v}
                                 if outcome:     # 심의가 낸 보고서 번호 · 집계 — 새로고침 뒤에도 결과 카드와 '발표자료로' 단추가 선다
                                     _am["delib_outcome"] = outcome
                                 if ra_report:   # '/보고서' 가 만든 보고서 — 그 답 옆에 '발표자료로' 단추가 선다

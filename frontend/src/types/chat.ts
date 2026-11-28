@@ -105,6 +105,18 @@ export interface DelibData {
   /** 심의 주제 — 에이전트 서버가 확인한 것(SSE delib kind=subject · 서버 사본 답 meta.subject, docs/project-insight-graph M1). 없으면 주제 없이 돈
    *  심의다(어느 과제에도 잇지 않는다). 브라우저가 보낸 값은 여기 들지 않는다. */
   subject?: DelibSubject;
+  /** MCP 로 연 심의(엔진 잡)를 포털이 대화로 들인 것 — 결정문 줄의 meta.mcp_delib(포털 app/agent/mcp_delib.py, docs/request-1125 WD-03). 웹 '이어하기'
+   *  가 새 웹 심의 대신 이 잡을 엔진으로 잇는 열쇠다(WD-05). 웹 심의에는 없다. */
+  mcpJob?: McpJobRef;
+}
+/** 엔진 잡의 머리 — 잡 id · 뿌리(이어하기 사슬의 맨 앞) · 종류 · 의장 틀 · 끝난 상태 · 앞 잡. */
+export interface McpJobRef {
+  jobId: string;
+  rootJobId?: string;
+  job?: string;
+  chairTemplate?: string;
+  status?: string;
+  continues?: string;
 }
 /** 서버가 확인한 심의 주제(HWAXAgentServer delib_subject — confirmed 확인 · claimed 주장 · none 없음). 과제는 SP 허브 plm_task key, 차수는 개발
  *  단계 코드(모르면 null — '차수 모름'). */
@@ -385,6 +397,25 @@ export interface Message {
   raReport?: { id: number; title: string };
   /** 이 알림을 남긴 발표자료 잡(서버 사본 meta.deck.job_id) — 같은 알림을 두 번 붙이지 않는 열쇠(docs/wda-deck). */
   deckJob?: string;
+  /** 진행 카드(SSE job_card · 서버 사본 meta.job_cards — docs/request-1125 WD-13) — 확인 카드로 건 잡 · 엔진 이어하기의 상태 · 링크. 심의 잡은 화면이
+   *  status_call(deliberate_status)로 다시 물어 끝나면 결과로 바꾼다. 영속됨(작다). */
+  jobCards?: JobCard[];
+}
+
+/** 진행 카드 — 에이전트 서버 _confirm_job_card · 포털 mcp_delib.card_pointer 의 꼴. */
+export interface JobCard {
+  kind: 'deliberation' | 'job';
+  job_ids: string[];
+  tool: string;
+  app?: string;
+  call?: string;
+  phase: 'run' | 'end';
+  state: string;
+  progress?: number | null;
+  detail?: string;
+  link?: string;
+  continued_from?: string;
+  status_call?: { tool: 'deliberate_status'; args: { job_id: string } };
 }
 
 /** 뷰어 카드 포인터 — 에이전트 서버가 도구 결과에서 집은 같은 출처 경로(docs/chat-embeds PLAN 1절 — 세 층이 같은 규칙으로 거른다). */
@@ -448,7 +479,7 @@ export interface ConfirmCall {
   args_text: string;
   workload?: string;
   /** 심의 시작 · 이어하기 호출의 요약(에이전트 서버 _confirm_delib_summary — 인자에서만 센다, docs/request-1125 WD-06). 같은 내용이 본문 카드 글의
-   *  '심의 —' 줄로도 온다 — 화면은 아직 이 칸으로 고치기(confirm_edit)를 하지 않는다. */
+   *  '심의 —' 줄로도 온다. 화면은 카드 맨 위에 고정해 보이고 editable 칸(save_report · job · rounds)을 바꿔 승인 말과 함께 confirm_edit 로 보낸다. */
   summary?: ConfirmDelibSummary;
   again: boolean;
 }
@@ -466,6 +497,12 @@ export interface ConfirmDelibSummary {
   editable: string[];
   modifiers?: string[];
   previous_job_id?: string;
+}
+
+/** 승인 말에 싣는 카드 고침(포털 ChatRequest.confirm_edit — docs/request-1125 WD-06). 바꾼 칸만. */
+export interface ConfirmEditWire {
+  id: string;
+  set: { save_report?: boolean; job?: string; rounds?: number };
 }
 
 /** 확인 카드(SSE confirm) — 사람이 이번 말로 시키지 않았거나 되돌리기 어려운 작업은 에이전트 서버가 보내지 않고 멈춘다.
@@ -488,6 +525,8 @@ export interface Conversation {
   // 서버 대화 저장소 정본 id — 있으면 /agent/chat 이 이 대화에 user+assistant 를 서버 저장.
   // 서버에서 로드된 대화(MCP 심의 포함)는 id === serverId. 웹 생성분은 전송 시 발급받아 채움.
   serverId?: string;
+  /** 서버 대화의 출처 — mcp 는 개인 Claude(MCP)가 저장했거나 포털이 엔진 잡을 들인 대화(docs/request-1125 WD-03). 사이드바가 표지 · 거르기에 쓴다. */
+  source?: 'web' | 'mcp';
   /** 브라우저 사본을 저장 한도(쿼터)로 줄였다 — 열 때 서버 정본에서 줄인 칸을 되채운다(ChatContext · fillTrimmed). */
   cacheTrimmed?: boolean;
   /** 줄인 사본을 서버 정본으로 되채우지 못했다(메시지 모양이 다르다) — 이 세션에서만 쥐는 값이라 저장하지 않는다. 대화 머리가 알린다. */

@@ -300,6 +300,10 @@ class Settings(BaseSettings):
     # (POST /deliberate/batch/finished)를 물어 끝난 묶음마다 주인에게 포털 알림 한 줄을 남긴다(app/notices). 0 은 끔(창구를 부르지 않고 알림도 새로 안 생긴다 —
     # 이미 쌓인 알림은 그대로 보인다). 비밀은 위 gateway_shared_token 을 그대로 쓴다 — 비면 부르지 않고 경고만 남긴다.
     delib_batch_notice_s: int = 60
+    # MCP 로 연 심의를 잡 주인의 포털 대화로(docs/request-1125 WD-03 — app/agent/mcp_delib.py) — 이 간격(초)마다 에이전트 서버의 공유 비밀 창구
+    # (GET /delib/conversations)를 물어 끝난 엔진 잡을 주인의 대화(kind deliberation · source mcp)에 쓴다. 같은 뿌리 잡(이어하기 사슬)은 한 대화에
+    # 붙는다. 0 은 끔(창구를 부르지 않고 대화도 새로 안 생긴다 — 이미 들인 대화는 그대로). 비밀은 위 gateway_shared_token 그대로다.
+    delib_conv_sync_s: int = 60
     # 챗 파일 업로드 — 물성 DB 는 정본이라 아무나 못 쓰게 그룹으로 게이트한다(2층: 프론트
     # 숨김 + 백엔드 재검증). 콤마 구분. portal-admin 은 항상 포함, 물성 담당 그룹을 사내
     # AD 그룹명으로 추가하면 된다. 빈 값이면 아무도 업로드 못 한다(안전 기본).

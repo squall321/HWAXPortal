@@ -1,5 +1,5 @@
 // 대화 이력 localStorage 영속 계층 — 저장 스키마(role/content/ts)와 런타임 Message를 상호 변환
-import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, EmbedPointer, Message, PanelPointer, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
+import type { ActivityItem, ConfirmCard, Conversation, DelibData, DelibOpts, EmbedPointer, JobCard, Message, PanelPointer, Role, RoutineState, ThinkData, TurnMeta } from '../types/chat';
 
 // prefix 로 이력 네임스페이스를 가른다 — 일반 챗 'hwax.chat', 심의 페이지 'hwax.delib'.
 const DEFAULT_PREFIX = 'hwax.chat';
@@ -34,6 +34,8 @@ interface StoredMessage {
   /** '/보고서' 가 만든 RA 보고서 · 발표자료 알림의 잡(docs/wda-deck) — 작다. 없으면 새로고침 뒤 단추가 서버를 다시 읽을 때까지 사라진다. */
   raReport?: { id: number; title: string };
   deckJob?: string;
+  /** 진행 카드(docs/request-1125 WD-13) — 잡 id · 상태 · 링크뿐이라 작다. */
+  jobCards?: unknown;
 }
 /** 자기검증의 버린 고침(dropped)과 관문 수(gate)는 QA 용이라 브라우저 사본에 남기지 않는다(10-30 HA-27 — 화면에 보이지 않는다). */
 function storedMeta(meta: TurnMeta): TurnMeta {
@@ -52,6 +54,7 @@ interface StoredConversation {
   createdAt: number;
   updatedAt: number;
   serverId?: string; // 서버 정본 id — 캐시 재로드 후에도 서버 병합·이어쓰기가 이어지게 영속
+  source?: 'mcp'; // 서버 대화의 출처가 MCP 다 — 사이드바 표지 · 거르기(docs/request-1125 WD-03). web 은 적지 않는다
   // 아래 저장 한도로 무엇이든 줄였으면 true — 열 때 서버 정본에서 되채운다. 표식 없이 줄이면 줄인 판이 원본처럼 쓰인다.
   cacheTrimmed?: true;
   // 지정 앱·도구·전문가 — 영속하지 않으면 새로고침에 조용히 풀려, 사용자는 여전히 지정된 줄 안다.
@@ -121,6 +124,44 @@ export function embedsFromMeta(raw: unknown): EmbedPointer[] | undefined {
   return out.length ? out : undefined;
 }
 
+// ── 진행 카드(docs/request-1125 WD-13) — 포털 중계(mcp_delib.card_pointer)와 같은 규칙: 아는 칸만, 다시 묻기는 심의 잡의 deliberate_status 만,
+// 링크는 http(s) · 포털 안 경로만. 이 파일에 두는 까닭은 위 패널 포인터와 같다(conversations.api.ts 와 함께 옮겨 적는 시험들).
+const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const JOB_LINK = /^(?:https?:\/\/[^\s"'<>\\]{1,490}|\/(?!\/)[^\s"'<>\\]{0,498})$/;
+
+/** 링크로 그려도 되는 주소인가(http(s) · 포털 안 경로). */
+export function isJobLink(v: unknown): v is string {
+  return typeof v === 'string' && JOB_LINK.test(v);
+}
+
+/** SSE job_card 한 건 · 서버 사본(meta.job_cards) · 브라우저 사본 → 화면 카드. 잡 id 가 없으면 버린다. 8개까지. */
+export function jobCardsFromMeta(raw: unknown): JobCard[] | undefined {
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? [raw] : [];
+  const out: JobCard[] = [];
+  for (const x of list) {
+    if (!x || typeof x !== 'object') continue;
+    const r = x as Record<string, unknown>;
+    const ids = (Array.isArray(r.job_ids) ? r.job_ids : []).map(String).filter((v) => JOB_ID.test(v)).slice(0, 5);
+    if (!ids.length) continue;
+    const kind = r.kind === 'deliberation' ? 'deliberation' : 'job';
+    const sc = r.status_call as { tool?: unknown; args?: { job_id?: unknown } } | undefined;
+    const scJob = sc && sc.tool === 'deliberate_status' && typeof sc.args?.job_id === 'string' && ids.includes(sc.args.job_id) ? sc.args.job_id : null;
+    const str = (v: unknown, cap: number) => (typeof v === 'string' ? v.slice(0, cap) : '');
+    out.push({
+      kind, job_ids: ids, tool: str(r.tool, 120), phase: r.phase === 'end' ? 'end' : 'run', state: str(r.state, 40),
+      ...(typeof r.progress === 'number' && r.progress >= 0 && r.progress <= 100 ? { progress: r.progress } : {}),
+      ...(str(r.detail, 200) ? { detail: str(r.detail, 200) } : {}),
+      ...(str(r.app, 80) ? { app: str(r.app, 80) } : {}),
+      ...(str(r.call, 80) ? { call: str(r.call, 80) } : {}),
+      ...(str(r.continued_from, 128) ? { continued_from: str(r.continued_from, 128) } : {}),
+      ...(isJobLink(r.link) ? { link: r.link } : {}),
+      ...(kind === 'deliberation' && scJob ? { status_call: { tool: 'deliberate_status' as const, args: { job_id: scJob } } } : {}),
+    });
+    if (out.length >= 8) break;
+  }
+  return out.length ? out : undefined;
+}
+
 /** 브라우저 사본(localStorage)에 남길 꼴 — 포인터와 작은 입력만. */
 export function storedPanels(list: PanelPointer[] | undefined): PanelPointer[] | undefined {
   if (!list?.length) return undefined;
@@ -171,6 +212,10 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
             ? { raReport: { id: m.raReport.id, title: typeof m.raReport.title === 'string' ? m.raReport.title : '' } }
             : {}),
           ...(typeof m.deckJob === 'string' && m.deckJob ? { deckJob: m.deckJob } : {}),
+          ...(() => {
+            const jobCards = jobCardsFromMeta(m.jobCards);
+            return jobCards ? { jobCards } : {};
+          })(),
           // 패널 포인터(HA-20) — 입력은 이 브라우저 사본에만 있다(다시 열 때 tool-input 으로 보낸다)
           ...(() => {
             const panels = panelsFromMeta(m.panels, true);
@@ -190,6 +235,7 @@ export function loadConversations(prefix: string = DEFAULT_PREFIX): Conversation
         createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
         updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
         ...(typeof c.serverId === 'string' ? { serverId: c.serverId } : {}),
+        ...(c.source === 'mcp' ? { source: 'mcp' as const } : {}),
         ...(c.cacheTrimmed ? { cacheTrimmed: true } : {}),
         ...(Array.isArray(c.pinnedApps) ? { pinnedApps: c.pinnedApps.filter((x) => typeof x === 'string') } : {}),
         ...(Array.isArray(c.pinnedTools) ? { pinnedTools: c.pinnedTools.filter((x) => typeof x === 'string') } : {}),
@@ -320,6 +366,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
             ...(m.embeds?.length ? { embeds: m.embeds.slice(0, 8) } : {}),
             ...(m.raReport ? { raReport: m.raReport } : {}),
             ...(m.deckJob ? { deckJob: m.deckJob } : {}),
+            ...(m.jobCards?.length ? { jobCards: m.jobCards.slice(0, 8) } : {}),
           };
         });
       return {
@@ -328,6 +375,7 @@ export function saveConversations(convs: Conversation[], prefix: string = DEFAUL
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.source === 'mcp' ? { source: 'mcp' as const } : {}),
       // 메모리의 표식을 잇는다 — 새로고침 직후 저장은 이미 줄인 메시지로 다시 판정해 아무것도 줄이지 않으므로, 그 판정만 믿으면
       // 되채우기 전에 표식이 지워져 다음 새로고침부터 줄인 판이 원본처럼 남는다. 되채운 뒤에는 메모리가 false 라 다시 판정한다.
       ...(cut.any || c.cacheTrimmed ? { cacheTrimmed: true as const } : {}),

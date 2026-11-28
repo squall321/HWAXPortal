@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 import { rejectedMessage, streamCutMessage } from '../lib/chatErrors';
-import type { AgentCatalog, ConfirmCard, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta, UiResourceEvent } from '../types/chat';
+import type { AgentCatalog, ConfirmCard, ConfirmEditWire, DelibEvent, ErrorEvent, ResultBlock, RoutineEvent, RoutineRequest, StatusEvent, ThinkEvent, TokenEvent, ToolCatalog, TurnMeta, UiResourceEvent } from '../types/chat';
 
 // Streaming chat client. EventSource cannot be used here: POST /agent/chat needs the
 // X-CSRF-Token header (double-submit) and EventSource only does GET with cookies.
@@ -40,6 +40,8 @@ export interface StreamHandlers {
   onUiResource?: (e: UiResourceEvent) => void;
   /** 뷰어 카드(SSE embeds, docs/chat-embeds) — 답 끝에 한 번. items 는 화면이 다시 거른다(chatStore.embedsFromMeta). */
   onEmbeds?: (e: { items?: unknown }) => void;
+  /** 진행 카드(SSE job_card, docs/request-1125 WD-13) — 확인 뒤 건 잡 하나. 화면이 다시 거른다(chatStore.jobCardsFromMeta). */
+  onJobCard?: (e: unknown) => void;
   onDone?: () => void;
   /** 프레임이 하나 올 때마다(이벤트 이름) — 서버 heartbeat(`ping`)를 포함한다. 내용이 아니라 '살아 있다' 는 신호다. */
   onSignal?: (event: string) => void;
@@ -115,6 +117,9 @@ function dispatch(frame: SseFrame, h: StreamHandlers): void {
       break;
     case 'ui_resource':
       h.onUiResource?.(payload as UiResourceEvent);
+      break;
+    case 'job_card':
+      h.onJobCard?.(payload);
       break;
     case 'embeds':
       h.onEmbeds?.(payload as { items?: unknown });
@@ -687,11 +692,13 @@ export async function streamChat(
     /** 웹 챗 Claude 의 고른 모델 · 생각 깊이(CC-8) — 고를 수 있는 사람만 싣는다. 비면 박스 기본. */
     claudeModel?: string;
     claudeEffort?: string;
+    /** 확인 카드에서 바꾼 칸(docs/request-1125 WD-06) — 승인 말에만. 바꾼 칸이 없으면 싣지 않는다. */
+    confirmEdit?: ConfirmEditWire;
   } & StreamHandlers = {},
 ): Promise<void> {
   // Default = real relay (Agent Server → vLLM). Pass mode:'echo' only for local UI debugging
   // when the chat stack isn't up.
-  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, uiHost, claudeModel, claudeEffort, signal, ...handlers } = opts;
+  const { systemId, mode, history, conversationId, delibOpts, pinnedTools, pinnedApps, pinnedAgent, pinnedAgentName, pinnedAgents, searchSources, thinking, documents, images, routine, uiHost, claudeModel, claudeEffort, confirmEdit, signal, ...handlers } = opts;
   const csrf = getCookie('hwax_csrf');
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : '';
 
@@ -732,6 +739,8 @@ export async function streamChat(
       // 웹 챗 Claude 의 모델 · 생각 깊이(CC-8) — 고른 것만. 포털은 꼴만 보고, 에이전트 서버가 목록 밖이면 기본으로 돌린다.
       ...(claudeModel ? { claude_model: claudeModel } : {}),
       ...(claudeEffort ? { claude_effort: claudeEffort } : {}),
+      // 확인 카드 고침(WD-06) — 바꾼 칸이 있을 때만. 포털이 꼴을 보고(extra=forbid) 에이전트 서버가 값을 다시 본다
+      ...(confirmEdit && Object.keys(confirmEdit.set).length ? { confirm_edit: confirmEdit } : {}),
       // 분석 루틴(R3) — 포털 RoutineReq 는 모르는 칸을 422 로 거절한다(extra=forbid). 아는 칸만 골라 싣는다 — 이어서는 run_id 하나(다른 칸은
       // 서버가 안 본다 — RA 초안 올리기만 upload_ra 를 참으로 더한다), 새 실행은 id · version · inputs · 덧붙인 말(note, 비면 싣지 않는다).
       ...(routine?.run_id

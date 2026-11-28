@@ -142,3 +142,22 @@ export function dispatchInstruction(r: DispatchResult): string {
 export function reportLink(r: DispatchResult): string | null {
   return typeof r.url === 'string' && r.url.startsWith('/') ? `/report-archive${r.url}` : null;
 }
+
+/** 엔진 심의의 결정문을 이 대화에 싣는다(docs/request-1125 WD-08 '이 대화에 싣기') — 사람이 골라 가져온 결과(origin: 'upload')라 다음 턴 이력의 근거가
+ *  '사람이 올려 보낸 결과' 머리로 간다. 결정문은 원문 그대로(상한 NOTICE_RESULT_MAX 를 넘는 뒤쪽만 그 자리를 적는다). */
+export function decisionNotice(d: { job_id: string; label?: string | null; job?: string | null; question: string; decision: string },
+  now = Date.now()): UploadNotice {
+  const kind = d.label || d.job || '심의';
+  const q = d.question.replace(/\s+/g, ' ').trim();
+  const head = q.length > 80 ? `${q.slice(0, 80)}…` : q;
+  const full = clip(d.decision);
+  return {
+    title: `심의 결정문 — ${head || d.job_id}`,
+    text: `엔진 심의 \`${d.job_id}\`(${kind}) 의 결정문을 이 대화에 실었습니다 — 화두 「${head}」 · ${d.decision.length.toLocaleString()}자. `
+      + '다음 질문에서 근거로 씁니다.',
+    activity: [{
+      ts: now, step: `심의 결정문 싣기(사람이 가져옴): ${d.job_id}`, tool: 'deliberate_result', detail: JSON.stringify({ job_id: d.job_id }),
+      result_full: full, result_preview: preview(full), ok: true, origin: 'upload',
+    }],
+  };
+}

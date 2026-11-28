@@ -110,9 +110,16 @@ function ProcedureRunChip({ run, onDrop }: { run: ProcedureRunRef; onDrop: () =>
 }
 
 export default function DeliberatePage() {
-  const { messages, activeId, activeConversation, setInput, newConversation, sendMessage, streaming, delibOpts } = useChat();
+  const { messages, activeId, activeConversation, setInput, newConversation, sendMessage, streaming, delibOpts, openServerConversation } = useChat();
   const location = useLocation();
   const navigate = useNavigate();
+  // 진행 카드가 연 심의 대화(docs/request-1125 WD-13) — 포털이 엔진 잡을 들인 대화를 목록에 넣고 연다(메시지는 열 때 서버에서 읽는다)
+  useEffect(() => {
+    const oc = (location.state as { openConversation?: { id?: unknown; title?: unknown } } | null)?.openConversation;
+    if (!oc || typeof oc.id !== 'string' || !oc.id) return;
+    openServerConversation(oc.id, typeof oc.title === 'string' ? oc.title : '심의');
+    navigate('.', { replace: true, state: null });
+  }, [location.state, openServerConversation, navigate]);
   // 넘겨받은 절차 실행 — 다음 심의 시작에 한 번 실리고 떼어진다. 새 심의로 연다(열려 있던 대화의 뒤 발화는 심의를 열지 않는다).
   const [procRun, setProcRun] = useState<ProcedureRunRef | null>(() => procedureRunOf(location.state));
   useEffect(() => {

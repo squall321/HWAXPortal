@@ -82,6 +82,19 @@ class ConversationStore:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS ix_vec_owner ON message_vectors (owner_sub)"
         )
+        # MCP 로 연 심의(엔진 잡)를 잡 주인의 대화로 들인 기록(docs/request-1125 WD-03 — app/agent/mcp_delib.py). 잡 하나에 한 줄이고(job_id 로 멱등),
+        # 같은 주인의 같은 뿌리 잡(이어하기 사슬의 맨 앞)은 한 대화에 붙는다. finished_at 은 들인 판 — 끊긴 잡을 제자리에서 이어(같은 job_id) 다시 끝나면
+        # 더 늦은 판이 와서 그 잡의 줄만 바꾼다. 대화를 지워도 이 줄은 남긴다 — 경계의 잡이 다음 당기기에 다시 나와도 지운 대화를 되살리지 않게.
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS mcp_delib_jobs ("
+            "job_id TEXT PRIMARY KEY, root_job_id TEXT NOT NULL, owner_sub TEXT NOT NULL, conversation_id TEXT NOT NULL, "
+            "finished_at REAL NOT NULL DEFAULT 0, at INTEGER NOT NULL)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS ix_mcp_delib_root ON mcp_delib_jobs (owner_sub, root_job_id)"
+        )
+        # 당기기 커서(앞으로만 간다 — advance 가 MAX 로 쓴다)
+        self._conn.execute("CREATE TABLE IF NOT EXISTS conv_cursors (k TEXT PRIMARY KEY, since REAL NOT NULL)")
         self._conn.commit()
 
     # ⚠ 쓰기는 전부 `with self._lock, self._conn:` 이다 — 연결 문맥이 끝에서 commit 하고, **도중에 실패하면 rollback 한다.**
@@ -213,6 +226,86 @@ class ConversationStore:
                 (title[:200], cid, owner_sub),
             )
             return cur.rowcount > 0
+
+    # ── MCP 심의 대화(WD-03) ────────────────────────────────────────────────
+    def ingest_mcp_delib(self, *, owner_sub: str, job_id: str, root_job_id: str, title: str,
+                         messages: list[dict], finished_at: float) -> str:
+        """끝난 엔진 잡 하나를 주인의 대화에 — 한 트랜잭션이다(반쪽 대화가 남지 않는다). 답은 새로 만듦(new) · 같은 뿌리 대화에 붙임(appended) ·
+        더 늦은 판으로 그 잡의 줄을 바꿈(replaced) · 이미 들임(already) · 들인 대화를 주인이 지웠다(deleted — 되살리지 않는다).
+        메시지 id 는 mcpd:<job_id>:<차례> 다 — 판을 바꿀 때 그 잡의 줄만 걷는다. 시각은 잡이 끝난 때다(목록에서 그날로 선다)."""
+        ts = int(finished_at) if finished_at and finished_at > 0 else _now()
+        with self._lock, self._conn:
+            had = self._conn.execute("SELECT conversation_id, finished_at FROM mcp_delib_jobs WHERE job_id = ?",
+                                     (job_id,)).fetchone()
+            if had is not None:
+                cid = had[0]
+                if float(had[1] or 0) >= float(finished_at or 0):
+                    return "already"
+                self._conn.execute("UPDATE mcp_delib_jobs SET finished_at = ?, at = ? WHERE job_id = ?",
+                                   (float(finished_at or 0), _now(), job_id))
+                if not self._owns(cid, owner_sub):
+                    return "deleted"
+                self._conn.execute("DELETE FROM message_vectors WHERE message_id LIKE ?", (f"mcpd:{job_id}:%",))
+                self._conn.execute("DELETE FROM messages WHERE conversation_id = ? AND id LIKE ?", (cid, f"mcpd:{job_id}:%"))
+                how = "replaced"
+            else:
+                row = self._conn.execute(
+                    "SELECT j.conversation_id FROM mcp_delib_jobs j JOIN conversations c "
+                    "ON c.id = j.conversation_id AND c.owner_sub = j.owner_sub "
+                    "WHERE j.owner_sub = ? AND j.root_job_id = ? ORDER BY j.at DESC LIMIT 1",
+                    (owner_sub, root_job_id)).fetchone()
+                if row is not None:
+                    cid, how = row[0], "appended"
+                else:
+                    cid, how = _uid(), "new"
+                    self._conn.execute(
+                        "INSERT INTO conversations (id, owner_sub, title, kind, source, created_at, updated_at) "
+                        "VALUES (?, ?, ?, 'deliberation', 'mcp', ?, ?)", (cid, owner_sub, title[:200], ts, ts))
+                self._conn.execute(
+                    "INSERT INTO mcp_delib_jobs (job_id, root_job_id, owner_sub, conversation_id, finished_at, at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)", (job_id, root_job_id, owner_sub, cid, float(finished_at or 0), _now()))
+            seq = self._conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE conversation_id = ?",
+                                     (cid,)).fetchone()[0]
+            for n, m in enumerate(messages):
+                meta = m.get("meta")
+                self._conn.execute(
+                    "INSERT INTO messages (id, conversation_id, seq, role, persona, round, content, meta, ts) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (f"mcpd:{job_id}:{n}", cid, seq + n, m.get("role", "assistant"), m.get("persona"), m.get("round"),
+                     str(m.get("content", "")), json.dumps(meta, ensure_ascii=False) if meta else None, ts))
+            self._conn.execute("UPDATE conversations SET updated_at = MAX(updated_at, ?) WHERE id = ?", (ts, cid))
+        return how
+
+    def mcp_delib_conversation(self, owner_sub: str, job_id: str) -> str | None:
+        """그 주인의 대화로 들인 잡이면 그 대화 id(대화가 남아 있을 때만). 아니면 None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT j.conversation_id FROM mcp_delib_jobs j JOIN conversations c "
+                "ON c.id = j.conversation_id AND c.owner_sub = j.owner_sub WHERE j.job_id = ? AND j.owner_sub = ?",
+                (job_id, owner_sub)).fetchone()
+        return row[0] if row else None
+
+    def mcp_delib_jobs_in(self, cid: str, owner_sub: str) -> list[str]:
+        """그 대화에 들인 잡 id 들(들인 차례). 남의 대화 · 없는 대화는 빈 목록."""
+        with self._lock:
+            if not self._owns(cid, owner_sub):
+                return []
+            rows = self._conn.execute("SELECT job_id FROM mcp_delib_jobs WHERE conversation_id = ? AND owner_sub = ? ORDER BY at",
+                                      (cid, owner_sub)).fetchall()
+        return [r[0] for r in rows]
+
+    def cursor(self, k: str) -> float:
+        with self._lock:
+            row = self._conn.execute("SELECT since FROM conv_cursors WHERE k = ?", (k,)).fetchone()
+        return float(row[0]) if row else 0.0
+
+    def advance(self, k: str, since: float) -> float:
+        """커서를 앞으로만 — 지금 값과 since 가운데 큰 것을 쓰고 돌려준다."""
+        with self._lock, self._conn:
+            self._conn.execute("INSERT INTO conv_cursors (k, since) VALUES (?, ?) "
+                               "ON CONFLICT(k) DO UPDATE SET since = MAX(since, excluded.since)", (k, float(since)))
+            row = self._conn.execute("SELECT since FROM conv_cursors WHERE k = ?", (k,)).fetchone()
+        return float(row[0])
 
     # ── 의미검색 인덱스 ──────────────────────────────────────────────────────
     def unindexed(self, owner_sub: str, model: str, limit: int = 2000) -> list[dict]:

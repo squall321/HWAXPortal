@@ -99,6 +99,39 @@
   color: var(--muted);
 }
 
+/* 출처 거르기(docs/request-1125 WD-03) — 전부 · 웹 · MCP */
+.sb-src {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0 0.7rem 0.35rem;
+}
+.sb-src-btn {
+  flex: 1;
+  padding: 0.22rem 0.4rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.sb-src-btn.active {
+  color: var(--fg);
+  border-color: var(--cx-accent);
+  background: var(--cx-accent-soft);
+}
+.sb-item-src {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0 0.3rem;
+  font-size: 0.64rem;
+  line-height: 1.35;
+  vertical-align: 0.08em;
+  color: var(--accent-fg);
+  border: 1px solid var(--accent-soft);
+  border-radius: 5px;
+}
+
 .sb-list {
   flex: 1;
   min-height: 0;

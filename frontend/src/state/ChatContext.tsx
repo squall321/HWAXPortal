@@ -25,7 +25,7 @@ import {
 } from '../api/conversations.api';
 import { useAuth } from '../auth/useAuth';
 import { useCan } from '../auth/useCan';
-import type { ActivityItem, AgentCatalog, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
+import type { ActivityItem, AgentCatalog, ConfirmEditWire, Conversation, DelibData, DelibEvent, DelibOpts, DelibTally, DelibTurn, Message, RoutineRequest, SearchSource, ThinkData, ThinkEvent, ThinkSeat, ToolCatalog } from '../types/chat';
 import { conversationEvidence, priorGatheredEvidence, EVID_ITEMS, type HandoffEvidence } from '../components/chat/handoff';
 import { isRoutineTerminal, mergeRoutine } from '../components/chat/routine';
 import { subjectFromPrior } from '../components/chat/subject';
@@ -38,6 +38,7 @@ import type { UploadNotice } from '../components/chat/uploadNotice';
 import { noteFrame, startLive, type StreamLive } from '../lib/streamLive';
 import { panelPointer } from '../components/chat/panels';
 import { UI_HOST_TOKEN } from '../lib/mcpApps';
+import { continueEngineJob } from '../api/engineDelib.api';
 import { claudePick } from '../components/chat/claudePick';
 import {
   decisionAsOf,
@@ -52,8 +53,14 @@ import {
   saveDelibOpts,
   saveDraftPins,
   embedsFromMeta,
+  jobCardsFromMeta,
   type DraftPins,
 } from './chatStore';
+
+/** 보내기 한 번에만 싣는 것 — 확인 카드에서 바꾼 칸(docs/request-1125 WD-06, 승인 말에만). */
+export interface SendExtra {
+  confirmEdit?: ConfirmEditWire;
+}
 
 /** 챗에서 켜 둔 분석 루틴(docs/analysis-routines R3) — 다음 발화 한 번에 실려 간다. title 은 보이기용이라 서버로 가지 않는다. */
 export interface ArmedRoutine {
@@ -121,10 +128,13 @@ interface ChatContextValue {
   /** 글을 보낸다. 켜 둔 루틴(armedRoutine)이 있으면 이 발화에 실어 보내고 끈다(한 번 쓰기) — 사람이 쓴 글이 루틴에 덧붙인 말(note)이고,
    *  글이 비면 '루틴: <제목>' 을 글로 싣는다(덧붙인 말이 아니다). extraDelibOpts 를 준 발화(심의 넘기기 · 이어하기)는 켜 둔 루틴을 쓰지 않는다.
    *  routineOpt — 값으로 넘기는 루틴 요청(이어서 · 다시 시도). null 이면 켜 둔 루틴을 쓰지도 싣지도 않는다(한 번 누름 보내기 — ChatActionBar). */
-  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: RoutineRequest | null) => void;
+  sendMessage: (text: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: RoutineRequest | null, extra?: SendExtra) => void;
   /** 이어하기 — 끝난 심의(prior)에 사람 의견을 넣어 후속 심의를 스티어링. roster 를 주면 그 명단으로
    *  간다(사람이 좌석을 직접 고름 — 재심사가 좌석을 더 얹지 않는다). 없으면 같은 전문가 + 재심사. */
   continueDeliberation: (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => void;
+  /** MCP 로 연 심의(엔진 잡 — prior.mcpJob)를 엔진 이어하기로 잇는다(docs/request-1125 WD-05) — 새 웹 심의를 열지 않는다. 포털이 대화에 남긴 진행
+   *  카드 한 줄을 이 화면에도 붙인다. 거절 · 실패면 그 글을 돌려준다(성공은 null). */
+  continueEngine: (prior: DelibData, opinion: string, opts?: { rounds?: number; keepSeats?: boolean }) => Promise<string | null>;
   // 심의로 넘기기(핸드오프) — 챗에서 정리한 실데이터(도구결과)를 원천 근거로 실어 현재 대화에서 심의를 연다.
   // 브리프(P3)가 확정한 질문·좌석·템플릿을 받는다. 미지정이면 화두는 첫 발화, 좌석은 심의 자동발굴.
   startHandoff: (opts?: {
@@ -198,6 +208,8 @@ interface ChatContextValue {
   streamLive: () => StreamLive | null;
   newConversation: () => void;
   selectConversation: (id: string) => void;
+  /** 서버 대화 목록을 지금 다시 읽는다(주기 읽기와 같은 병합 — docs/request-1125 WD-04). 엔진 잡이 끝난 것을 본 진행 카드 · 이어하기가 부른다. */
+  refreshServerList: () => Promise<void>;
   /** 서버에 이미 있는 대화(다른 화면이 만든 것 — 절차 실행을 챗으로 가져가기)를 목록에 넣고 연다. 메시지는 열 때 서버에서 읽는다
    *  ('열 때 최신 로드'). 이 제공자의 종류(serverKind)로 만든 대화여야 다음 새로고침의 목록 거름에도 남는다. */
   openServerConversation: (serverId: string, title: string, pins?: OpenPins) => void;
@@ -433,6 +445,8 @@ interface ChatProviderProps {
 
 // 다시 보일 때 서버 사본과 맞추는 침묵 문턱 — 챗 · 심의 스트림 모두 15초마다 ping 을 낸다(P-1 ②)
 const RESYNC_QUIET_MS = 20_000;
+// 서버 대화 목록을 다시 읽는 간격(docs/request-1125 WD-04) — 화면이 보일 때만. 포털이 엔진 잡을 당기는 간격(DELIB_CONV_SYNC_S 기본 60초)과 같다.
+const SERVER_LIST_EVERY_MS = 60_000;
 
 type DeckNoticeLike = { text: string; activity: ActivityItem[]; deck: { job_id: string } };
 // 발표자료 알림을 다른 챗 제공자에게 알리는 창 신호(WD-D64)
@@ -625,39 +639,79 @@ export function ChatProvider({
       });
   }, []);
 
-  // 로그인 후 1회(+사용자 변경 시): 서버 목록을 로컬 목록에 병합. 메시지는 열 때 로드.
+  // 서버 목록을 로컬 목록에 병합 — 로그인 뒤 한 번(+사용자 변경 시), 그 뒤 SERVER_LIST_EVERY_MS 마다 · 화면이 다시 보일 때(docs/request-1125 WD-04 —
+  // 개인 Claude 가 save_conversation 으로 남긴 대화와 포털이 들인 엔진 잡(WD-03)이 새로 고침 없이 사이드바에 선다). 메시지는 열 때 로드한다.
+  // 있던 대화는 손대지 않는다 — 웹 대화는 브라우저 사본에만 있는 칸(좌석 명단 · 쉬운 설명 등)이 있어 열 때 '열 때 최신 로드' 가 맞춘다. 출처가 MCP 인
+  // 대화(서버가 정본이다)만 서버가 더 새로우면 바꾼다 — 열려 있으면 곧바로 다시 읽고(엔진 이어하기 결과가 붙는다), 아니면 자리표시자로(열 때 읽는다).
+  // 첫 목록이 온 뒤 '열 때 최신 로드' 를 한 번 더 판정하게 하는 표지 — 종전엔 목록 병합이 늘 새 배열을 만들어 그 판정이 다시 돌았다. 병합이 바뀐 것이
+  // 없으면 같은 배열을 돌려주므로(주기 읽기가 화면을 다시 그리지 않게) 첫 목록에서만 이 값을 올려 그 판정을 다시 돌린다 — 주기 읽기가 이 탭이 방금
+  // 받은 웹 대화를 서버 사본으로 바꾸지 않게(브라우저 사본에만 있는 칸) 첫 목록에서만이다.
+  const [listTick, setListTick] = useState(0);
+  const syncServerList = useCallback(async (first = false): Promise<void> => {
+    if (!serverKind || !user) return;
+    const epoch = accountEpochRef.current;
+    let list: Awaited<ReturnType<typeof listServerConversations>>;
+    try {
+      list = await listServerConversations();
+    } catch {
+      return; /* 서버 미가용 — 로컬 캐시만으로 동작 */
+    }
+    if (accountEpochRef.current !== epoch) return; // 그새 계정이 바뀌었다
+    const metas = list.filter((m) => m.kind === serverKind);
+    for (const m of metas) serverMetaRef.current.set(m.id, m.updated_at * 1000);
+    const reread: string[] = [];
+    setConversations((prev) => {
+      const byId = new Map(metas.map((m) => [m.id, m] as const));
+      const have = new Set(prev.map((c) => c.serverId ?? c.id));
+      let changed = false;
+      const merged = prev.map((c) => {
+        const m = byId.get(c.serverId ?? c.id);
+        if (!m || streamConvRef.current === c.id) return c;
+        const mcp = m.source === 'mcp';
+        const fresh = mcp && m.updated_at * 1000 > c.updatedAt + 2000;
+        if (!fresh && (!mcp || c.source === 'mcp')) return c;
+        changed = true;
+        if (!fresh) return { ...c, source: 'mcp' as const };
+        if (c.id === activeIdRef.current) {
+          reread.push(m.id); // 열려 있다 — 아래에서 곧바로 다시 읽는다(시각은 그때 서버 값으로)
+          return { ...c, source: 'mcp' as const };
+        }
+        return { ...c, source: 'mcp' as const, title: m.title || c.title, messages: [], updatedAt: m.updated_at * 1000 };
+      });
+      for (const m of metas) {
+        if (have.has(m.id)) continue; // 이미 로컬 캐시에 있음 — 상세는 열 때 판정
+        changed = true;
+        merged.push({
+          id: m.id,
+          serverId: m.id,
+          title: m.title || '새 대화',
+          messages: [], // 자리표시자 — 선택 시 상세 로드
+          createdAt: m.created_at * 1000,
+          updatedAt: m.updated_at * 1000,
+          ...(m.source === 'mcp' ? { source: 'mcp' as const } : {}),
+        });
+      }
+      return changed ? merged.sort((a, b) => b.updatedAt - a.updatedAt) : prev;
+    });
+    for (const sid of reread) refreshFromServer(sid);
+    if (first) setListTick((t) => t + 1);
+  }, [serverKind, user, refreshFromServer]);
+
   useEffect(() => {
     if (!serverKind || !user) return;
-    let cancelled = false;
-    void listServerConversations()
-      .then((list) => {
-        if (cancelled) return;
-        const metas = list.filter((m) => m.kind === serverKind);
-        for (const m of metas) serverMetaRef.current.set(m.id, m.updated_at * 1000);
-        setConversations((prev) => {
-          const bySrv = new Map(prev.map((c) => [c.serverId ?? c.id, c] as const));
-          const merged = [...prev];
-          for (const m of metas) {
-            if (bySrv.has(m.id)) continue; // 이미 로컬 캐시에 있음 — 상세는 열 때 판정
-            merged.push({
-              id: m.id,
-              serverId: m.id,
-              title: m.title || '새 대화',
-              messages: [], // 자리표시자 — 선택 시 상세 로드
-              createdAt: m.created_at * 1000,
-              updatedAt: m.updated_at * 1000,
-            });
-          }
-          return merged.sort((a, b) => b.updatedAt - a.updatedAt);
-        });
-      })
-      .catch(() => {
-        /* 서버 미가용 — 로컬 캐시만으로 동작 */
-      });
-    return () => {
-      cancelled = true;
+    void syncServerList(true);
+    const tick = () => {
+      if (document.visibilityState === 'visible') void syncServerList();
     };
-  }, [serverKind, user]);
+    const t = window.setInterval(tick, SERVER_LIST_EVERY_MS);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+  }, [serverKind, user, syncServerList]);
 
   // "열 때 최신 로드": 활성 대화가 서버 대화인데 비었거나 서버가 더 새로우면 상세 재로드.
   useEffect(() => {
@@ -668,8 +722,8 @@ export function ChatProvider({
     const serverTs = serverMetaRef.current.get(sid) ?? 0;
     const stale = conv.messages.length === 0 || serverTs > conv.updatedAt + 2000;
     if (stale && streamConvRef.current !== conv.id) refreshFromServer(sid);
-    // conversations 를 deps 에 넣으면 교체 직후 재실행되지만 stale 판정이 false 라 루프 없음.
-  }, [serverKind, activeId, conversations, refreshFromServer]);
+    // conversations 를 deps 에 넣으면 교체 직후 재실행되지만 stale 판정이 false 라 루프 없음. listTick — 첫 서버 목록이 온 뒤 한 번 더(위 syncServerList).
+  }, [serverKind, activeId, conversations, refreshFromServer, listTick]);
 
   // 브라우저 사본을 저장 한도(쿼터)로 줄여 둔 대화 — 열 때 서버 정본에서 줄인 칸(도구 날것·심의 발언·근거)만 되채운다. 이걸 안
   // 하면 새로고침 뒤 심의로 넘기기·이어하기·내보내기가 줄인 판(날것 대신 미리보기, 발언 45건, 근거 4건)으로 만들어진다.
@@ -848,7 +902,7 @@ export function ChatProvider({
 
   const sendMessage = useCallback(
     // routineOpt — 셋째 인자(값으로 넘기는 이어서 · 다시 시도 · 한 번 누름 보내기). undefined 면 켜 둔 루틴을 쓰고, null 이면 루틴 없이 보낸다.
-    (message: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: SentRoutine | null) => {
+    (message: string, extraDelibOpts?: Record<string, unknown>, routineOpt?: SentRoutine | null, extra?: SendExtra) => {
       // 분석 루틴(R3) — 넘겨받은 요청이 먼저고, 없으면 켜 둔 루틴을 한 번 쓰고 끈다. 심의 넘기기 · 이어하기(extraDelibOpts)는 켜 둔 루틴을
       // 쓰지 않는다 — 에이전트 서버는 루틴 가지를 심의보다 먼저 보므로 그 심의가 루틴 실행으로 바뀐다. 권한이 없으면 싣지 않는다.
       const armed = routineOpt === undefined && !extraDelibOpts ? armedRoutineRef.current : null;
@@ -1103,6 +1157,8 @@ export function ChatProvider({
         ...(routineReq ? { routine: routineReq } : {}),
         // MCP Apps 패널 표지(HA-20) — 이 화면에는 호스트 부품(McpAppPanel)이 있다. 권한이 없으면 싣지 않는다(포털이 손잡이 · 권한을 다시 본다)
         ...(can('feat:panels') ? { uiHost: UI_HOST_TOKEN } : {}),
+        // 확인 카드에서 바꾼 칸(WD-06) — 카드의 '실행' 이 승인 말과 함께 싣는다
+        ...(extra?.confirmEdit ? { confirmEdit: extra.confirmEdit } : {}),
         // 웹 챗 Claude 의 고른 모델 · 생각 깊이(CC-8) — 입력창 칸이 목록을 받은 사람만(아니면 null — 싣지 않아 박스 기본)
         ...((() => {
           const p = claudePick();
@@ -1193,6 +1249,15 @@ export function ChatProvider({
           const p = panelPointer(e);
           if (p) patch(cid, botId, (m) => ({ ...m, panels: [...(m.panels ?? []), p].slice(-8) }));
         },
+        // 진행 카드(docs/request-1125 WD-13) — 확인 뒤 건 잡. 다시 거르고 이 답에 붙인다(같은 잡이면 새 판으로 바꾼다)
+        onJobCard: (e) => {
+          const got = jobCardsFromMeta(e);
+          if (!got) return;
+          patch(cid, botId, (m) => {
+            const keep = (m.jobCards ?? []).filter((c) => !got.some((g) => g.job_ids[0] === c.job_ids[0]));
+            return { ...m, jobCards: [...keep, ...got].slice(-8) };
+          });
+        },
         // 뷰어 카드(docs/chat-embeds) — 에이전트 서버가 도구 결과에서 집은 같은 출처 화면. 다시 거르고, 이 탭에서 받은 것이라 연 채로 그린다
         onEmbeds: (e) => {
           const list = embedsFromMeta(e?.items);
@@ -1227,12 +1292,43 @@ export function ChatProvider({
     [streaming, activeId, conversations, patch, sendPrefix, serverKind, setDraftPins, can, setAttachedImages, setArmedRoutine, searchSources],
   );
 
+  // 엔진 이어하기(WD-05) — 포털이 엔진 POST /deliberate/continue 를 그 사람의 신원으로 부르고 대화에 진행 카드 한 줄을 남긴다. 같은 줄을 이 화면에도 붙인다
+  // (서버 사본과 같은 글 · 카드). 엔진의 다음 잡이 끝나면 포털 당기기가 같은 대화에 좌석 발언 · 결정문을 붙이고, 진행 카드가 목록을 다시 읽어 보인다.
+  const continueEngine = useCallback(
+    async (prior: DelibData, opinion: string, opts?: { rounds?: number; keepSeats?: boolean }): Promise<string | null> => {
+      const conv = conversations.find((c) => c.id === activeId);
+      const sid = conv?.serverId;
+      const jobId = prior.mcpJob?.jobId;
+      if (!conv || !sid || !jobId) return '서버 대화에 들인 엔진 심의가 아니어서 엔진으로 이을 수 없습니다';
+      try {
+        const r = await continueEngineJob({
+          conversation_id: sid, previous_job_id: jobId, human_note: opinion.trim(),
+          ...(opts?.rounds ? { rounds: opts.rounds } : {}),
+          ...(opts?.keepSeats === false ? { keep_seats: false } : {}),
+        });
+        const now = Date.now();
+        const cards = jobCardsFromMeta([r.card]);
+        const msg: Message = { id: newId(), role: 'assistant', text: r.text, ts: now, ...(cards ? { jobCards: cards } : {}) };
+        setConversations((prev) => prev.map((c) => (c.id !== conv.id ? c : { ...c, updatedAt: now, messages: [...c.messages, msg] })));
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [conversations, activeId],
+  );
+
   // 이어하기(사람 개입 스티어링) — 끝난 심의에 사람 의견을 넣어, 같은 전문가가 이전 결정을
   // 이어받아 그 의견 방향으로 다시 토론하게 한다. 원 화두는 활성 대화의 첫 사용자 발화에서 취한다.
   const continueDeliberation = useCallback(
     (prior: DelibData, opinion: string, roster?: { key: string; role?: string }[]) => {
       const note = opinion.trim();
       if (!note || streaming) return;
+      // MCP 로 연 심의(엔진 잡)는 새 웹 심의를 열지 않고 엔진으로 잇는다(WD-05 — 화면의 이어가기 칸은 continueEngine 을 바로 부른다)
+      if (prior.mcpJob) {
+        void continueEngine(prior, note);
+        return;
+      }
       const conv = conversations.find((c) => c.id === activeId);
       const firstUser = conv?.messages.find((m) => m.role === 'user');
       const topic = (firstUser?.text ?? '').replace(/^\/(심의|deliberate|토의)\s*/, '').trim();
@@ -1290,7 +1386,7 @@ export function ChatProvider({
         as_of: decisionAsOf(prior.decision),
       });
     },
-    [conversations, activeId, streaming, sendMessage],
+    [conversations, activeId, streaming, sendMessage, continueEngine],
   );
 
   // 심의로 넘기기(핸드오프) — 챗 워크스페이스에서 정리한 실데이터(도구결과)를 원천 근거로 실어
@@ -1608,6 +1704,7 @@ export function ChatProvider({
         setInput,
         sendMessage,
         continueDeliberation,
+        continueEngine,
         startHandoff,
         retryLast,
         delibOpts,
@@ -1645,6 +1742,7 @@ export function ChatProvider({
         newConversation,
         selectConversation,
         openServerConversation,
+        refreshServerList: () => syncServerList(),
         deleteConversation,
         renameConversation,
         open,

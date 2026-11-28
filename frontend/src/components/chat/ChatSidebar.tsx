@@ -1,11 +1,32 @@
 // 대화 이력 사이드바 — 시간대별 그룹핑(오늘/어제/…), 새 대화·이름변경·2단계 삭제, 접기 토글
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useCan } from '../../auth/useCan';
 import { useChat } from '../../state/ChatContext';
 import type { Conversation } from '../../types/chat';
+import { EngineJobsPanel } from './EngineJobsPanel';
 import { IconCheck, IconPanel, IconPencil, IconPlus, IconTrash, IconUser } from './icons';
 
 const DAY = 24 * 60 * 60 * 1000;
+
+// 출처 거르기(docs/request-1125 WD-03) — 개인 Claude(MCP)로 연 심의 · 저장한 대화가 많아지면 웹 대화를 가린다. 고른 값은 이 브라우저에만 둔다.
+type SrcFilter = 'all' | 'web' | 'mcp';
+const SRC_KEY = 'hwax.sidebar.source';
+function loadSrc(): SrcFilter {
+  try {
+    const v = localStorage.getItem(SRC_KEY);
+    return v === 'web' || v === 'mcp' ? v : 'all';
+  } catch {
+    return 'all';
+  }
+}
+function saveSrc(v: SrcFilter): void {
+  try {
+    localStorage.setItem(SRC_KEY, v);
+  } catch {
+    /* 저장 못 해도 이번 화면에는 먹는다 */
+  }
+}
 
 function groupLabel(ts: number): string {
   const now = new Date();
@@ -90,6 +111,9 @@ function SidebarItem({
         }}
         title={agentLabel ? `${conv.title} — ${agentLabel}` : conv.title}
       >
+        {conv.source === 'mcp' && (
+          <span className="sb-item-src" title="개인 Claude(MCP)로 연 심의 · 저장한 대화 — 포털이 대화로 들였다">MCP</span>
+        )}
         {conv.title}
         {/* 어느 전문가와 나눈 대화인지 — 목록에서 안 보이면 열어 봐야만 안다. */}
         {agentLabel && <span className="sb-item-agent"><IconUser className="ico" width={12} height={12} /> {agentLabel}</span>}
@@ -136,17 +160,29 @@ export function ChatSidebar({
   const { conversations, activeId, newConversation } = useChat();
   const { pathname } = useLocation();
   const [query, setQuery] = useState('');
+  const [src, setSrc] = useState<SrcFilter>(loadSrc);
+  const can = useCan();
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const mcpCount = useMemo(() => conversations.filter((c) => c.source === 'mcp').length, [conversations]);
+  // MCP 대화가 없으면 거르기 줄을 내지 않고 거르지도 않는다(고른 값이 남아 목록이 비어 보이지 않게)
+  const srcOn: SrcFilter = mcpCount ? src : 'all';
+  const pickSrc = (v: SrcFilter) => {
+    setSrc(v);
+    saveSrc(v);
+  };
 
   // 검색 — 제목 또는 발언 내용에 질의가 포함된 대화만(대소문자 무시). 쌓인 심의/대화 찾기용.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter(
+    const bySrc = srcOn === 'all' ? conversations
+      : conversations.filter((c) => (srcOn === 'mcp' ? c.source === 'mcp' : c.source !== 'mcp'));
+    if (!q) return bySrc;
+    return bySrc.filter(
       (c) =>
         c.title.toLowerCase().includes(q) ||
         c.messages.some((m) => m.text?.toLowerCase().includes(q)),
     );
-  }, [conversations, query]);
+  }, [conversations, query, srcOn]);
 
   // updatedAt 내림차순 정렬 후 시간대 라벨로 그룹핑(라벨 등장 순서 유지).
   const groups = useMemo(() => {
@@ -204,9 +240,36 @@ export function ChatSidebar({
           />
         </div>
 
+        {/* 내 엔진 심의 잡(docs/request-1125 WD-08) — 날짜 · 글로 찾고 결정문 전문 · 이 대화에 싣기 · 들인 대화 열기 */}
+        {can('feat:deliberation') && (
+          <button type="button" className="cx-chip sb-engine" onClick={() => setJobsOpen(true)} tabIndex={open ? 0 : -1}
+            title="개인 Claude(MCP) · 챗 확인 카드로 연 엔진 심의를 날짜 · 글로 찾습니다">
+            엔진 심의 잡 찾기
+          </button>
+        )}
+        {jobsOpen && <EngineJobsPanel onClose={() => setJobsOpen(false)} />}
+
+        {mcpCount > 0 && (
+          <div className="sb-src" role="group" aria-label="대화 출처">
+            {(['all', 'web', 'mcp'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                className={`sb-src-btn${srcOn === v ? ' active' : ''}`}
+                aria-pressed={srcOn === v}
+                onClick={() => pickSrc(v)}
+                tabIndex={open ? 0 : -1}
+                title={v === 'mcp' ? '개인 Claude(MCP)로 연 심의 · 저장한 대화만' : v === 'web' ? 'MCP 대화를 접는다' : '모든 대화'}
+              >
+                {v === 'all' ? '전부' : v === 'web' ? '웹' : `MCP ${mcpCount}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         <nav className="sb-list">
           {groups.length === 0 && (
-            <div className="sb-empty">{query.trim() ? '검색 결과 없음' : '아직 대화가 없습니다'}</div>
+            <div className="sb-empty">{query.trim() ? '검색 결과 없음' : srcOn !== 'all' ? '이 출처의 대화가 없습니다' : '아직 대화가 없습니다'}</div>
           )}
           {groups.map((g) => (
             <div key={g.label} className="sb-group">
