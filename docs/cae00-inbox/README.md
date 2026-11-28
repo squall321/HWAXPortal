@@ -17,6 +17,18 @@ dev 세션이 운영 박스(cae00)에서만 볼 수 있는 값이나 바깥 팀�
 
 두 값은 늘 다르다. 견주어 '깨졌다' 고 보지 않는다.
 
+## 명령 꼴(11-28 — docs/request-1125 HP-61)
+
+운영 박스에는 sqlite3 CLI 가 없고, HEAXHub 리포 안의 옛 앱 데이터 자리(`var/` 아래)는 낡은 사본이다(실제는 `HWAX_DATA_ROOT` 아래 `appdata/<앱>/`). 글에 적는 명령은
+이 꼴로 쓴다 — 옛 꼴은 조용히 돌지 않거나 낡은 값으로 답한다.
+
+- 앱 데이터 자리는 박스 값에서 짓는다 — `${HWAX_DATA_ROOT:-/data}/appdata/<앱>`(값은 포털 `infra/.env` 의 `HWAX_DATA_ROOT`).
+- SQLite 는 python 으로 읽기 전용으로 연다 — `sqlite3.connect(f"file:{path}?mode=ro", uri=True)`. 한 줄 질의는 이 함수를 먼저 붙여 넣고 `roq <db> "<SQL>"` 로 쓴다.
+
+```bash
+roq() { python3 -c 'import sqlite3,sys; c=sqlite3.connect(f"file:{sys.argv[1]}?mode=ro",uri=True,timeout=5); [print(*r,sep="|") for r in c.execute(sys.argv[2])]' "$@"; }   # 읽기 전용 질의 — 박스에 sqlite3 CLI 가 없다(README)
+```
+
 ## 언제 읽나
 
 - update-all 이 git 받기 뒤 `→ cae00 받은 편지함 — 마지막으로 알린 판(…) 뒤 새로 들었거나 바뀐 글 N개` 줄과 파일 이름을 찍는다. 끝 요약에서도 다시 낸다.

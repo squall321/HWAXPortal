@@ -219,7 +219,7 @@ A/B 에 그 단위가 든 대상을 고른다. **읽기만 한다** — 원장�
    ```bash
    cd ../HWAXRisk                            # 포털 리포 루트에서
    ../HWAXAgentServer/.venv/bin/python backend/scripts/unit_window_census.py \
-     --db ../HEAXHub/var/app_data/hwax_risk/risk_review.db --out /tmp/unit-census.json
+     --db ${HWAX_DATA_ROOT:-/data}/appdata/hwax_risk/risk_review.db --out /tmp/unit-census.json
    ```
 
    - 끝줄 `[잼] 단위 N개(대상 a/b) — 1M 쪽 0 · 200k 쪽 x · 200k-32k 쪽 y` 가 요약이다. 창 셋은 1M · 20만(출력 미설정 — 프롬프트 한도 179,676자) ·

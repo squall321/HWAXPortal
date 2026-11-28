@@ -59,7 +59,7 @@ RA 가 있는 박스에서 한다 — dev 는 Report Archive 가 떠 있지 않�
    active 일 때만). 심의 템플릿 보고서는 M3 판(11-22 — 5절)이어야 '보고서 읽기' 를 지난다 — M2 판까지는 그 단계에서 실패했다(WD-D94 ①).
    RA 보내기 알림 자리(가져온 보고서)는 판과 상관없이 된다.
 5. **(선택) MCP 쪽 주인 켜기** — 개인 Claude 로 자기 발표자료의 장면을 보게 하려는 박스에서만. 기본은 꺼짐이고 켜지 않아도 위 1 ~ 4 는 그대로다.
-   ① WDA — `../HEAXHub/var/app_data/web_design_agents/secrets.env`(0600)에 `WDA_GATEWAY_SECRET=<16자 이상 무작위>` 한 줄(재기동 없음 · health features 에
+   ① WDA — `${HWAX_DATA_ROOT:-/data}/appdata/web_design_agents/secrets.env`(0600)에 `WDA_GATEWAY_SECRET=<16자 이상 무작위>` 한 줄(재기동 없음 · health features 에
    `mcp_owner` 가 실리면 읽힌 것이다). ② 게이트웨이 — `../HWAXMcpGateway/gateway_config.json` 의 `heax_registry.per_user_sso` 에 `web_design_agents` 항목을
    손으로 넣고(꼴은 `../HWAXMcpGateway/README.md` 의 'WebDesignAgents — MCP 쪽 주인' — `PER_USER_SSO_APPS` 로 만들지 않는다) 게이트웨이를 다시 띄운다.
    **차례를 지킨다** — 게이트웨이부터 켜면 발급이 실패해 신원 있는 WDA 도구 호출이 전부 거부된다(서비스 계정으로 내려가지 않는다). 비밀 값은 이 리포 ·
