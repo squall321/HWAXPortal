@@ -3525,6 +3525,17 @@ if [ "$TM_OK" = 1 ]; then
   done <<<"$_aco"
   [ "$_acrc" = 0 ] || bad "새 앱 점검을 하지 못했다(rc $_acrc) — python3 infra/scripts/app-checks.py 를 손으로 돌려 본다"
 fi
+# ── 리스크 앱이 사람의 읽기 전용 PAT 로 부르는 남의 앱 조회 도구 — 게이트웨이 읽기 판정(/tools-map tool_class)을 지나는가(docs/request-1125 HP-59) ──
+# 11-01 에 odb-hub find_job 이 읽기 전용 PAT 로 막혀 리스크 앱 ECAD 가 약 48분 멈췄는데 verify 204 · 스모크 3/3 은 초록이었다. 지나지 못하면 ✗.
+if [ "$TM_OK" = 1 ]; then
+  _rcm="$(mktemp)"; printf '%s' "$TM" > "$_rcm"; _rcrc=0
+  _rco="$(python3 "$SELF_REPO/infra/scripts/risk-cross-reads.py" --tools-map "$_rcm")" || _rcrc=$?
+  rm -f "$_rcm"
+  while IFS=$'\t' read -r _rck _rct; do
+    case "$_rck" in ok) ok "$_rct" ;; fail) fail "$_rct" ;; info) echo "  · $_rct" ;; esac
+  done <<<"$_rco"
+  [ "$_rcrc" = 0 ] || bad "리스크 앱 조회 도구 점검을 하지 못했다(rc $_rcrc) — python3 infra/scripts/risk-cross-reads.py --tools-map <파일> 을 손으로 돌려 본다"
+fi
 # ── HE팀 운영자 점검 — 실행마다, 재기동 · 재프로비저닝을 마친 게이트웨이로 본다(docs/request-1030 HP-51 · HP-53) ──
 # '! ' 는 이 박스 AIDataHub 의 운영자(dev 덤프로 들어온 것 포함)가 모는 앱이 이 게이트웨이에 없다는 줄이다 — 조직도에서 고를 수는 있어도
 # 챗을 보낸 뒤에야 주의가 떴다(DW-12). '목록 밖 쓰기' 는 운영자 앱의 쓰기 꼴 도구가 정본 writes · confirm 어디에도 없다는 줄이다. '읽기를 쓰기로'
