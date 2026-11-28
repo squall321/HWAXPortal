@@ -130,7 +130,8 @@ hr() { if [ "${HWAX_UPDATE_ALL_STOP:-0}" = 1 ]; then
          command -v hwax_skip_summary >/dev/null 2>&1 && hwax_skip_summary
          rm -f "${HWAX_SKIP_LEDGER:-}" ${HWAX_DELIB_GATE:+"$HWAX_DELIB_GATE"} 2>/dev/null; exit 143; fi
        export HWAX_UPDATE_ALL_LAST_HR="$*"      # §1 exec 재실행을 넘어가야 하니 환경변수
-       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m\n' "$*"
+       # 시각을 꼬리에 — 구간 시간을 실행 기록만으로 잰다(docs/request-1125 SE-9). 제목 문구 · 앞부분은 그대로라 '══ 4)' 같은 grep 은 그대로 맞는다.
+       printf '\n\033[1;36m══ %s ══════════════════════════════════════\033[0m [%s]\n' "$*" "$(date +%T)"
        # 1h 의 비우기 깃발을 § 머리마다 돌본다(늘리기 · 남이 내렸으면 멈추기 · 남의 깃발이 사라졌으면 세우기) — _hwax_drain_tick.
        command -v _hwax_drain_tick >/dev/null 2>&1 && _hwax_drain_tick; return 0; }
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }

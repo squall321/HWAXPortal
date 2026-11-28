@@ -162,7 +162,7 @@ set_remote() {  # $1=envfile  $2=KEY  $3=path
 
 WANT="${*:-portal mxwp heax aidh signalforge kooremapper}"
 want() { printf '%s ' "$WANT" | grep -qiw "$1"; }
-hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m\n' "$*"; }
+hr() { printf '\n\033[1;36m── %s ───────────────────────────────────────\033[0m [%s]\n' "$*" "$(date +%T)"; }   # 꼬리 시각 — SE-9(docs/request-1125)
 ok() { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 # skip 은 노란 경고만 찍고 끝났고, 스크립트 마지막이 echo 라 종료코드는 늘 0 이었다.
 # 그래서 update-all 의 `|| echo "⚠ deploy-all 일부 실패"` 가 실행될 수 없었다(18곳이 이걸 탄다).
