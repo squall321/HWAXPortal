@@ -117,10 +117,32 @@ do_portal_dev() {
   done
 }
 
+# 박스 덮어쓰기(integrations/<앱>/.portal/manifest.local.yaml — HEAXHub HH-15)가 그 앱을 프록시로 돌렸는가(운영 노드로 옮긴 박스) — 0 = 그렇다.
+# 전환 때 덮어쓰기가 source 를 비우고 launch.mode: proxy 로 둬서, --rebuild 는 'manifest.source 없음' 으로 exit 2 였다(docs/request-1125 HP-69).
+# 파일을 읽지 못하면 1(아니다) — 리빌드가 그대로 돌아 redeploy-app.sh 가 덮어쓰기 오류를 크게 낸다.
+_heax_proxied() {  # $1=HEAXHub 리포 $2=앱 폴더 이름
+  local f="$1/integrations/$2/.portal/manifest.local.yaml"
+  [ -f "$f" ] || return 1
+  python3 - "$f" <<'PY' 2>/dev/null
+import sys, yaml
+try:
+    d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+except Exception:
+    sys.exit(1)
+launch = d.get("launch") if isinstance(d.get("launch"), dict) else {}
+sys.exit(0 if launch.get("mode") == "proxy" or ("source" in d and not d.get("source")) else 1)
+PY
+}
+
 do_stepforge() {
   hr "StepForge — upstream fetch + SIF 리빌드 + 재기동"
   local heax; heax="$(find_repo HEAXHub)"
   [ -n "$heax" ] || { echo "✗ HEAXHub 리포 없음"; FAIL=1; return; }
+  if _heax_proxied "$heax" step_forge; then
+    echo "○ step_forge 건너뜀 — 이 박스의 덮어쓰기(integrations/step_forge/.portal/manifest.local.yaml)가 운영 노드로 넘기는 프록시라 지을 소스가 없다."
+    echo "  운영 노드 판은 그쪽 묶음 올리기로 바꾼다(이 박스에서 리빌드하지 않는다)"
+    return 0
+  fi
   # ⚠ heax Settings 가 CWD 상대 .env 를 읽는다 — 포털 루트에서 부르면 포털의
   #   backend/.env(APP_ENV=dev)를 집어 ValidationError 로 죽는다(실측). heax 루트에서 실행.
   if ( cd "$heax" && bash deploy/apptainer/redeploy-app.sh step_forge --rebuild ); then
